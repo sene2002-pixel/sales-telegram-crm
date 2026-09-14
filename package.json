@@ -1,0 +1,52 @@
+{
+  "name": "sales-telegram-crm",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"tsc -p tsconfig.server.json --watch\" \"node --watch dist/server/main.js\" \"vite\"",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:server && tsc -p tsconfig.web.json && vite build",
+    "start": "node dist/server/main.js",
+    "test": "npm run build:server && node --test dist/tests/*.test.js",
+    "check": "npm test && npm run build",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src e2e docs *.json *.ts *.mts *.md *.yaml .github",
+    "format:check": "prettier --check src e2e docs *.json *.ts *.mts *.md *.yaml .github",
+    "telegram:setup": "node dist/server/setup-telegram.js"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@nestjs/common": "^12.0.2",
+    "@nestjs/core": "^12.0.2",
+    "@nestjs/platform-express": "^12.0.2",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "multer": "^2.3.0",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/supertest": "^6.0.3",
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.6",
+    "supertest": "^7.1.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}
