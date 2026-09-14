@@ -30,7 +30,7 @@ export function Select({
   empty?: string;
 }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
+    <select aria-label={empty} value={value} onChange={(e) => onChange(e.target.value)}>
       {empty !== undefined && <option value="">{empty}</option>}
       {options.map((v) => (
         <option key={v} value={v}>

@@ -6,6 +6,7 @@ import { CompanyForm, Modal, Select } from './forms';
 import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
 import { Team } from './Team';
+import { RoleGuide } from './RoleGuide';
 import './styles.css';
 declare global {
   interface Window {
@@ -49,6 +50,7 @@ function App() {
   const [files, setFiles] = useState<(CrmRecord & { companyName: string })[]>([]),
     [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]);
   const [busy, setBusy] = useState(false);
+  const [help, setHelp] = useState(false);
   async function refresh() {
     const [c, u, t, f, p] = await Promise.all([
       api<Company[]>('/companies'),
@@ -112,13 +114,14 @@ function App() {
     const close = () => {
       setSelected(null);
       setCreate(false);
+      setHelp(false);
     };
-    if (selected || create) {
+    if (selected || create || help) {
       back.show();
       back.onClick(close);
     } else back.hide();
     return () => back.offClick(close);
-  }, [selected, create]);
+  }, [selected, create, help]);
   useEffect(() => {
     if (!user) return;
     const onFocus = () => refresh().catch((e) => setError(e.message));
@@ -270,7 +273,9 @@ function App() {
       </aside>
       <main className="workspace">
         <header>
-          <span>Рабочее пространство</span>
+          <button className="text-button" onClick={() => setHelp(true)}>
+            Права и помощь
+          </button>
           <div>
             <span className="online-dot" />
             Подключено{' '}
@@ -550,6 +555,7 @@ function App() {
           <Team user={user} users={users} onChanged={refresh} />
         )}
       </main>
+      {help && <RoleGuide role={user.role} onClose={() => setHelp(false)} />}
       {create && (
         <Modal title="Новая компания" onClose={() => setCreate(false)}>
           <CompanyForm
