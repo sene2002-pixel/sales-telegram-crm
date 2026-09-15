@@ -22,6 +22,27 @@ export class TelegramAdapter implements Messenger {
   async send(chatId: string, payload: any) {
     await this.call('sendMessage', { chat_id: chatId, ...payload });
   }
+  async sendDocument(chatId: string, content: string, filename: string) {
+    requireCondition(this.config.botToken, 503, 'Бот не настроен');
+    const body = new FormData();
+    body.append('chat_id', chatId);
+    body.append('document', new Blob([content], { type: 'text/csv;charset=utf-8' }), filename);
+    const response = await fetch(
+      `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
+      {
+        method: 'POST',
+        body,
+        signal: AbortSignal.timeout(25_000),
+      },
+    );
+    requireCondition(
+      response.ok,
+      502,
+      'Не удалось отправить CSV. Откройте личный чат бота и попробуйте снова.',
+    );
+    const result = (await response.json()) as any;
+    requireCondition(result.ok, 502, 'Telegram отклонил отправку файла');
+  }
   async download(fileId: string) {
     const file = await this.call('getFile', { file_id: fileId });
     requireCondition(

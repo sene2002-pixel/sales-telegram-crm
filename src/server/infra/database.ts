@@ -32,6 +32,13 @@ export class Database implements Sql {
           await tx.query(statement);
         await tx.query('INSERT INTO schema_migrations(version) VALUES(1)');
       }
+      await tx.query(`CREATE TABLE IF NOT EXISTS csv_downloads (
+        token_hash text PRIMARY KEY,
+        owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        filename text NOT NULL,
+        content text NOT NULL,
+        expires_at timestamptz NOT NULL
+      )`);
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {
