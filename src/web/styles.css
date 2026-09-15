@@ -902,11 +902,28 @@ details {
     gap: 4px;
   }
   .calendar button {
-    padding: 8px;
-    height: 64px;
+    padding: 4px;
+    height: 44px;
+    min-width: 0;
+    position: relative;
+    align-items: center;
+    justify-content: center;
   }
-  .calendar button span {
-    font-size: 8px;
+  .calendar button .calendar-count {
+    position: absolute;
+    right: 2px;
+    bottom: 1px;
+    font-size: 9px;
+    line-height: 10px;
+  }
+  .calendar-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-bottom: 12px;
+  }
+  .calendar-toolbar > input {
+    min-width: 0;
+    width: 100%;
   }
   .task-row {
     gap: 9px;

@@ -11,9 +11,9 @@ export function Team({
   users: Actor[];
   onChanged: () => Promise<void>;
 }) {
-  const [from, setFrom] = useState(today().slice(0, 8) + '01'),
-    [to, setTo] = useState(today()),
-    [stats, setStats] = useState<any[]>([]),
+  const to = today();
+  const from = to.slice(0, 8) + '01';
+  const [stats, setStats] = useState<any[]>([]),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [person, setPerson] = useState({ telegramId: '', name: '', role: 'manager', active: true });
@@ -65,12 +65,7 @@ export function Team({
         </section>
       )}
       <div className="filters">
-        <Field label="С">
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </Field>
-        <Field label="По">
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </Field>
+        <span>Текущий месяц · по сегодня</span>
         <button
           onClick={() =>
             download(`/dashboard/export?from=${from}&to=${to}`, 'team-report.csv').catch((e) =>
@@ -82,8 +77,8 @@ export function Team({
         </button>
       </div>
       <p className="muted">
-        Контакты и выполненные задачи — за период. Компании, открытые и просроченные задачи — на
-        текущий момент.
+        Контакты и выполненные задачи — с начала текущего месяца по сегодня. Компании, открытые и
+        просроченные задачи — на текущий момент.
       </p>
       {error && (
         <p className="error" role="alert">

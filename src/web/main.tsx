@@ -442,12 +442,14 @@ function App() {
           <>
             <p className="eyebrow">ПЛАН НА МЕСЯЦ</p>
             <h1>Календарь</h1>
-            <div className="filters">
+            <div className="filters calendar-toolbar">
               <input
                 aria-label="Месяц"
                 type="month"
                 value={calendarMonth}
-                onChange={(e) => setCalendarMonth(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value) setCalendarMonth(e.target.value);
+                }}
               />
               <button
                 onClick={() => {
@@ -481,12 +483,14 @@ function App() {
                     count = tasks.filter((t) => t.data.due === key && !t.data.done).length;
                   return (
                     <button
+                      aria-label={`${key}${count ? `, открытых задач: ${count}` : ''}`}
+                      aria-pressed={date === key}
                       className={date === key ? 'selected' : ''}
                       key={key}
                       onClick={() => setDate(key)}
                     >
                       <strong>{i + 1}</strong>
-                      {count > 0 && <span>{count} задач</span>}
+                      {count > 0 && <span className="calendar-count">{count}</span>}
                     </button>
                   );
                 },
