@@ -42,6 +42,13 @@ for (const [role, team, access] of [
     await expect(button).toHaveCount(team ? 1 : 0);
     if (team) {
       await button.click();
+      await page.getByRole('button', { name: 'Все сотрудники', exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Все сотрудники' })).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: 'Добавить сотрудника', exact: true }),
+      ).toHaveCount(access ? 1 : 0);
+      if (!access)
+        await expect(page.getByRole('button', { name: /^Редактировать / })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Доступ сотрудников' })).toHaveCount(
         access ? 1 : 0,
       );
@@ -167,19 +174,34 @@ test('[UI-05] admin creates a user, changes role, blocks and restores access', a
   await page.getByRole('navigation').getByRole('button', { name: 'Команда' }).click();
   const name = unique(),
     telegramId = String(Date.now());
+  await expect(page.getByLabel('Telegram ID')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Добавить сотрудника', exact: true }).click();
   await page.getByLabel('Telegram ID').fill(telegramId);
   await page.getByLabel('Имя сотрудника').fill(name);
   await page.getByRole('combobox', { name: 'Роль', exact: true }).selectOption('manager');
-  await page.getByRole('button', { name: 'Сохранить сотрудника' }).click();
-  await page.getByRole('button', { name: name + ' · активен', exact: true }).click();
+  await page.getByRole('button', { name: 'Создать сотрудника' }).click();
+  await page.getByRole('button', { name: 'Редактировать ' + name, exact: true }).click();
+  await expect(page.getByLabel('Telegram ID')).toHaveAttribute('readonly', '');
   await page.getByRole('combobox', { name: 'Роль', exact: true }).selectOption('supervisor');
   await page.getByLabel('Доступ активен').uncheck();
-  await page.getByRole('button', { name: 'Сохранить сотрудника' }).click();
-  await page.getByRole('button', { name: name + ' · заблокирован', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить изменения' }).click();
+  await expect(page.locator('.employee-row').filter({ hasText: name })).toContainText(
+    'заблокирован',
+  );
+  await page.getByRole('button', { name: 'Редактировать ' + name, exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Роль', exact: true })).toHaveValue('supervisor');
   await page.getByLabel('Доступ активен').check();
-  await page.getByRole('button', { name: 'Сохранить сотрудника' }).click();
-  await expect(page.getByRole('button', { name: name + ' · активен', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Сохранить изменения' }).click();
+  await expect(page.locator('.employee-row').filter({ hasText: name })).toContainText('активен');
+  await page.getByRole('button', { name: 'Добавить сотрудника', exact: true }).click();
+  await expect(page.getByLabel('Telegram ID')).toHaveValue('');
+  await expect(page.getByLabel('Имя сотрудника')).toHaveValue('');
+  await page.getByLabel('Telegram ID').fill(telegramId);
+  await page.getByLabel('Имя сотрудника').fill('Попытка дубля');
+  await page.getByRole('button', { name: 'Создать сотрудника' }).click();
+  await expect(page.getByRole('alert')).toContainText('уже существует');
+  await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.getByLabel('Telegram ID')).toHaveCount(0);
 });
 test('[UI-06] supervisor assigns company and filters by owner', async ({ page }) => {
   await login(page, 'Руководитель');
