@@ -14,6 +14,96 @@ import { BotService } from '../server/services/bot';
 import { TelegramAdapter } from '../server/infra/telegram';
 import { ReportWorker } from '../server/services/worker';
 import { DomainError } from '../server/domain/errors';
+import { ExportService } from '../server/services/exports';
+
+test('CSV download: leaders only, authenticated creation, strict parameters', async () => {
+  const body = { from: '2026-09-01', to: '2026-09-15' };
+  await request(server).post('/api/dashboard/export-link').send(body).expect(401);
+  for (const endpoint of ['export-link', 'export-bot']) {
+    await api(actors.manager, 'post', `/dashboard/${endpoint}`, body).expect(403);
+    await api(actors.admin, 'post', `/dashboard/${endpoint}`, { ...body, chatId: '999' }).expect(
+      400,
+    );
+    await api(actors.admin, 'post', `/dashboard/${endpoint}`, { ...body, from: 'invalid' }).expect(
+      400,
+    );
+  }
+  for (const role of ['admin', 'supervisor'] as const) {
+    const issued = await api(actors[role], 'post', '/dashboard/export-link', body).expect(201);
+    assert.match(
+      issued.body.url,
+      /^https:\/\/crm.example.test\/api\/downloads\/csv\/[a-f0-9]{64}$/,
+    );
+    assert.equal(issued.body.filename, 'team-report-2026-09-01-2026-09-15.csv');
+    const file = await request(server).get(new URL(issued.body.url).pathname).expect(200);
+    assert.match(file.headers['content-disposition'] || '', /attachment/);
+    assert.match(file.headers['content-type'] || '', /text\/csv; charset=utf-8/);
+    assert.equal(file.headers['cache-control'], 'no-store');
+    assert.equal(file.headers['access-control-allow-origin'], 'https://web.telegram.org');
+    const expected = await s.dashboard.csv(actors[role], body.from, body.to);
+    assert.equal(file.text, expected);
+    assert.equal(
+      (await s.exports.read(new URL(issued.body.url).pathname.split('/').at(-1)!)).content,
+      expected,
+    );
+  }
+});
+
+test('CSV download: stable snapshot, expiry, random tickets and revoked permissions', async () => {
+  const file = await s.exports.issue(actors.supervisor, '2026-09-01', '2026-09-15');
+  const path = new URL(file.url).pathname;
+  const original = await request(server).get(path).expect(200);
+  await db.query('UPDATE users SET name=$1 WHERE id=$2', ['Changed', actors.manager.id]);
+  assert.equal((await request(server).get(path).expect(200)).text, original.text);
+  await request(server).get('/api/downloads/csv/invalid').expect(404);
+  await request(server)
+    .get('/api/downloads/csv/' + '0'.repeat(64))
+    .expect(404);
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actors.supervisor.id]);
+  await request(server).get(path).expect(404);
+  await db.query("UPDATE users SET active=true,role='manager' WHERE id=$1", [actors.supervisor.id]);
+  await request(server).get(path).expect(404);
+  await db.query("UPDATE users SET role='supervisor' WHERE id=$1", [actors.supervisor.id]);
+  await db.query("UPDATE csv_downloads SET expires_at=now()-interval '1 second'");
+  await request(server).get(path).expect(404);
+});
+
+test('CSV download: bounded outstanding tickets and cleanup', async () => {
+  for (let i = 0; i < 5; i++) await s.exports.issue(actors.admin, '2026-09-01', '2026-09-15');
+  await assert.rejects(s.exports.issue(actors.admin, '2026-09-01', '2026-09-15'), { status: 429 });
+  await db.query("UPDATE csv_downloads SET expires_at=now()-interval '1 second'");
+  await s.exports.issue(actors.admin, '2026-09-01', '2026-09-15');
+  assert.equal((await db.query('SELECT * FROM csv_downloads')).length, 1);
+});
+
+test('CSV bot delivery: sends only to requester; manager denied; adapter error propagated', async () => {
+  const sent: any[] = [];
+  const telegram = {
+    sendDocument: async (...args: any[]) => {
+      sent.push(args);
+    },
+  } as unknown as TelegramAdapter;
+  const service = new ExportService(db, s.dashboard, telegram, config);
+  for (const role of ['admin', 'supervisor'] as const) {
+    await service.sendToBot(actors[role], '2026-09-01', '2026-09-15');
+    assert.equal(sent.at(-1)[0], actors[role].telegramId);
+    assert.equal(sent.at(-1)[1], await s.dashboard.csv(actors[role], '2026-09-01', '2026-09-15'));
+  }
+  await assert.rejects(service.sendToBot(actors.manager, '2026-09-01', '2026-09-15'), {
+    status: 403,
+  });
+  await assert.rejects(
+    service.sendToBot({ ...actors.admin, telegramId: 'dev-admin' }, '2026-09-01', '2026-09-15'),
+    { status: 400 },
+  );
+  assert.equal(sent.length, 2);
+  telegram.sendDocument = async () => {
+    throw new DomainError(502, 'Telegram unavailable');
+  };
+  await assert.rejects(service.sendToBot(actors.admin, '2026-09-01', '2026-09-15'), {
+    status: 502,
+  });
+});
 
 let dir: string,
   db: Database,

@@ -37,6 +37,7 @@ import { ReportService, mapReport } from '../services/reports';
 import { ReportWorker } from '../services/worker';
 import { BotService } from '../services/bot';
 import { DashboardService } from '../services/dashboard';
+import { ExportService } from '../services/exports';
 import { TelegramAdapter } from '../infra/telegram';
 import { OpenAiAdapter } from '../infra/ai';
 import { DomainError, requireCondition } from '../domain/errors';
@@ -49,6 +50,7 @@ export class Services {
   worker: ReportWorker;
   bot: BotService;
   dashboard: DashboardService;
+  exports: ExportService;
   constructor(
     public db: Database,
     public config: Config,
@@ -61,6 +63,7 @@ export class Services {
     this.worker = new ReportWorker(db, this.reports, ai, ai, telegram, config);
     this.bot = new BotService(config, this.auth, this.reports, this.crm, telegram);
     this.dashboard = new DashboardService(db, config.timezone);
+    this.exports = new ExportService(db, this.dashboard, telegram, config);
   }
 }
 type AuthedRequest = Request & { actor: Actor };
@@ -110,6 +113,19 @@ class Errors implements ExceptionFilter {
 @Controller('api')
 class PublicController {
   constructor(@Inject(Services) private s: Services) {}
+  @Get('downloads/csv/:token') async csvDownload(
+    @Param('token') token: string,
+    @Res() res: Response,
+  ) {
+    res.set({
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'Access-Control-Allow-Origin': 'https://web.telegram.org',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    const file = await this.s.exports.read(token);
+    res.type('text/csv').attachment(file.filename).send(file.content);
+  }
   @Get('health') async health() {
     await this.s.db.query('SELECT 1');
     return { status: 'ok' };
@@ -137,6 +153,14 @@ class PublicController {
 @UseGuards(AuthGuard)
 class CrmController {
   constructor(@Inject(Services) private s: Services) {}
+  @Post('dashboard/export-link') exportLink(@Req() r: AuthedRequest, @Body() body: unknown) {
+    const input = z.object({ from: z.string(), to: z.string() }).strict().parse(body);
+    return this.s.exports.issue(r.actor, input.from, input.to);
+  }
+  @Post('dashboard/export-bot') exportBot(@Req() r: AuthedRequest, @Body() body: unknown) {
+    const input = z.object({ from: z.string(), to: z.string() }).strict().parse(body);
+    return this.s.exports.sendToBot(r.actor, input.from, input.to);
+  }
   @Get('me') me(@Req() r: AuthedRequest) {
     return r.actor;
   }
