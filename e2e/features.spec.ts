@@ -1,5 +1,12 @@
 import { test, expect, Page } from '@playwright/test';
 
+// These tests use local demo authentication, not the Telegram client SDK.
+test.beforeEach(async ({ page }) => {
+  await page.route('https://telegram.org/js/telegram-web-app.js*', (route) =>
+    route.fulfill({ contentType: 'application/javascript', body: '' }),
+  );
+});
+
 async function login(page: Page, role = 'Менеджер') {
   await page.goto('/');
   await page.getByRole('button', { name: role, exact: true }).click();
@@ -42,6 +49,8 @@ for (const [role, team, access] of [
     await expect(button).toHaveCount(team ? 1 : 0);
     if (team) {
       await button.click();
+      await expect(page.locator('input[type="date"]')).toHaveCount(0);
+      await expect(page.getByText('Текущий месяц · по сегодня', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Все сотрудники', exact: true }).click();
       await expect(page.getByRole('region', { name: 'Все сотрудники' })).toBeVisible();
       await expect(
@@ -234,4 +243,31 @@ test('[UI-07] text report is queued and cancellable without applying CRM records
   await dialog.getByRole('button', { name: 'Отменить отчёт' }).click();
   await expect(dialog).toContainText('Отменён');
   await expect(dialog.getByRole('button', { name: 'Подтвердить и сохранить' })).toHaveCount(0);
+});
+
+test('[UI-08] compact six-week calendar fits a narrow phone and keeps selection accessible', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await login(page);
+  await page.getByRole('navigation').getByRole('button', { name: 'Календарь' }).click();
+  await page.getByLabel('Месяц').fill('2026-08');
+  const calendar = page.locator('.calendar');
+  await expect(calendar.getByRole('button')).toHaveCount(31);
+  const box = await calendar.boundingBox();
+  expect(box!.height).toBeLessThan(315);
+  const month = await page.getByLabel('Месяц').boundingBox();
+  const todayButton = await page
+    .getByRole('button', { name: 'Сегодня', exact: true })
+    .boundingBox();
+  expect(Math.abs(month!.y - todayButton!.y)).toBeLessThan(5);
+  await calendar.getByRole('button', { name: '2026-08-31', exact: true }).click();
+  await expect(calendar.getByRole('button', { name: '2026-08-31', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBeTruthy();
+  await page.screenshot({ path: test.info().outputPath('compact-calendar.png') });
 });
