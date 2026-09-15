@@ -1,0 +1,15 @@
+node_modules/
+.venv/
+.env
+.env.*
+!.env.example
+dist/
+data/
+coverage/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+backups/

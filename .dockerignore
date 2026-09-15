@@ -1,0 +1,10 @@
+.git
+.env*
+.venv
+node_modules
+dist
+data
+backups
+test-results
+playwright-report
+app.jsx

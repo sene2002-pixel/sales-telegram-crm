@@ -1,0 +1,6 @@
+app.jsx
+dist
+data
+node_modules
+.venv
+package-lock.json
