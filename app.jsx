@@ -145,49 +145,6 @@ function CollapsibleRow({ isOpen, onToggle, bg, buttonContent, children, layout 
   );
 }
 
-// Общая переключаемая пилюля - раньше эти 5-6 строк стиля были скопированы
-// в 9 разных местах (вкладки, фильтры задач/файлов/поиска, тип клиента,
-// статус, отрасль). Теперь один источник правды: правишь стиль тут - меняется
-// сразу везде, а не в 9 местах, из которых легко забыть одно.
-function Pill({ active, onClick, children, padding = "7px 13px", fontSize = 12 }) {
-  return (
-    <button className="pill-btn" onClick={onClick} style={{
-      padding, borderRadius: 999, border: "none", whiteSpace: "nowrap", flexShrink: 0,
-      background: active ? "#2A2A2A" : "#F0F0EE",
-      color: active ? "#fff" : "#6B6B68",
-      fontSize, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
-    }}>{children}</button>
-  );
-}
-
-// Круглая кнопка закрытия/удаления - тот же принцип, что и Pill: было 4 копии
-// с чуть разным размером под контекст (в панелях выбора компактнее, в списке
-// файлов крупнее под палец).
-function CloseX({ onClick, size = 22, fontSize = 13 }) {
-  return (
-    <button onClick={onClick} style={{
-      border: "none", background: "#F0F0EE", borderRadius: 999, width: size, height: size,
-      cursor: "pointer", color: "#9CA3AF", fontSize, flexShrink: 0,
-    }}>×</button>
-  );
-}
-
-// Слой доступа к серверу. Тот же самый, куда пишет телеграм-бот:
-// наговорил голосовое - карточка появляется здесь, и наоборот.
-const API_BASE = (typeof window !== "undefined" && window.TRACKER_API) || "";
-const initData = () => {
-  try { return window.Telegram?.WebApp?.initData || ""; } catch { return ""; }
-};
-async function apiCall(path, options = {}) {
-  if (!API_BASE) throw new Error("offline");
-  const r = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", "X-Init-Data": initData(), ...(options.headers || {}) },
-  });
-  if (!r.ok) throw new Error(`api ${r.status}`);
-  return r.json();
-}
-
 const RUB_MAX = 1000000000;
 const formatRub = (rub) => {
   const v = Math.round(rub || 0);
@@ -424,6 +381,7 @@ export default function SmartTracker() {
 
   // Автоподтяжка по ИНН. Запрос идёт на бэкенд, а не напрямую в ФНС:
   // из браузера это блокирует CORS, и ключи нельзя держать на клиенте.
+  const API_BASE = (typeof window !== "undefined" && window.TRACKER_API) || "";
   useEffect(() => {
     const inn = (form.inn || "").trim();
     if (!formOpen || formType !== "client" || !validInn(inn)) {
@@ -438,7 +396,9 @@ export default function SmartTracker() {
     setInnState({ status: "loading" });
     const t = setTimeout(async () => {
       try {
-        const info = await apiCall(`/api/company?inn=${inn}`);
+        const r = await fetch(`${API_BASE}/api/company?inn=${inn}`);
+        if (!r.ok) throw new Error("not found");
+        const info = await r.json();
         if (!alive) return;
         setForm(p => ({
           ...p,
@@ -512,39 +472,6 @@ export default function SmartTracker() {
   const divTotal = (form.divisionKeys || []).reduce((a, k) => a + (num(form.divisions?.[k]) || 0), 0);
 
   const saveForm = () => {
-    // При подключённом сервере он - единственный источник истины: пишем туда
-    // и перечитываем состояние, чтобы id совпадали с теми, что видит бот.
-    if (API_BASE) {
-      const payload = formType === "client"
-        ? {
-            id: formEditId ?? undefined,
-            client: (form.client || "").trim(), city: form.city, segment: form.segment,
-            status: form.status, revenue: num(form.revenue),
-            potential: divTotal > 0 ? divTotal : null,
-            inn: form.inn || "", industry: form.industry || "", notes: form.notes || "",
-            divisions: Object.fromEntries(DIVISION_GROUPS.map(g => [
-              g.key, (form.divisionKeys || []).includes(g.key) ? num(form.divisions?.[g.key]) : null,
-            ])),
-          }
-        : {
-            id: formEditId ?? undefined,
-            project: (form.project || "").trim(), city: form.city, customer: form.customer || "",
-            amount: num(form.amount), deadline: form.deadline || "",
-            status: form.status, notes: form.notes || "",
-          };
-      if (!(payload.client || payload.project)) return;
-      apiCall(formType === "client" ? "/api/clients" : "/api/projects",
-              { method: "POST", body: JSON.stringify(payload) })
-        .then(res => {
-          if (res.state) { setData(res.state.clients || []); setProjectData(res.state.projects || []); }
-          setSync("ok");
-          setActiveTab(formType === "client" ? "cities" : "projects");
-          if (formType === "client") setOpenCity(form.city); else setOpenProjectCity(form.city);
-        })
-        .catch(() => setSync("error"));
-      closeForm();
-      return;
-    }
     if (formType === "client") {
       if (!form.client || !form.client.trim()) return;
       if (formEditId != null) {
@@ -606,19 +533,6 @@ export default function SmartTracker() {
   const data = allData.filter(c => c.status !== ARCHIVE_STATUS);
   const archived = allData.filter(c => c.status === ARCHIVE_STATUS);
   const [projectData, setProjectData] = useState(projectSeed);
-  const [sync, setSync] = useState(API_BASE ? "loading" : "offline");
-
-  const pullState = async () => {
-    try {
-      const st = await apiCall("/api/state");
-      setData(st.clients || []);
-      setProjectData(st.projects || []);
-      setSync("ok");
-    } catch {
-      setSync(API_BASE ? "error" : "offline");
-    }
-  };
-  useEffect(() => { if (API_BASE) pullState(); }, []);
   const catData = categorySeed;
 
   const allTasks = [];
@@ -629,73 +543,13 @@ export default function SmartTracker() {
     ...t, key: "p" + p.id + "-" + t.id, src: "project", srcId: p.id, entity: p.project, city: p.city,
   })));
 
-  // Инлайн-добавление прямо из карточки: без этого задачу или контакт
-  // можно было завести только голосовым через бота.
-  const [draftTask, setDraftTask] = useState({});
-  const [draftContact, setDraftContact] = useState({});
-  const setDraftT = (id, v) => setDraftTask(p => ({ ...p, [id]: v }));
-  const setDraftC = (id, patch) => setDraftContact(p => ({ ...p, [id]: { ...(p[id] || {}), ...patch } }));
-
-  const addTaskTo = (kind, entity) => {
-    const text = (draftTask[kind + entity.id] || "").trim();
-    if (!text) return;
-    setDraftT(kind + entity.id, "");
-    if (API_BASE) {
-      apiCall("/api/tasks", {
-        method: "POST",
-        body: JSON.stringify({ text, [kind === "c" ? "client_id" : "project_id"]: entity.id }),
-      })
-        .then(res => { if (res.state) { setData(res.state.clients || []); setProjectData(res.state.projects || []); } setSync("ok"); })
-        .catch(() => setSync("error"));
-      return;
-    }
-    const task = { id: Date.now(), text, done: false, due: null };
-    if (kind === "c") setData(prev => prev.map(c => c.id === entity.id ? { ...c, tasks: [...(c.tasks || []), task] } : c));
-    else setProjectData(prev => prev.map(p => p.id === entity.id ? { ...p, tasks: [...(p.tasks || []), task] } : p));
-  };
-
-  const addContactTo = (client) => {
-    const d = draftContact[client.id] || {};
-    if (!(d.name || "").trim()) return;
-    const contact = {
-      id: Date.now(), name: d.name.trim(), role: (d.role || "").trim(),
-      phone: (d.phone || "").trim(), email: (d.email || "").trim(),
-    };
-    const contacts = [...(client.contacts || []), contact];
-    setDraftContact(p => ({ ...p, [client.id]: {} }));
-    if (API_BASE) {
-      apiCall("/api/clients", { method: "POST", body: JSON.stringify({ id: client.id, client: client.client, contacts }) })
-        .then(res => { if (res.state) setData(res.state.clients || []); setSync("ok"); })
-        .catch(() => setSync("error"));
-      return;
-    }
-    setData(prev => prev.map(c => c.id === client.id ? { ...c, contacts } : c));
-  };
-
-  const removeContact = (client, contactId) => {
-    const contacts = (client.contacts || []).filter(ct => ct.id !== contactId);
-    if (API_BASE) {
-      apiCall("/api/clients", { method: "POST", body: JSON.stringify({ id: client.id, client: client.client, contacts }) })
-        .then(res => { if (res.state) setData(res.state.clients || []); setSync("ok"); })
-        .catch(() => setSync("error"));
-      return;
-    }
-    setData(prev => prev.map(c => c.id === client.id ? { ...c, contacts } : c));
-  };
-
   const toggleTask = (it) => {
-    // Оптимистично: галочка ставится сразу, запрос уходит следом.
-    // Иначе на мобильном интернете тап ощущался бы как зависание.
     if (it.src === "client") {
       setData(prev => prev.map(c => c.id === it.srcId
         ? { ...c, tasks: c.tasks.map(t => t.id === it.id ? { ...t, done: !t.done } : t) } : c));
     } else {
       setProjectData(prev => prev.map(p => p.id === it.srcId
         ? { ...p, tasks: (p.tasks || []).map(t => t.id === it.id ? { ...t, done: !t.done } : t) } : p));
-    }
-    if (API_BASE) {
-      apiCall("/api/tasks", { method: "POST", body: JSON.stringify({ toggle: true, id: it.id, done: !it.done }) })
-        .catch(() => setSync("error"));
     }
   };
 
@@ -847,34 +701,16 @@ export default function SmartTracker() {
 
             {cardTab === "tasks" && (
               <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
                   {client.tasks.map(task => (
                     <div key={task.id}
-                      onClick={(e) => { e.stopPropagation(); toggleTask({ ...task, src: "client", srcId: client.id }); }}
-                      style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 10px", borderRadius: 10, background: "#fff", border: "1px solid #ECECE9", cursor: "pointer" }}>
+                      style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 10px", borderRadius: 10, background: "#fff", border: "1px solid #ECECE9" }}>
                       <div style={{ width: 16, height: 16, borderRadius: 5, border: "1.5px solid", borderColor: task.done ? "#16794F" : "#D1D1CE", background: task.done ? "#16794F" : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {task.done && <span style={{ color: "#fff", fontSize: 9, fontWeight: 700 }}>✓</span>}
                       </div>
                       <span style={{ fontSize: 12.5, color: task.done ? "#B0AFA8" : "#3A3A38", textDecoration: task.done ? "line-through" : "none", lineHeight: 1.5 }}>{task.text}</span>
                     </div>
                   ))}
-                </div>
-
-                <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                  <input
-                    value={draftTask["c" + client.id] || ""}
-                    onChange={(e) => setDraftT("c" + client.id, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") addTaskTo("c", client); }}
-                    placeholder="Новая задача"
-                    style={{ flex: 1, minWidth: 0, border: "1px solid #ECECE9", borderRadius: 10, background: "#fff", padding: "9px 11px", fontFamily: FONT, fontSize: 16, color: "#111111", outline: "none" }}
-                  />
-                  <button onClick={() => addTaskTo("c", client)} style={{
-                    border: "none", background: (draftTask["c" + client.id] || "").trim() ? "#111111" : "#E4E3DE",
-                    borderRadius: 10, width: 40, flexShrink: 0, cursor: "pointer", color: "#fff",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 6v12M6 12h12" /></svg>
-                  </button>
                 </div>
                 {client.notes && (
                   <div style={{ background: "#fff", borderRadius: 10, padding: "8px 12px", border: "1px solid #ECECE9", marginBottom: client.inn ? 8 : 0 }}>
@@ -888,43 +724,21 @@ export default function SmartTracker() {
               </>
             )}
 
-            {cardTab === "contacts" && (() => {
-              const d = draftContact[client.id] || {};
-              const ci = { border: "1px solid #ECECE9", borderRadius: 10, background: "#fff", padding: "9px 11px", fontFamily: FONT, fontSize: 16, color: "#111111", outline: "none", width: "100%" };
-              return (
-              <div onClick={(e) => e.stopPropagation()}>
-                {client.contacts.length === 0 && <div style={{ color: "#B0AFA8", fontSize: 12, marginBottom: 8 }}>Контакты не добавлены</div>}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+            {cardTab === "contacts" && (
+              <div>
+                {client.contacts.length === 0 && <div style={{ color: "#B0AFA8", fontSize: 12 }}>Контакты не добавлены</div>}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {client.contacts.map(ct => (
-                    <div key={ct.id} style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "1px solid #ECECE9", display: "flex", alignItems: "flex-start", gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#111111", marginBottom: 2 }}>{ct.name}</div>
-                        {ct.role && <div style={{ fontSize: 11, color: "#5B4FE8", marginBottom: 5 }}>{ct.role}</div>}
-                        {ct.phone && <a href={`tel:${ct.phone}`} style={{ fontSize: 12, color: "#3A3A38", fontWeight: 600, textDecoration: "none" }}>{ct.phone}</a>}
-                        {ct.email && <div style={{ fontSize: 11, color: "#B0AFA8", marginTop: 2 }}>{ct.email}</div>}
-                      </div>
-                      <CloseX onClick={() => removeContact(client, ct.id)} />
+                    <div key={ct.id} style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "1px solid #ECECE9" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#111111", marginBottom: 2 }}>{ct.name}</div>
+                      <div style={{ fontSize: 11, color: "#5B4FE8", marginBottom: 5 }}>{ct.role}</div>
+                      {ct.phone && <div style={{ fontSize: 12, color: "#3A3A38", fontWeight: 600 }}>{ct.phone}</div>}
+                      {ct.email && <div style={{ fontSize: 11, color: "#B0AFA8", marginTop: 2 }}>{ct.email}</div>}
                     </div>
                   ))}
                 </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <input value={d.name || ""} onChange={(e) => setDraftC(client.id, { name: e.target.value })} placeholder="Имя" style={ci} />
-                    <input value={d.role || ""} onChange={(e) => setDraftC(client.id, { role: e.target.value })} placeholder="Должность" style={ci} />
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <input value={d.phone || ""} onChange={(e) => setDraftC(client.id, { phone: e.target.value })} placeholder="Телефон" inputMode="tel" style={ci} />
-                    <button onClick={() => addContactTo(client)} style={{
-                      border: "none", background: (d.name || "").trim() ? "#111111" : "#E4E3DE",
-                      borderRadius: 10, padding: "0 16px", flexShrink: 0, cursor: "pointer",
-                      color: "#fff", fontSize: 13, fontWeight: 600, fontFamily: FONT,
-                    }}>Добавить</button>
-                  </div>
-                </div>
               </div>
-              );
-            })()}
+            )}
           </div>
         )}
       </div>
@@ -1017,19 +831,7 @@ export default function SmartTracker() {
 
         {/* Header */}
         <div style={{ marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: "#B0AFA8", textTransform: "uppercase" }}>{SECTION_TITLE[section] === "База" ? "Клиенты и проекты" : "Рабочий контур"}</div>
-            {sync !== "ok" && (
-              <span style={{
-                fontSize: 9, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase",
-                padding: "2px 7px", borderRadius: 999,
-                color: sync === "error" ? "#B45309" : "#6B6B68",
-                background: sync === "error" ? "#FEF3E2" : "#F0F0EE",
-              }}>
-                {sync === "loading" ? "загрузка" : sync === "error" ? "нет связи" : "локально"}
-              </span>
-            )}
-          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: "#B0AFA8", textTransform: "uppercase", marginBottom: 6 }}>{SECTION_TITLE[section] === "База" ? "Клиенты и проекты" : "Рабочий контур"}</div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111111", margin: 0, letterSpacing: -0.3 }}>
             {section !== "base" ? SECTION_TITLE[section]
               : activeTab === "cities" ? "Город" : activeTab === "divisions" ? "Дивизион" : activeTab === "projects" ? "Проекты" : activeTab === "endclients" ? "Заказчики" : activeTab === "oem" ? "ОЕМ" : "Щитовики"}
@@ -1042,12 +844,22 @@ export default function SmartTracker() {
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 6 }}>
             {[["cities", "Город"], ["divisions", "Дивизион"], ["projects", "Проекты"]].map(([key, label]) => (
-              <Pill key={key} active={activeTab === key} onClick={() => setActiveTab(key)} padding="7px 14px">{label}</Pill>
+              <button key={key} className="pill-btn" onClick={() => setActiveTab(key)} style={{
+                padding: "7px 14px", borderRadius: 999, border: "none",
+                background: activeTab === key ? "#2A2A2A" : "#F0F0EE",
+                color: activeTab === key ? "#fff" : "#6B6B68",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: FONT, letterSpacing: 0.1,
+              }}>{label}</button>
             ))}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["shchitoviki", "Щитовики"], ["oem", "ОЕМ"], ["endclients", "Заказчики"]].map(([key, label]) => (
-              <Pill key={key} active={activeTab === key} onClick={() => setActiveTab(key)} padding="7px 14px">{label}</Pill>
+              <button key={key} className="pill-btn" onClick={() => setActiveTab(key)} style={{
+                padding: "7px 14px", borderRadius: 999, border: "none",
+                background: activeTab === key ? "#2A2A2A" : "#F0F0EE",
+                color: activeTab === key ? "#fff" : "#6B6B68",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: FONT, letterSpacing: 0.1,
+              }}>{label}</button>
             ))}
           </div>
         </div>
@@ -1111,15 +923,13 @@ export default function SmartTracker() {
                           return (
                           <div style={{ background: "#FAFAF8", padding: "10px 14px 14px" }}>
                             <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-                              {["info", "tasks", "files"].map(tab => (
+                              {["info", "files"].map(tab => (
                                 <button key={tab} onClick={(e) => { e.stopPropagation(); setProjectTab(p.id, tab); }} style={{
                                   padding: "5px 12px", borderRadius: 999, border: "none",
                                   background: pTab === tab ? "#111111" : "transparent",
                                   color: pTab === tab ? "#fff" : "#9CA3AF",
                                   fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
-                                }}>{tab === "info" ? "Инфо"
-                                  : tab === "tasks" ? `Задачи${(p.tasks || []).length > 0 ? ` (${(p.tasks || []).length})` : ""}`
-                                  : `Файлы${pFiles.length > 0 ? ` (${pFiles.length})` : ""}`}</button>
+                                }}>{tab === "info" ? "Инфо" : `Файлы${pFiles.length > 0 ? ` (${pFiles.length})` : ""}`}</button>
                               ))}
                               <button onClick={(e) => { e.stopPropagation(); openEditProject(p); }} style={{
                                 marginLeft: "auto", padding: "5px 12px", borderRadius: 999, border: "1px solid #E4E3DE",
@@ -1156,42 +966,6 @@ export default function SmartTracker() {
                             </div>
                             )}
 
-                            {pTab === "tasks" && (
-                              <div onClick={(e) => e.stopPropagation()}>
-                                {(p.tasks || []).length === 0 && (
-                                  <div style={{ fontSize: 12, color: "#B0AFA8", marginBottom: 8 }}>Задач по проекту пока нет.</div>
-                                )}
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-                                  {(p.tasks || []).map(task => (
-                                    <div key={task.id}
-                                      onClick={() => toggleTask({ ...task, src: "project", srcId: p.id })}
-                                      style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 10px", borderRadius: 10, background: "#fff", border: "1px solid #ECECE9", cursor: "pointer" }}>
-                                      <div style={{ width: 16, height: 16, borderRadius: 5, border: "1.5px solid", borderColor: task.done ? "#16794F" : "#D1D1CE", background: task.done ? "#16794F" : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        {task.done && <span style={{ color: "#fff", fontSize: 9, fontWeight: 700 }}>✓</span>}
-                                      </div>
-                                      <span style={{ fontSize: 12.5, color: task.done ? "#B0AFA8" : "#3A3A38", textDecoration: task.done ? "line-through" : "none", lineHeight: 1.5 }}>{task.text}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div style={{ display: "flex", gap: 6 }}>
-                                  <input
-                                    value={draftTask["p" + p.id] || ""}
-                                    onChange={(e) => setDraftT("p" + p.id, e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === "Enter") addTaskTo("p", p); }}
-                                    placeholder="Новая задача по проекту"
-                                    style={{ flex: 1, minWidth: 0, border: "1px solid #ECECE9", borderRadius: 10, background: "#fff", padding: "9px 11px", fontFamily: FONT, fontSize: 16, color: "#111111", outline: "none" }}
-                                  />
-                                  <button onClick={() => addTaskTo("p", p)} style={{
-                                    border: "none", background: (draftTask["p" + p.id] || "").trim() ? "#111111" : "#E4E3DE",
-                                    borderRadius: 10, width: 40, flexShrink: 0, cursor: "pointer", color: "#fff",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                  }}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 6v12M6 12h12" /></svg>
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-
                             {pTab === "files" && (
                               <div onClick={(e) => e.stopPropagation()}>
                                 <label style={{
@@ -1212,7 +986,10 @@ export default function SmartTracker() {
                                         <a href={f.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 600, color: "#111111", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
                                         <div style={{ fontSize: 10, color: "#B0AFA8", marginTop: 1 }}>{catLabel(f.cat)} · {fileSize(f.size)}</div>
                                       </div>
-                                      <CloseX onClick={() => setFiles(prev => prev.filter(x => x.id !== f.id))} />
+                                      <button onClick={() => setFiles(prev => prev.filter(x => x.id !== f.id))} style={{
+                                        border: "none", background: "#F0F0EE", borderRadius: 999, width: 22, height: 22,
+                                        cursor: "pointer", color: "#9CA3AF", fontSize: 13, flexShrink: 0,
+                                      }}>×</button>
                                     </div>
                                   ))}
                                 </div>
@@ -1566,7 +1343,12 @@ export default function SmartTracker() {
             <>
               <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
                 {[["open", "Открытые"], ["done", "Закрытые"], ["all", "Все"]].map(([key, label]) => (
-                  <Pill key={key} active={taskFilter === key} onClick={() => setTaskFilter(key)} padding="7px 14px">{label}</Pill>
+                  <button key={key} className="pill-btn" onClick={() => setTaskFilter(key)} style={{
+                    padding: "7px 14px", borderRadius: 999, border: "none",
+                    background: taskFilter === key ? "#2A2A2A" : "#F0F0EE",
+                    color: taskFilter === key ? "#fff" : "#6B6B68",
+                    fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
+                  }}>{label}</button>
                 ))}
               </div>
 
@@ -1757,7 +1539,12 @@ export default function SmartTracker() {
             <>
               <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
                 {[["all", "Все"], ...FILE_CATS].map(([key, label]) => (
-                  <Pill key={key} active={fileCat === key} onClick={() => setFileCat(key)} padding="7px 14px">{label}</Pill>
+                  <button key={key} className="pill-btn" onClick={() => setFileCat(key)} style={{
+                    padding: "7px 14px", borderRadius: 999, border: "none",
+                    background: fileCat === key ? "#2A2A2A" : "#F0F0EE",
+                    color: fileCat === key ? "#fff" : "#6B6B68",
+                    fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
+                  }}>{label}</button>
                 ))}
               </div>
 
@@ -1798,7 +1585,10 @@ export default function SmartTracker() {
                         )}
                       </div>
                     </div>
-                    <CloseX onClick={() => setFiles(prev => prev.filter(x => x.id !== f.id))} size={26} fontSize={14} />
+                    <button onClick={() => setFiles(prev => prev.filter(x => x.id !== f.id))} style={{
+                      border: "none", background: "#F0F0EE", borderRadius: 999, width: 26, height: 26,
+                      cursor: "pointer", color: "#9CA3AF", fontSize: 14, flexShrink: 0,
+                    }}>×</button>
                   </div>
                 ))}
               </div>
@@ -1851,7 +1641,12 @@ export default function SmartTracker() {
             {q && (
               <div style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto", paddingBottom: 2 }}>
                 {SEARCH_KINDS.filter(([k]) => kindCount(k) > 0).map(([k, label]) => (
-                  <Pill key={k} active={searchKind === k} onClick={() => setSearchKind(k)} padding="6px 12px" fontSize={11.5}>{label} {kindCount(k)}</Pill>
+                  <button key={k} className="pill-btn" onClick={() => setSearchKind(k)} style={{
+                    padding: "6px 12px", borderRadius: 999, border: "none", whiteSpace: "nowrap",
+                    background: searchKind === k ? "#111111" : "#F0F0EE",
+                    color: searchKind === k ? "#fff" : "#6B6B68",
+                    fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
+                  }}>{label} {kindCount(k)}</button>
                 ))}
               </div>
             )}
@@ -1945,7 +1740,12 @@ export default function SmartTracker() {
               {formEditId == null && (
                 <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
                   {[["client", "Клиент"], ["project", "Проект"]].map(([k, label]) => (
-                    <Pill key={k} active={formType === k} onClick={() => setFormType(k)} padding="8px 16px" fontSize={12.5}>{label}</Pill>
+                    <button key={k} className="pill-btn" onClick={() => setFormType(k)} style={{
+                      padding: "8px 16px", borderRadius: 999, border: "none",
+                      background: formType === k ? "#2A2A2A" : "#F0F0EE",
+                      color: formType === k ? "#fff" : "#6B6B68",
+                      fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
+                    }}>{label}</button>
                   ))}
                 </div>
               )}
@@ -2009,7 +1809,12 @@ export default function SmartTracker() {
                   <F label="Тип клиента">
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {SEGMENTS.map(([k, label]) => (
-                        <Pill key={k} active={form.segment === k} onClick={() => setF("segment", k)}>{label}</Pill>
+                        <button key={k} className="pill-btn" onClick={() => setF("segment", k)} style={{
+                          padding: "7px 13px", borderRadius: 999, border: "none", whiteSpace: "nowrap", flexShrink: 0,
+                          background: form.segment === k ? "#2A2A2A" : "#F0F0EE",
+                          color: form.segment === k ? "#fff" : "#6B6B68",
+                          fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
+                        }}>{label}</button>
                       ))}
                     </div>
                   </F>
@@ -2041,7 +1846,10 @@ export default function SmartTracker() {
                                   border: "none", background: "#F0F0EE", borderRadius: 999, padding: "5px 11px",
                                   cursor: "pointer", color: "#6B6B68", fontSize: 11, fontWeight: 600, fontFamily: FONT, flexShrink: 0,
                                 }}>{editing ? "Свернуть" : "Изменить"}</button>
-                                <CloseX onClick={() => removeDivisionKey(key)} size={24} />
+                                <button onClick={() => removeDivisionKey(key)} style={{
+                                  border: "none", background: "#F0F0EE", borderRadius: 999, width: 24, height: 24,
+                                  cursor: "pointer", color: "#9CA3AF", fontSize: 13, flexShrink: 0,
+                                }}>×</button>
                               </div>
                               {editing && (
                                 <div className="reveal" style={{ borderTop: "1px solid #F0F0EE", padding: "12px" }}>
@@ -2058,7 +1866,10 @@ export default function SmartTracker() {
                       <div className="reveal" style={{ border: "1px solid #ECECE9", borderRadius: 12, background: "#fff", padding: 10 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: "#6B6B68" }}>Выбери дивизион</div>
-                          <CloseX onClick={() => setPicker(null)} fontSize={12} />
+                          <button onClick={() => setPicker(null)} style={{
+                            border: "none", background: "#F0F0EE", borderRadius: 999, width: 22, height: 22,
+                            cursor: "pointer", color: "#9CA3AF", fontSize: 12,
+                          }}>×</button>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {DIVISION_GROUPS.filter(g => !(form.divisionKeys || []).includes(g.key)).map(g => (
@@ -2108,18 +1919,29 @@ export default function SmartTracker() {
                           border: "none", background: "#F0F0EE", borderRadius: 999, padding: "5px 11px",
                           cursor: "pointer", color: "#6B6B68", fontSize: 11, fontWeight: 600, fontFamily: FONT, flexShrink: 0,
                         }}>Изменить</button>
-                        <CloseX onClick={() => setF("industry", "")} size={24} />
+                        <button onClick={() => setF("industry", "")} style={{
+                          border: "none", background: "#F0F0EE", borderRadius: 999, width: 24, height: 24,
+                          cursor: "pointer", color: "#9CA3AF", fontSize: 13, flexShrink: 0,
+                        }}>×</button>
                       </div>
                     )}
                     {picker === "industry" && (
                       <div className="reveal" style={{ border: "1px solid #ECECE9", borderRadius: 12, background: "#fff", padding: 10 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: "#6B6B68" }}>Выбери отрасль</div>
-                          <CloseX onClick={() => setPicker(null)} fontSize={12} />
+                          <button onClick={() => setPicker(null)} style={{
+                            border: "none", background: "#F0F0EE", borderRadius: 999, width: 22, height: 22,
+                            cursor: "pointer", color: "#9CA3AF", fontSize: 12,
+                          }}>×</button>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {INDUSTRIES.map(ind => (
-                            <Pill key={ind} active={form.industry === ind} onClick={() => { setF("industry", ind); setPicker(null); }} padding="8px 12px" fontSize={11.5}>{ind}</Pill>
+                            <button key={ind} className="pill-btn" onClick={() => { setF("industry", ind); setPicker(null); }} style={{
+                              padding: "8px 12px", borderRadius: 999, border: "none", cursor: "pointer",
+                              background: form.industry === ind ? "#2A2A2A" : "#F0F0EE",
+                              color: form.industry === ind ? "#fff" : "#6B6B68",
+                              fontSize: 11.5, fontWeight: 600, fontFamily: FONT,
+                            }}>{ind}</button>
                           ))}
                         </div>
                       </div>
@@ -2154,7 +1976,12 @@ export default function SmartTracker() {
               <F label="Статус">
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
                   {STATUSES.map(st => (
-                    <Pill key={st} active={form.status === st} onClick={() => setF("status", st)}>{st}</Pill>
+                    <button key={st} className="pill-btn" onClick={() => setF("status", st)} style={{
+                      padding: "7px 13px", borderRadius: 999, border: "none", whiteSpace: "nowrap", flexShrink: 0,
+                      background: form.status === st ? "#2A2A2A" : "#F0F0EE",
+                      color: form.status === st ? "#fff" : "#6B6B68",
+                      fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
+                    }}>{st}</button>
                   ))}
                 </div>
                 {form.status === "не интересен" && (
