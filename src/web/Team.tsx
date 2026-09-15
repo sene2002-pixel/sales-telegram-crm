@@ -19,6 +19,56 @@ export function Team({
   const [person, setPerson] = useState({ telegramId: '', name: '', role: 'manager', active: true });
   const [showEmployees, setShowEmployees] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit' | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
+  async function exportCsv(inBot = false) {
+    setExportBusy(true);
+    setError('');
+    setExportStatus('');
+    try {
+      if (inBot) {
+        await api('/dashboard/export-bot', 'POST', { from, to });
+        setExportStatus(
+          'CSV отправлен в ваш личный чат с ботом. Откройте чат и сохраните документ.',
+        );
+      } else {
+        const telegram = window.Telegram?.WebApp;
+        if (telegram?.initData) {
+          if (!telegram.downloadFile || !telegram.isVersionAtLeast?.('8.0')) {
+            setExportStatus(
+              'В этой версии Telegram скачивание недоступно. Нажмите «Получить CSV в боте».',
+            );
+            return;
+          }
+          const file = await api<{ url: string; filename: string }>(
+            '/dashboard/export-link',
+            'POST',
+            { from, to },
+          );
+          setExportStatus(
+            'Подтвердите скачивание в Telegram. Если файл не появился, получите его в боте.',
+          );
+          telegram.downloadFile({ url: file.url, file_name: file.filename }, (accepted) => {
+            setExportStatus(
+              accepted
+                ? 'Telegram принял запрос на скачивание. Если файл не появился, получите его в боте.'
+                : 'Скачивание отменено. Можно повторить или получить CSV в боте.',
+            );
+          });
+        } else {
+          await download(
+            `/dashboard/export?from=${from}&to=${to}`,
+            `team-report-${from}-${to}.csv`,
+          );
+          setExportStatus('Файл передан браузеру для скачивания.');
+        }
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExportBusy(false);
+    }
+  }
   useEffect(() => {
     api(`/dashboard?from=${from}&to=${to}`)
       .then(setStats)
@@ -71,16 +121,16 @@ export function Team({
         <Field label="По">
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </Field>
-        <button
-          onClick={() =>
-            download(`/dashboard/export?from=${from}&to=${to}`, 'team-report.csv').catch((e) =>
-              setError(e.message),
-            )
-          }
-        >
+        <button disabled={exportBusy} onClick={() => void exportCsv()}>
           Экспорт CSV
         </button>
+        {!user.telegramId.startsWith('dev-') && (
+          <button disabled={exportBusy} onClick={() => void exportCsv(true)}>
+            Получить CSV в боте
+          </button>
+        )}
       </div>
+      {exportStatus && <p role="status">{exportStatus}</p>}
       <p className="muted">
         Контакты и выполненные задачи — за период. Компании, открытые и просроченные задачи — на
         текущий момент.

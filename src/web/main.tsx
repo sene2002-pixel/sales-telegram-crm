@@ -15,6 +15,11 @@ declare global {
         initData: string;
         ready: () => void;
         expand: () => void;
+        isVersionAtLeast?: (version: string) => boolean;
+        downloadFile?: (
+          params: { url: string; file_name: string },
+          callback?: (accepted: boolean) => void,
+        ) => void;
         BackButton?: {
           show: () => void;
           hide: () => void;
