@@ -761,6 +761,46 @@ function message(text: string, from = 22222) {
     },
   };
 }
+for (const from of [22222, 99999])
+  test(`[BOT-04] /myid returns only sender ID without provisioning (${from})`, async () => {
+    const before = await db.query('SELECT * FROM users ORDER BY id');
+    const { bot, messages } = fakeBot();
+    await bot.handle(message('/myid', from));
+    await bot.handle(message('/myid@crm_test_bot 44444', from));
+    assert.equal(messages.length, 2);
+    for (const reply of messages) {
+      assert.equal(reply.chatId, String(from));
+      assert.ok(reply.text.includes(`Telegram ID: ${from}\n`));
+      assert.doesNotMatch(reply.text, /44444/);
+      assert.equal(reply.reply_markup, undefined);
+    }
+    assert.deepEqual(await db.query('SELECT * FROM users ORDER BY id'), before);
+    assert.equal((await s.reports.list(actors.admin)).length, 0);
+    if (from === 99999) {
+      await bot.handle(message('/crm', from));
+      assert.match(messages[2].text, /Доступ не выдан/);
+    }
+  });
+test('[BOT-04] /myid works for blocked users without reactivating access', async () => {
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actors.manager.id]);
+  const { bot, messages } = fakeBot();
+  await bot.handle(message('/myid'));
+  assert.match(messages[0].text, /Telegram ID: 22222/);
+  await assert.rejects(s.auth.byTelegram('22222'));
+  assert.equal((await s.reports.list(actors.admin)).length, 0);
+});
+test('[BOT-04] /myid never replies in groups or mismatched private chats', async () => {
+  const { bot, messages } = fakeBot();
+  for (const type of ['group', 'supergroup', 'channel']) {
+    const update = message('/myid');
+    update.message.chat.type = type;
+    await bot.handle(update);
+  }
+  const mismatch = message('/myid');
+  mismatch.message.chat.id = 44444;
+  await bot.handle(mismatch);
+  assert.equal(messages.length, 0);
+});
 for (const command of ['/start', '/help', '/crm', '/tasks'])
   test(`[BOT-01] ${command}: meaningful response, app button and scoped tasks`, async () => {
     await s.crm.createRecord(actors.manager, own.id, 'task', { text: 'Своя задача' });

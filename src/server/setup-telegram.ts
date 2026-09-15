@@ -15,6 +15,7 @@ async function main() {
       { command: 'help', description: 'Как отправить отчёт' },
       { command: 'crm', description: 'Открыть CRM' },
       { command: 'tasks', description: 'Мои задачи' },
+      { command: 'myid', description: 'Узнать свой Telegram ID' },
     ],
   });
   await telegram.call('setChatMenuButton', {

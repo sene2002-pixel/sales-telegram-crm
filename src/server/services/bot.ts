@@ -61,6 +61,14 @@ export class BotService {
     if (!chat || !from || chat.type !== 'private' || chat.id !== from.id) return { ok: true };
     const chatId = String(chat.id);
     try {
+      const command = msg?.text?.split(/\s/)[0]?.split('@')[0];
+      // Public self-identification only: no user provisioning or CRM access.
+      if (!callback && command === '/myid') {
+        await this.telegram.send(chatId, {
+          text: `Ваш Telegram ID: ${from.id}\nПередайте его администратору CRM для выдачи доступа. Эта команда сама по себе не предоставляет доступ к CRM.`,
+        });
+        return { ok: true };
+      }
       const actor = await this.auth.byTelegram(String(from.id), from.first_name);
       if (callback) {
         const [action, id, version] = (callback.data || '').split(':');
@@ -72,7 +80,6 @@ export class BotService {
         });
         return { ok: true };
       }
-      const command = msg?.text?.split(/\s/)[0]?.split('@')[0];
       if (command === '/crm')
         await this.telegram.send(chatId, {
           text: 'Ваши компании, задачи и отчёты',
@@ -80,7 +87,7 @@ export class BotService {
         });
       else if (command === '/start' || command === '/help')
         await this.telegram.send(chatId, {
-          text: 'Отправьте голосовое или текст: компания, с кем общались, результат и следующий шаг со сроком. Я подготовлю черновик, вы проверите и сохраните. /crm — база, /tasks — открытые задачи. Аудио передаётся сервису распознавания; не отправляйте лишние персональные данные.',
+          text: 'Отправьте голосовое или текст: компания, с кем общались, результат и следующий шаг со сроком. Я подготовлю черновик, вы проверите и сохраните. /crm — база, /tasks — открытые задачи, /myid — ваш Telegram ID. Аудио передаётся сервису распознавания; не отправляйте лишние персональные данные.',
           reply_markup: this.telegram.appButton(),
         });
       else if (command === '/tasks') {
