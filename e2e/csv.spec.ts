@@ -1,14 +1,18 @@
 import { test, expect } from '@playwright/test';
 
+// Reuse the demo session within this worker to respect the real login rate limit.
+let demoSession: any;
 test.beforeEach(async ({ page }) => {
   await page.route('https://telegram.org/js/telegram-web-app.js*', (route) =>
     route.fulfill({ body: '', contentType: 'application/javascript' }),
   );
   await page.route('**/api/auth/dev', async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    data.user.telegramId = '123456';
-    await route.fulfill({ response, json: data });
+    if (!demoSession) {
+      const response = await route.fetch();
+      demoSession = await response.json();
+      demoSession.user.telegramId = '123456';
+    }
+    await route.fulfill({ json: demoSession });
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Администратор', exact: true }).click();
