@@ -93,7 +93,6 @@ export function LetterForm({
                 signature.workPhone,
                 signature.mobilePhone,
                 signature.email,
-                'www.elcomspb.ru',
               ]
                 .filter(Boolean)
                 .join('\n')}

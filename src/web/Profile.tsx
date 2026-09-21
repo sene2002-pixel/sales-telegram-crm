@@ -115,7 +115,6 @@ export function Profile() {
               />
             </Field>
           ))}
-          <p>Сайт в подписи: www.elcomspb.ru</p>
           <button
             className="primary"
             disabled={busy || !signature.lastName.trim() || !signature.firstName.trim()}
