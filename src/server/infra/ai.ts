@@ -11,7 +11,7 @@ export interface ReportExtractor {
 }
 export class OpenAiAdapter implements SpeechToText, ReportExtractor {
   constructor(private config: Config) {}
-  private async request(path: string, body: BodyInit, multipart = false) {
+  async request(path: string, body: BodyInit, multipart = false) {
     requireCondition(
       this.config.apiKey,
       503,

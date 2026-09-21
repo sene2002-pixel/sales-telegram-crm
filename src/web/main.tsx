@@ -7,6 +7,7 @@ import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
 import { Team } from './Team';
 import { RoleGuide } from './RoleGuide';
+import { Profile } from './Profile';
 import './styles.css';
 declare global {
   interface Window {
@@ -183,6 +184,7 @@ function App() {
     ['calendar', 'Календарь', '▦'],
     ['projects', 'Проекты', '▱'],
     ['files', 'Файлы', '▤'],
+    ['profile', 'Мой профиль', '○'],
     ...(user.role !== 'manager' ? [['team', 'Команда', '◎']] : []),
   ];
   const visible = companies.filter(
@@ -421,6 +423,7 @@ function App() {
           </>
         )}
         {tab === 'reports' && <Reports companies={companies} onChanged={refresh} />}
+        {tab === 'profile' && <Profile key={user.id} />}
         {tab === 'tasks' && (
           <>
             <p className="eyebrow">СЛЕДУЮЩИЙ ШАГ</p>

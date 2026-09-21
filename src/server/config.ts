@@ -18,6 +18,7 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     apiKey: env.OPENAI_API_KEY || '',
     transcriptionModel: env.TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe',
     extractionModel: env.EXTRACTION_MODEL || 'gpt-4o-mini',
+    letterModel: env.LETTER_MODEL || 'gpt-4.1-mini',
     worker: env.WORKER_ENABLED !== 'false',
     timezone: env.REPORT_TIMEZONE || 'Europe/Moscow',
     maxVoiceBytes: Number(env.MAX_VOICE_BYTES || 20_000_000),

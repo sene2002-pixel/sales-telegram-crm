@@ -9,6 +9,7 @@ import {
 } from '../shared/contracts';
 import { api, download, money } from './api';
 import { CompanyForm, Field, Modal, RecordForm } from './forms';
+import { LetterForm } from './LetterForm';
 const names: Record<RecordKind, string> = {
   task: 'Задачи',
   contact: 'Контакты',
@@ -100,6 +101,18 @@ export function CompanyDetail({
         </div>
       )}
       {c.notes && <p className="preserve">{c.notes}</p>}
+      {!c.archived && (
+        <LetterForm
+          key={c.id}
+          companyId={c.id}
+          contacts={detail.records.filter((r) => r.kind === 'contact')}
+          onCreated={async () => {
+            await refresh();
+            setTab('file');
+            await onChanged();
+          }}
+        />
+      )}
       <button onClick={() => setEdit(!edit)}>
         {edit ? 'Скрыть форму' : 'Редактировать компанию'}
       </button>

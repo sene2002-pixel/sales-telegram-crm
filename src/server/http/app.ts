@@ -38,6 +38,7 @@ import { ReportWorker } from '../services/worker';
 import { BotService } from '../services/bot';
 import { DashboardService } from '../services/dashboard';
 import { ExportService } from '../services/exports';
+import { LetterService } from '../services/letters';
 import { TelegramAdapter } from '../infra/telegram';
 import { OpenAiAdapter } from '../infra/ai';
 import { DomainError, requireCondition } from '../domain/errors';
@@ -51,12 +52,14 @@ export class Services {
   bot: BotService;
   dashboard: DashboardService;
   exports: ExportService;
+  letters: LetterService;
   constructor(
     public db: Database,
     public config: Config,
   ) {
     this.auth = new AuthService(db, config);
     this.crm = new CrmService(db);
+    this.letters = new LetterService(this.crm, config);
     this.reports = new ReportService(db, this.crm);
     const telegram = new TelegramAdapter(config),
       ai = new OpenAiAdapter(config);
@@ -153,6 +156,26 @@ class PublicController {
 @UseGuards(AuthGuard)
 class CrmController {
   constructor(@Inject(Services) private s: Services) {}
+  @Get('me/letter-signature') signature(@Req() r: AuthedRequest) {
+    return this.s.letters.signature(r.actor).then((signature) => ({ signature }));
+  }
+  @Post('me/letter-signature') saveSignature(@Req() r: AuthedRequest, @Body() b: unknown) {
+    return this.s.letters.saveSignature(r.actor, b);
+  }
+  @Post('me/letter-signature/recognize')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0 } }),
+  )
+  recognize(@UploadedFile() file: Express.Multer.File) {
+    return this.s.letters.recognize(file);
+  }
+  @Post('companies/:id/letters') letter(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.s.letters.create(r.actor, id, b);
+  }
   @Post('dashboard/export-link') exportLink(@Req() r: AuthedRequest, @Body() body: unknown) {
     const input = z.object({ from: z.string(), to: z.string() }).strict().parse(body);
     return this.s.exports.issue(r.actor, input.from, input.to);

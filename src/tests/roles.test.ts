@@ -15,6 +15,124 @@ import { TelegramAdapter } from '../server/infra/telegram';
 import { ReportWorker } from '../server/services/worker';
 import { DomainError } from '../server/domain/errors';
 import { ExportService } from '../server/services/exports';
+import { readFile } from 'node:fs/promises';
+
+test(
+  'Letters: renders PDF, persists company file and reserves unique numbers',
+  { skip: !process.env.LETTER_PYTHON },
+  async () => {
+    const contact = await s.crm.createRecord(actors.manager, own.id, 'contact', {
+      name: 'Иванов Иван Иванович',
+      role: 'Директор',
+    });
+    await s.letters.saveSignature(actors.manager, {
+      lastName: 'Петров',
+      firstName: 'Пётр',
+      patronymic: '',
+      workPhone: '',
+      mobilePhone: '',
+      email: '',
+    });
+    const fixture = JSON.parse(await readFile('assets/esq/data_example.json', 'utf8'));
+    const original = s.letters.ai.request;
+    s.letters.ai.request = async () => ({
+      status: 'completed',
+      output: [
+        {
+          content: [
+            {
+              type: 'output_text',
+              text: JSON.stringify({
+                recipient_lines: fixture.recipient_lines,
+                references_paragraph: fixture.references_paragraph,
+                sources: ['https://example.com'],
+              }),
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const result = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+        contactId: contact.id,
+      }).expect(201);
+      const file = await api(actors.manager, 'get', `/files/${result.body.record.id}`).expect(200);
+      assert.equal(file.body.subarray(0, 5).toString(), '%PDF-');
+      await api(other, 'get', `/files/${result.body.record.id}`).expect(404);
+      const second = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+        contactId: contact.id,
+      }).expect(201);
+      assert.notEqual(second.body.record.data.name, result.body.record.data.name);
+    } finally {
+      s.letters.ai.request = original;
+    }
+  },
+);
+
+test('Letters: no contacts, foreign contacts and private confirmed signatures', async () => {
+  await request(server).post('/api/me/letter-signature').send({}).expect(401);
+  const absent = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: randomUUID(),
+  }).expect(400);
+  assert.match(absent.body.message, /хотя бы один контакт/);
+  await api(other, 'post', `/companies/${own.id}/letters`, { contactId: randomUUID() }).expect(404);
+  const contact = await s.crm.createRecord(actors.manager, own.id, 'contact', {
+    name: 'Иванов Иван Иванович',
+    role: 'Директор',
+  });
+  await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: randomUUID(),
+  }).expect(400);
+  const missing = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: contact.id,
+  }).expect(400);
+  assert.match(missing.body.message, /подпись/);
+  const signature = {
+    lastName: 'Петров',
+    firstName: 'Пётр',
+    patronymic: '',
+    workPhone: '123',
+    mobilePhone: '',
+    email: 'test@example.com',
+  };
+  await api(actors.manager, 'post', '/me/letter-signature', signature).expect(201);
+  const saved = await api(actors.manager, 'get', '/me/letter-signature').expect(200);
+  assert.deepEqual(saved.body.signature, signature);
+  const isolated = await api(other, 'get', '/me/letter-signature').expect(200);
+  assert.equal(isolated.body.signature, null);
+  await api(actors.manager, 'post', '/me/letter-signature', {
+    ...signature,
+    userId: other.id,
+  }).expect(400);
+  await api(actors.manager, 'post', '/me/letter-signature/recognize')
+    .attach('file', Buffer.from('not an image'), 'card.jpg')
+    .expect(400);
+});
+
+test('Letters: recognition stays a draft until explicitly saved', async () => {
+  const signature = {
+    lastName: 'Иванов',
+    firstName: 'Иван',
+    patronymic: '',
+    workPhone: '',
+    mobilePhone: '',
+    email: '',
+  };
+  const original = s.letters.ai.request;
+  s.letters.ai.request = async () => ({
+    status: 'completed',
+    output: [{ content: [{ type: 'output_text', text: JSON.stringify(signature) }] }],
+  });
+  try {
+    const result = await api(actors.manager, 'post', '/me/letter-signature/recognize')
+      .attach('file', Buffer.from([255, 216, 255, 0]), 'card.jpg')
+      .expect(201);
+    assert.deepEqual(result.body, signature);
+    assert.equal(await s.letters.signature(actors.manager), null);
+  } finally {
+    s.letters.ai.request = original;
+  }
+});
 
 test('CSV download: leaders only, authenticated creation, strict parameters', async () => {
   const body = { from: '2026-09-01', to: '2026-09-15' };

@@ -39,6 +39,13 @@ export class Database implements Sql {
         content text NOT NULL,
         expires_at timestamptz NOT NULL
       )`);
+      await tx.query(`CREATE TABLE IF NOT EXISTS letter_signatures (
+        user_id uuid PRIMARY KEY REFERENCES users(id), data jsonb NOT NULL
+      )`);
+      await tx.query(`CREATE TABLE IF NOT EXISTS letter_numbers (
+        user_id uuid REFERENCES users(id), number integer NOT NULL,
+        PRIMARY KEY(user_id,number)
+      )`);
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {
