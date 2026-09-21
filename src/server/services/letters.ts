@@ -23,14 +23,28 @@ const line = z
   .min(1)
   .max(120)
   .refine((v) => !/[<>\r\n]/.test(v));
-const letterSchema = z.object({
+export const letterSchema = z.object({
   recipient_lines: z.array(line).min(2).max(3),
   references_paragraph: z
     .string()
     .min(100)
     .max(420)
     .refine((v) => !/[<>]/.test(v)),
-  sources: z.array(z.string().url()).min(1).max(8),
+  // OpenAI Structured Outputs does not support JSON Schema format: uri.
+  // Keep URL validation local instead of emitting that format in the request.
+  sources: z
+    .array(
+      z.string().refine((value) => {
+        try {
+          const url = new URL(value);
+          return ['http:', 'https:'].includes(url.protocol);
+        } catch {
+          return false;
+        }
+      }, 'Некорректная ссылка на источник'),
+    )
+    .min(1)
+    .max(8),
 });
 export class LetterService {
   private active = new Set<string>();

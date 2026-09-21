@@ -26,7 +26,24 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
       body,
       signal: AbortSignal.timeout(90_000),
     });
-    requireCondition(response.ok, 502, `Сервис ИИ недоступен (HTTP ${response.status})`);
+    if (!response.ok) {
+      const failure = (await response.json().catch(() => null)) as any;
+      // Never expose the provider's raw message: it may contain request data.
+      const code = failure?.error?.code;
+      const param = failure?.error?.param;
+      const reason =
+        code === 'invalid_json_schema' ||
+        (typeof param === 'string' && param.startsWith('text.format'))
+          ? 'ИИ отклонил формат данных письма или отчёта'
+          : param === 'model' || code === 'model_not_found'
+            ? 'Выбранная модель ИИ недоступна или не поддерживается'
+            : typeof param === 'string' && (param.startsWith('tools') || param === 'tool_choice')
+              ? 'ИИ отклонил настройки поиска'
+              : response.status === 400
+                ? 'ИИ отклонил параметры запроса'
+                : 'Сервис ИИ недоступен';
+      requireCondition(false, 502, `${reason} (HTTP ${response.status})`);
+    }
     return response.json() as Promise<any>;
   }
   async transcribe(audio: Uint8Array) {
