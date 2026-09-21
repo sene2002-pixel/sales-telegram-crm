@@ -20,6 +20,45 @@ export class TelegramAdapter implements Messenger {
     return result.result;
   }
   async send(chatId: string, payload: any) {
+    // The menu can be updated independently (e.g. by a dynamic tunnel sync).
+    // Resolve the plain CRM button when sending, not from a stale PUBLIC_URL.
+    const keyboard = payload.reply_markup?.inline_keyboard;
+    const isCrmButton = (button: any) =>
+      button.text === 'Открыть CRM' && button.web_app?.url === this.config.publicUrl;
+    if (keyboard?.some((row: any[]) => row.some(isCrmButton))) {
+      let url: string | undefined;
+      try {
+        let menu = await this.call('getChatMenuButton', { chat_id: chatId });
+        if (menu?.type === 'default') menu = await this.call('getChatMenuButton', {});
+        if (menu?.type === 'web_app') {
+          const parsed = new URL(menu.web_app.url);
+          if (parsed.protocol === 'https:' && !parsed.username && !parsed.password)
+            url = menu.web_app.url;
+        }
+      } catch {
+        // Do not send a known potentially outdated address when lookup fails.
+      }
+      payload = {
+        ...payload,
+        ...(!url
+          ? { text: `${payload.text}\nОткройте CRM кнопкой меню рядом с полем сообщения.` }
+          : {}),
+        reply_markup: {
+          ...payload.reply_markup,
+          inline_keyboard: keyboard
+            .map((row: any[]) =>
+              row.flatMap((button) =>
+                isCrmButton(button)
+                  ? url
+                    ? [{ ...button, web_app: { ...button.web_app, url } }]
+                    : []
+                  : [button],
+              ),
+            )
+            .filter((row: any[]) => row.length),
+        },
+      };
+    }
     await this.call('sendMessage', { chat_id: chatId, ...payload });
   }
   async sendDocument(chatId: string, content: string, filename: string) {
