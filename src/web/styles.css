@@ -565,6 +565,7 @@ nav .active {
 }
 .letter-composer {
   container-type: inline-size;
+  margin: 18px 0;
 }
 .letter-form {
   display: grid;

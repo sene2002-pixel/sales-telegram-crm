@@ -14,6 +14,7 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await page.getByRole('button', { name: '+ Компания', exact: true }).click();
   await page.getByLabel('Название', { exact: true }).fill('Письма ' + Date.now());
   await page.getByRole('button', { name: 'Сохранить компанию' }).click();
+  await expect(page.locator('.letter-composer')).not.toHaveClass(/inset/);
   await page.getByRole('button', { name: 'Создать письмо', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('необходимо добавить хотя бы один контакт');
   await page.getByRole('button', { name: 'Контакты', exact: true }).click();
@@ -40,6 +41,13 @@ test('letter contact validation and editable signature', async ({ page }) => {
   const signatureSelect = page.getByRole('combobox', { name: 'Моя подпись', exact: true });
   await expect(signatureSelect).toBeVisible();
   const composer = page.locator('.letter-composer');
+  await expect(composer).toHaveClass(/inset/);
+  await composer.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(composer).not.toHaveClass(/inset/);
+  await expect(signatureSelect).toHaveCount(0);
+  await composer.getByRole('button', { name: 'Создать письмо', exact: true }).click();
+  await expect(composer).toHaveClass(/inset/);
+  await expect(signatureSelect).toBeVisible();
   expect(await composer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   const actionButtons = composer.locator('.letter-actions button');
   const primaryBox = (await actionButtons.nth(0).boundingBox())!;

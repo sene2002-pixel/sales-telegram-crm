@@ -46,7 +46,7 @@ export function LetterForm({
     }
   }
   return (
-    <section className="inset letter-composer">
+    <section className={`letter-composer${open ? ' inset' : ''}`}>
       <button
         disabled={busy}
         onClick={() => {
