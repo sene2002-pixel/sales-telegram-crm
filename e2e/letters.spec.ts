@@ -37,11 +37,11 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await expect(page.getByLabel('Получатель письма')).not.toHaveValue('');
   await expect(page.getByRole('button', { name: 'Редактировать подпись' })).toHaveCount(0);
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Моя подпись', exact: true }).click();
-  await expect(page.getByRole('group', { name: 'Выбор подписи' }).getByRole('button')).toHaveCount(
-    1,
-  );
-  await page.getByRole('button', { name: '+ Добавить подпись', exact: true }).click();
+  const signatureSelect = page.getByRole('combobox', { name: 'Моя подпись', exact: true });
+  await expect(signatureSelect).toBeVisible();
+  const recipientHeight = (await page.getByLabel('Получатель письма').boundingBox())!.height;
+  expect((await signatureSelect.boundingBox())!.height).toBeLessThanOrEqual(recipientHeight + 2);
+  await signatureSelect.selectOption('add');
   await expect(page.getByRole('heading', { name: 'Добавить подпись' })).toBeVisible();
   await page.getByLabel('Фото визитки', { exact: false }).setInputFiles({
     name: 'card.jpg',

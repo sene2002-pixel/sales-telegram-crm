@@ -20,8 +20,7 @@ export function LetterForm({
     [signatures, setSignatures] = useState<SavedSignature[]>([]),
     [signatureId, setSignatureId] = useState(''),
     [message, setMessage] = useState('');
-  const [choosing, setChoosing] = useState(false),
-    [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(false);
   const signature = signatures.find((s) => s.id === signatureId);
   if (creating)
     return (
@@ -32,7 +31,6 @@ export function LetterForm({
           setSignatures((old) => [...old.filter((s) => s.id !== value.id), value]);
           setSignatureId(value.id);
           setCreating(false);
-          setChoosing(false);
         }}
       />
     );
@@ -76,7 +74,7 @@ export function LetterForm({
       )}
       {message && <p role="status">{message}</p>}
       {open && (
-        <div className="form-grid">
+        <div className="form-grid" style={{ alignItems: 'start' }}>
           <Field label="Получатель письма">
             <select
               disabled={busy}
@@ -91,39 +89,32 @@ export function LetterForm({
               ))}
             </select>
           </Field>
-          <button
-            type="button"
-            disabled={busy}
-            aria-expanded={choosing}
-            onClick={() => setChoosing(!choosing)}
-          >
-            Моя подпись
-          </button>
-          {choosing && (
-            <div className="inset" role="group" aria-label="Выбор подписи">
+          <Field label="Моя подпись">
+            <select
+              disabled={busy}
+              value={signatureId}
+              onChange={(e) => {
+                if (e.target.value === 'add') {
+                  setCreating(true);
+                  return;
+                }
+                setSignatureId(e.target.value);
+              }}
+            >
+              <option value="" hidden={!signatures.length}>
+                {signatures.length ? 'Выберите подпись' : '+ Добавить подпись'}
+              </option>
               {signatures.map((s) => (
-                <button
-                  type="button"
-                  key={s.id}
-                  aria-pressed={signatureId === s.id}
-                  onClick={() => {
-                    setSignatureId(s.id);
-                    setChoosing(false);
-                  }}
-                >
-                  {s.lastName} {s.firstName} {s.patronymic}
+                <option key={s.id} value={s.id}>
+                  {[s.lastName, s.firstName, s.patronymic].filter(Boolean).join(' ')}
                   {s.email ? ' · ' + s.email : ''}
-                </button>
+                </option>
               ))}
-              {signatures.length < maxSignatures && (
-                <button type="button" onClick={() => setCreating(true)}>
-                  + Добавить подпись
-                </button>
-              )}
-            </div>
-          )}
+              {signatures.length < maxSignatures && <option value="add">+ Добавить подпись</option>}
+            </select>
+          </Field>
           {signature ? (
-            <p className="preserve">
+            <p className="preserve" style={{ gridColumn: '1 / -1' }}>
               {[
                 'С уважением,',
                 [signature.lastName, signature.firstName, signature.patronymic]
