@@ -561,6 +561,62 @@ nav .active {
 .records strong {
   font-size: 13px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.letter-composer {
+  container-type: inline-size;
+}
+.letter-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.letter-form .field,
+.letter-form select {
+  min-width: 0;
+  width: 100%;
+}
+.letter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+}
+.letter-actions button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+.letter-actions .primary {
+  flex: 1;
+}
+.file-details {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+.file-details small {
+  margin-top: 0;
+}
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.file-actions button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+@container (max-width: 420px) {
+  .letter-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .letter-actions {
+    flex-direction: column;
+  }
+  .letter-actions button {
+    width: 100%;
+    white-space: normal;
+  }
 }
 .records small {
   display: block;

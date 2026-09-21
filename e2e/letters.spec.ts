@@ -39,6 +39,12 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveCount(0);
   const signatureSelect = page.getByRole('combobox', { name: 'Моя подпись', exact: true });
   await expect(signatureSelect).toBeVisible();
+  const composer = page.locator('.letter-composer');
+  expect(await composer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const actionButtons = composer.locator('.letter-actions button');
+  const primaryBox = (await actionButtons.nth(0).boundingBox())!;
+  const cancelBox = (await actionButtons.nth(1).boundingBox())!;
+  expect(Math.abs(primaryBox.height - cancelBox.height)).toBeLessThanOrEqual(1);
   const recipientHeight = (await page.getByLabel('Получатель письма').boundingBox())!.height;
   expect((await signatureSelect.boundingBox())!.height).toBeLessThanOrEqual(recipientHeight + 2);
   await signatureSelect.selectOption('add');

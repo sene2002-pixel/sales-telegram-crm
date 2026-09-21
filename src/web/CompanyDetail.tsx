@@ -322,19 +322,24 @@ export function CompanyDetail({
                     </button>
                   )}
                   {tab === 'file' && (
-                    <div className="actions">
+                    <div className="file-details">
                       <small>
                         {labels[r.data.category]} · {Math.ceil(r.data.size / 1024)} КБ
                       </small>
-                      <button onClick={() => run(() => download(`/files/${r.id}`, r.data.name))}>
-                        Скачать
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() => run(() => api(`/files/${r.id}`, 'DELETE'))}
-                      >
-                        В архив
-                      </button>
+                      <div className="file-actions">
+                        <button
+                          disabled={busy}
+                          onClick={() => run(() => download(`/files/${r.id}`, r.data.name))}
+                        >
+                          Скачать
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => run(() => api(`/files/${r.id}`, 'DELETE'))}
+                        >
+                          В архив
+                        </button>
+                      </div>
                     </div>
                   )}
                   {tab === 'contact' &&

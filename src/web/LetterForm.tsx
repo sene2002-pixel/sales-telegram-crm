@@ -46,7 +46,7 @@ export function LetterForm({
     }
   }
   return (
-    <section className="inset">
+    <section className="inset letter-composer">
       <button
         disabled={busy}
         onClick={() => {
@@ -74,7 +74,7 @@ export function LetterForm({
       )}
       {message && <p role="status">{message}</p>}
       {open && (
-        <div className="form-grid" style={{ alignItems: 'start' }}>
+        <div className="letter-form">
           <Field label="Получатель письма">
             <select
               disabled={busy}
@@ -113,23 +113,25 @@ export function LetterForm({
               {signatures.length < maxSignatures && <option value="add">+ Добавить подпись</option>}
             </select>
           </Field>
-          <button
-            className="primary"
-            disabled={busy || !signature || !contactId}
-            onClick={() =>
-              void run(async () => {
-                await api(`/companies/${companyId}/letters`, 'POST', { contactId, signatureId });
-                await onCreated();
-                setOpen(false);
-                setMessage('Письмо сохранено в разделе «Файлы» компании.');
-              })
-            }
-          >
-            {busy ? 'Обработка…' : 'Сформировать PDF и сохранить'}
-          </button>
-          <button disabled={busy} onClick={() => setOpen(false)}>
-            Отмена
-          </button>
+          <div className="letter-actions">
+            <button
+              className="primary"
+              disabled={busy || !signature || !contactId}
+              onClick={() =>
+                void run(async () => {
+                  await api(`/companies/${companyId}/letters`, 'POST', { contactId, signatureId });
+                  await onCreated();
+                  setOpen(false);
+                  setMessage('Письмо сохранено в разделе «Файлы» компании.');
+                })
+              }
+            >
+              {busy ? 'Обработка…' : 'Сформировать PDF и сохранить'}
+            </button>
+            <button disabled={busy} onClick={() => setOpen(false)}>
+              Отмена
+            </button>
+          </div>
         </div>
       )}
     </section>
