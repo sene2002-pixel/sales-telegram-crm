@@ -32,6 +32,7 @@ import { z, ZodError } from 'zod';
 import { Config } from '../config';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
+import { FileDownloads } from '../services/file-downloads';
 import { AuthService } from '../services/auth';
 import { CrmService } from '../services/crm';
 import { ReportService, mapReport } from '../services/reports';
@@ -46,6 +47,7 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shared/contracts';
 
 export class Services {
+  fileDownloads: FileDownloads;
   errors: ErrorLog;
   auth: AuthService;
   crm: CrmService;
@@ -62,6 +64,7 @@ export class Services {
     this.errors = new ErrorLog(db);
     this.auth = new AuthService(db, config);
     this.crm = new CrmService(db);
+    this.fileDownloads = new FileDownloads(this.crm, config);
     this.letters = new LetterService(this.crm, config);
     this.reports = new ReportService(db, this.crm);
     const telegram = new TelegramAdapter(config, this.errors),
@@ -125,6 +128,23 @@ class Errors implements ExceptionFilter {
 @Controller('api')
 class PublicController {
   constructor(@Inject(Services) private s: Services) {}
+  @Get('downloads/files/:token') async fileDownload(
+    @Param('token') token: string,
+    @Res() res: Response,
+  ) {
+    res.set({
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'Access-Control-Allow-Origin': 'https://web.telegram.org',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    const file = await this.s.fileDownloads.read(token);
+    await new Promise<void>((resolve, reject) => {
+      res
+        .type(file.mime)
+        .download(file.path, file.filename, (error) => (error ? reject(error) : resolve()));
+    });
+  }
   @Get('downloads/csv/:token') async csvDownload(
     @Param('token') token: string,
     @Res() res: Response,
@@ -165,6 +185,9 @@ class PublicController {
 @UseGuards(AuthGuard)
 class CrmController {
   constructor(@Inject(Services) private s: Services) {}
+  @Post('files/:id/download-link') downloadLink(@Req() r: AuthedRequest, @Param('id') id: string) {
+    return this.s.fileDownloads.issue(r.actor, id);
+  }
   @Get('me/letter-signatures') signatures(@Req() r: AuthedRequest) {
     return this.s.letters.signatures(r.actor);
   }

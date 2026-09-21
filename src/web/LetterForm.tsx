@@ -113,23 +113,6 @@ export function LetterForm({
               {signatures.length < maxSignatures && <option value="add">+ Добавить подпись</option>}
             </select>
           </Field>
-          {signature ? (
-            <p className="preserve" style={{ gridColumn: '1 / -1' }}>
-              {[
-                'С уважением,',
-                [signature.lastName, signature.firstName, signature.patronymic]
-                  .filter(Boolean)
-                  .join(' '),
-                signature.workPhone,
-                signature.mobilePhone,
-                signature.email,
-              ]
-                .filter(Boolean)
-                .join('\n')}
-            </p>
-          ) : signatures.length > 0 ? (
-            <p>Выберите подпись для письма.</p>
-          ) : null}
           <button
             className="primary"
             disabled={busy || !signature || !contactId}

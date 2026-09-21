@@ -348,6 +348,37 @@ test('file uploads and downloads are persistent and protected', async () => {
     .set('Authorization', 'Bearer ' + managerToken)
     .expect(200);
   assert.equal(downloaded.body.toString(), 'CRM test file');
+  const linkPath = `/api/files/${uploaded.body.id}/download-link`;
+  await request(server).post(linkPath).expect(401);
+  await request(server)
+    .post(linkPath)
+    .set('Authorization', 'Bearer ' + otherToken)
+    .expect(404);
+  const issued = await request(server)
+    .post(linkPath)
+    .set('Authorization', 'Bearer ' + managerToken)
+    .expect(201);
+  assert.match(issued.body.path, /^\/api\/downloads\/files\/[a-f0-9]{64}$/);
+  const publicFile = await request(server).get(issued.body.path).expect(200);
+  assert.equal(publicFile.body.toString(), 'CRM test file');
+  assert.match(publicFile.headers['content-disposition'] || '', /attachment/);
+  assert.equal(publicFile.headers['cache-control'], 'no-store');
+  const [storedLink] = await db.query('SELECT * FROM file_downloads WHERE file_id=$1', [
+    uploaded.body.id,
+  ]);
+  assert.notEqual(storedLink.token_hash, issued.body.path.split('/').pop());
+  await db.query('UPDATE users SET active=false WHERE id=$1', [manager.id]);
+  await request(server).get(issued.body.path).expect(404);
+  await db.query('UPDATE users SET active=true WHERE id=$1', [manager.id]);
+  await db.query(
+    "UPDATE file_downloads SET expires_at=now()-interval '1 second' WHERE file_id=$1",
+    [uploaded.body.id],
+  );
+  await request(server).get(issued.body.path).expect(404);
+  const fresh = await request(server)
+    .post(linkPath)
+    .set('Authorization', 'Bearer ' + managerToken)
+    .expect(201);
   await request(server)
     .delete(`/api/files/${uploaded.body.id}`)
     .set('Authorization', 'Bearer ' + managerToken)
@@ -356,6 +387,7 @@ test('file uploads and downloads are persistent and protected', async () => {
     .get(`/api/files/${uploaded.body.id}`)
     .set('Authorization', 'Bearer ' + managerToken)
     .expect(404);
+  await request(server).get(fresh.body.path).expect(404);
 });
 test('dashboard is supervisor-only and CSV neutralizes formula names', async () => {
   await request(server)
