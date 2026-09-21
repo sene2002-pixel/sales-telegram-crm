@@ -34,14 +34,20 @@ export const letterSchema = z.object({
   // Keep URL validation local instead of emitting that format in the request.
   sources: z
     .array(
-      z.string().refine((value) => {
-        try {
-          const url = new URL(value);
-          return ['http:', 'https:'].includes(url.protocol);
-        } catch {
-          return false;
-        }
-      }, 'Некорректная ссылка на источник'),
+      z
+        .string()
+        .regex(/^https?:\/\/[^\s]+$/)
+        .describe(
+          'Полный абсолютный HTTP(S) URL проверенной страницы, например https://example.com/about. Без Markdown, названий сайтов и маркеров цитирования.',
+        )
+        .refine((value) => {
+          try {
+            const url = new URL(value);
+            return ['http:', 'https:'].includes(url.protocol);
+          } catch {
+            return false;
+          }
+        }, 'Некорректная ссылка на источник'),
     )
     .min(1)
     .max(8),
@@ -161,7 +167,24 @@ export class LetterService {
       422,
       'Не удалось подготовить данные. Проверьте контакты и повторите попытку',
     );
-    return schema.parse(JSON.parse(text));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      requireCondition(false, 502, 'ИИ вернул некорректный ответ. Повторите создание');
+    }
+    const validated = schema.safeParse(parsed);
+    if (!validated.success) {
+      const invalidSources = validated.error.issues.some((issue) => issue.path[0] === 'sources');
+      requireCondition(
+        false,
+        502,
+        invalidSources
+          ? 'ИИ не предоставил корректные ссылки для проверки компании. Письмо не создано. Повторите попытку'
+          : 'ИИ вернул некорректные данные. Проверьте исходные данные и повторите попытку',
+      );
+    }
+    return validated.data;
   }
   async recognize(file: Express.Multer.File) {
     requireCondition(file && file.size <= 10 * 1024 * 1024, 400, 'Загрузите фото визитки до 10 МБ');
