@@ -18,6 +18,9 @@ export class Database implements Sql {
       this.embedded = new PGlite(join(this.config.dataDir, 'postgres'));
       await this.embedded.waitReady;
     }
+    await this.migrate();
+  }
+  async migrate() {
     await this.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142501)');
       await tx.query(
@@ -46,6 +49,17 @@ export class Database implements Sql {
         user_id uuid REFERENCES users(id), number integer NOT NULL,
         PRIMARY KEY(user_id,number)
       )`);
+      const signaturesMigration = await tx.query(
+        'SELECT version FROM schema_migrations WHERE version=2',
+      );
+      if (!signaturesMigration.length) {
+        await tx.query('ALTER TABLE letter_signatures ADD COLUMN id uuid');
+        await tx.query('UPDATE letter_signatures SET id=user_id');
+        await tx.query('ALTER TABLE letter_signatures DROP CONSTRAINT letter_signatures_pkey');
+        await tx.query('ALTER TABLE letter_signatures ADD PRIMARY KEY(id)');
+        await tx.query('CREATE INDEX letter_signatures_user ON letter_signatures(user_id)');
+        await tx.query('INSERT INTO schema_migrations(version) VALUES(2)');
+      }
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

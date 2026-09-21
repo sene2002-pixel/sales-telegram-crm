@@ -6,7 +6,13 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { Actor, idSchema } from '../../shared/contracts';
-import { signatureSchema, cardSchema, noContacts } from '../../shared/letters';
+import {
+  signatureSchema,
+  cardSchema,
+  noContacts,
+  maxSignatures,
+  SavedSignature,
+} from '../../shared/letters';
 import { CrmService } from './crm';
 import { Config } from '../config';
 import { OpenAiAdapter } from '../infra/ai';
@@ -41,11 +47,73 @@ export class LetterService {
   }
   async saveSignature(actor: Actor, raw: unknown) {
     const data = signatureSchema.parse(raw);
-    await this.crm.db.query(
-      'INSERT INTO letter_signatures(user_id,data) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET data=EXCLUDED.data',
-      [actor.id, JSON.stringify(data)],
-    );
+    // Compatibility with clients that still know only one signature.
+    await this.crm.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      const rows = await tx.query('SELECT id FROM letter_signatures WHERE user_id=$1', [actor.id]);
+      requireCondition(rows.length <= 1, 409, 'Выберите подпись в обновлённом приложении');
+      if (rows.length)
+        await tx.query('UPDATE letter_signatures SET data=$1 WHERE id=$2', [
+          JSON.stringify(data),
+          rows[0].id,
+        ]);
+      else
+        await tx.query('INSERT INTO letter_signatures(id,user_id,data) VALUES($1,$2,$3)', [
+          randomUUID(),
+          actor.id,
+          JSON.stringify(data),
+        ]);
+    });
     return data;
+  }
+  async signatures(actor: Actor): Promise<SavedSignature[]> {
+    const rows = await this.crm.db.query(
+      'SELECT id,data FROM letter_signatures WHERE user_id=$1 ORDER BY id',
+      [actor.id],
+    );
+    return rows.map((row) => ({ ...row.data, id: row.id }));
+  }
+  async writeSignature(actor: Actor, raw: unknown, id?: string) {
+    const data = signatureSchema.parse(raw);
+    if (id) idSchema.parse(id);
+    return this.crm.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      if (id) {
+        const rows = await tx.query(
+          'UPDATE letter_signatures SET data=$1 WHERE id=$2 AND user_id=$3 RETURNING id',
+          [JSON.stringify(data), id, actor.id],
+        );
+        requireCondition(rows.length, 404, 'Подпись не найдена');
+      } else {
+        const rows = await tx.query('SELECT id FROM letter_signatures WHERE user_id=$1', [
+          actor.id,
+        ]);
+        requireCondition(
+          rows.length < maxSignatures,
+          409,
+          'Можно сохранить не более трёх подписей',
+        );
+        id = randomUUID();
+        await tx.query('INSERT INTO letter_signatures(id,user_id,data) VALUES($1,$2,$3)', [
+          id,
+          actor.id,
+          JSON.stringify(data),
+        ]);
+      }
+      return { ...data, id };
+    });
+  }
+  async deleteSignature(actor: Actor, id: string) {
+    idSchema.parse(id);
+    return this.crm.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      const rows = await tx.query(
+        'DELETE FROM letter_signatures WHERE id=$1 AND user_id=$2 RETURNING id',
+        [id, actor.id],
+      );
+      requireCondition(rows.length, 404, 'Подпись не найдена');
+      return { ok: true };
+    });
   }
   private async structured<T>(
     schema: z.ZodType<T>,
@@ -104,7 +172,10 @@ export class LetterService {
     );
   }
   async create(actor: Actor, companyId: string, raw: unknown) {
-    const { contactId } = z.object({ contactId: idSchema }).strict().parse(raw);
+    const { contactId, signatureId } = z
+      .object({ contactId: idSchema, signatureId: idSchema.optional() })
+      .strict()
+      .parse(raw);
     const detail = await this.crm.detail(actor, companyId);
     requireCondition(!detail.company.archived, 409, 'Сначала восстановите компанию из архива');
     const contacts = detail.records.filter((r) => r.kind === 'contact');
@@ -116,9 +187,15 @@ export class LetterService {
       400,
       'Укажите должность выбранного контакта в карточке компании',
     );
-    const savedSignature = await this.signature(actor);
+    const signatures = await this.signatures(actor);
+    const savedSignature = signatureId
+      ? signatures.find((s) => s.id === signatureId)
+      : signatures.length === 1
+        ? signatures[0]
+        : null;
     requireCondition(savedSignature, 400, 'Проверьте и сохраните свою подпись');
-    const signature = signatureSchema.parse(savedSignature);
+    const { id: selectedSignatureId, ...signatureData } = savedSignature;
+    const signature = signatureSchema.parse(signatureData);
     requireCondition(!this.active.has(actor.id), 409, 'Письмо уже создаётся. Дождитесь завершения');
     this.active.add(actor.id);
     let temp = '';
@@ -214,6 +291,19 @@ export class LetterService {
       try {
         const record = await this.crm.db.transaction(async (tx) => {
           await this.crm.company(actor, companyId, tx, true);
+          await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+          const [latestSignature] = await tx.query(
+            'SELECT data FROM letter_signatures WHERE id=$1 AND user_id=$2',
+            [selectedSignatureId, actor.id],
+          );
+          requireCondition(
+            latestSignature &&
+              Object.entries(signature).every(
+                ([key, value]) => latestSignature.data[key] === value,
+              ),
+            409,
+            'Подпись изменена или удалена. Создайте письмо повторно',
+          );
           const [current] = await tx.query(
             "SELECT data FROM records WHERE id=$1 AND company_id=$2 AND kind='contact' AND NOT deleted",
             [contactId, companyId],

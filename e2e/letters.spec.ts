@@ -2,6 +2,15 @@ import { test, expect } from '@playwright/test';
 test('letter contact validation and editable signature', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+  const headers = {
+    Authorization: `Bearer ${await page.evaluate(() => sessionStorage.getItem('crm-session'))}`,
+  };
+  const signatures = await (
+    await page.request.get('/api/me/letter-signatures', { headers })
+  ).json();
+  for (const s of signatures)
+    await page.request.delete('/api/me/letter-signatures/' + s.id, { headers });
   await page.getByRole('button', { name: '+ Компания', exact: true }).click();
   await page.getByLabel('Название', { exact: true }).fill('Письма ' + Date.now());
   await page.getByRole('button', { name: 'Сохранить компанию' }).click();
@@ -28,9 +37,12 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await expect(page.getByLabel('Получатель письма')).not.toHaveValue('');
   await expect(page.getByRole('button', { name: 'Редактировать подпись' })).toHaveCount(0);
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByRole('button', { name: 'Мой профиль', exact: false }).click();
-  await expect(page.getByRole('heading', { name: 'Подпись для писем' })).toBeVisible();
+  await page.getByRole('button', { name: 'Моя подпись', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Выбор подписи' }).getByRole('button')).toHaveCount(
+    1,
+  );
+  await page.getByRole('button', { name: '+ Добавить подпись', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Добавить подпись' })).toBeVisible();
   await page.getByLabel('Фото визитки', { exact: false }).setInputFiles({
     name: 'card.jpg',
     mimeType: 'image/jpeg',
@@ -39,8 +51,30 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Петров');
   await page.getByLabel('Фамилия', { exact: true }).fill('Сидоров');
   await page.getByRole('button', { name: 'Сохранить изменения' }).click();
-  await expect(page.getByRole('status')).toContainText('Подпись сохранена');
+  await expect(page.getByRole('button', { name: 'Сформировать PDF и сохранить' })).toBeEnabled();
+  await expect(page.getByRole('dialog')).toContainText('Сидоров');
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: 'Мой профиль', exact: false }).click();
+  await page.getByRole('button', { name: 'Редактировать подпись', exact: true }).click();
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Сидоров');
+  await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+  for (const lastName of ['Вторая', 'Третья']) {
+    await page.getByRole('button', { name: '+ Добавить подпись', exact: true }).click();
+    await page.getByLabel('Фамилия', { exact: true }).fill(lastName);
+    await page.getByLabel('Имя', { exact: true }).fill('Иван');
+    await page.getByRole('button', { name: 'Сохранить изменения' }).click();
+    await expect(page.getByRole('heading', { name: 'Добавить подпись' })).toHaveCount(0);
+  }
+  await expect(page.getByRole('button', { name: '+ Добавить подпись', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByText('Достигнут лимит:', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Удалить подпись', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Удалить подпись', exact: true })).toHaveCount(3);
+  await page.getByRole('button', { name: 'Удалить подпись', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Подтвердить удаление' }).click();
+  await expect(page.getByRole('button', { name: '+ Добавить подпись', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Удалить подпись', exact: true })).toHaveCount(2);
 });

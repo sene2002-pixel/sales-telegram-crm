@@ -1,16 +1,9 @@
 import { useState } from 'react';
 import { CrmRecord } from '../shared/contracts';
-import { Signature, noContacts } from '../shared/letters';
+import { SavedSignature, maxSignatures, noContacts } from '../shared/letters';
 import { api } from './api';
 import { Field } from './forms';
-const empty: Signature = {
-  lastName: '',
-  firstName: '',
-  patronymic: '',
-  workPhone: '',
-  mobilePhone: '',
-  email: '',
-};
+import { SignatureManager } from './SignatureManager';
 export function LetterForm({
   companyId,
   contacts,
@@ -24,9 +17,25 @@ export function LetterForm({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [contactId, setContactId] = useState(''),
-    [signature, setSignature] = useState<Signature>(empty),
-    [confirmed, setConfirmed] = useState(false),
+    [signatures, setSignatures] = useState<SavedSignature[]>([]),
+    [signatureId, setSignatureId] = useState(''),
     [message, setMessage] = useState('');
+  const [choosing, setChoosing] = useState(false),
+    [creating, setCreating] = useState(false);
+  const signature = signatures.find((s) => s.id === signatureId);
+  if (creating)
+    return (
+      <SignatureManager
+        createInitially
+        onBack={() => setCreating(false)}
+        onCreated={(value) => {
+          setSignatures((old) => [...old.filter((s) => s.id !== value.id), value]);
+          setSignatureId(value.id);
+          setCreating(false);
+          setChoosing(false);
+        }}
+      />
+    );
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError('');
@@ -50,9 +59,9 @@ export function LetterForm({
             return;
           }
           void run(async () => {
-            const result = await api<{ signature: Signature | null }>('/me/letter-signature');
-            setSignature(result.signature || empty);
-            setConfirmed(!!result.signature);
+            const result = await api<SavedSignature[]>('/me/letter-signatures');
+            setSignatures(result);
+            setSignatureId(result.length === 1 ? result[0].id : '');
             setContactId(contacts.length === 1 ? contacts[0].id : '');
             setOpen(true);
           });
@@ -82,8 +91,38 @@ export function LetterForm({
               ))}
             </select>
           </Field>
-          <h3>Моя подпись</h3>
-          {confirmed ? (
+          <button
+            type="button"
+            disabled={busy}
+            aria-expanded={choosing}
+            onClick={() => setChoosing(!choosing)}
+          >
+            Моя подпись
+          </button>
+          {choosing && (
+            <div className="inset" role="group" aria-label="Выбор подписи">
+              {signatures.map((s) => (
+                <button
+                  type="button"
+                  key={s.id}
+                  aria-pressed={signatureId === s.id}
+                  onClick={() => {
+                    setSignatureId(s.id);
+                    setChoosing(false);
+                  }}
+                >
+                  {s.lastName} {s.firstName} {s.patronymic}
+                  {s.email ? ' · ' + s.email : ''}
+                </button>
+              ))}
+              {signatures.length < maxSignatures && (
+                <button type="button" onClick={() => setCreating(true)}>
+                  + Добавить подпись
+                </button>
+              )}
+            </div>
+          )}
+          {signature ? (
             <p className="preserve">
               {[
                 'С уважением,',
@@ -97,15 +136,15 @@ export function LetterForm({
                 .filter(Boolean)
                 .join('\n')}
             </p>
-          ) : (
-            <p>Сначала сохраните подпись в разделе «Мой профиль» → «Подпись для писем».</p>
-          )}
+          ) : signatures.length > 0 ? (
+            <p>Выберите подпись для письма.</p>
+          ) : null}
           <button
             className="primary"
-            disabled={busy || !confirmed || !contactId}
+            disabled={busy || !signature || !contactId}
             onClick={() =>
               void run(async () => {
-                await api(`/companies/${companyId}/letters`, 'POST', { contactId });
+                await api(`/companies/${companyId}/letters`, 'POST', { contactId, signatureId });
                 await onCreated();
                 setOpen(false);
                 setMessage('Письмо сохранено в разделе «Файлы» компании.');

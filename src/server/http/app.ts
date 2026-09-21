@@ -156,6 +156,25 @@ class PublicController {
 @UseGuards(AuthGuard)
 class CrmController {
   constructor(@Inject(Services) private s: Services) {}
+  @Get('me/letter-signatures') signatures(@Req() r: AuthedRequest) {
+    return this.s.letters.signatures(r.actor);
+  }
+  @Post('me/letter-signatures') createSignature(@Req() r: AuthedRequest, @Body() b: unknown) {
+    return this.s.letters.writeSignature(r.actor, b);
+  }
+  @Patch('me/letter-signatures/:id') updateSignature(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.s.letters.writeSignature(r.actor, b, id);
+  }
+  @Delete('me/letter-signatures/:id') deleteSignature(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.s.letters.deleteSignature(r.actor, id);
+  }
   @Get('me/letter-signature') signature(@Req() r: AuthedRequest) {
     return this.s.letters.signature(r.actor).then((signature) => ({ signature }));
   }

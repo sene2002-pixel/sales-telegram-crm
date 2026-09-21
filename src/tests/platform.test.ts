@@ -527,5 +527,5 @@ test('database survives reopening and migrations are repeatable', async () => {
   const companies = await s.crm.list(manager);
   assert.ok(companies.some((c) => c.name === 'Голосовая компания'));
   const versions = await db.query('SELECT version FROM schema_migrations');
-  assert.equal(versions.length, 1);
+  assert.deepEqual(versions.map((v) => v.version).sort(), [1, 2]);
 });

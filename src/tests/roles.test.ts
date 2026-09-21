@@ -158,6 +158,83 @@ test('Contacts: deletion is authorized, soft, audited and blocks letters without
   assert.match(letter.body.message, /хотя бы один контакт/);
 });
 
+test('Signatures: limit, isolation, editing, deletion and concurrent creation', async () => {
+  const data = {
+    lastName: 'Иванов',
+    firstName: 'Иван',
+    patronymic: '',
+    workPhone: '',
+    mobilePhone: '',
+    email: '',
+  };
+  await request(server).get('/api/me/letter-signatures').expect(401);
+  const results = await Promise.allSettled(
+    Array.from({ length: 4 }, () => s.letters.writeSignature(actors.manager, data)),
+  );
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 3);
+  const failed = results.filter((r) => r.status === 'rejected');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0]!.reason.status, 409);
+  const saved = results.find((r) => r.status === 'fulfilled')!.value;
+  const list = await api(actors.manager, 'get', '/me/letter-signatures').expect(200);
+  assert.equal(list.body.length, 3);
+  assert.deepEqual((await api(other, 'get', '/me/letter-signatures')).body, []);
+  await api(other, 'patch', `/me/letter-signatures/${saved.id}`, data).expect(404);
+  await api(other, 'delete', `/me/letter-signatures/${saved.id}`).expect(404);
+  await api(actors.manager, 'patch', `/me/letter-signatures/${saved.id}`, {
+    ...data,
+    firstName: 'Пётр',
+  }).expect(200);
+  await api(actors.manager, 'post', '/me/letter-signature', data).expect(409);
+  const contact = await s.crm.createRecord(actors.manager, own.id, 'contact', {
+    name: 'Иванов',
+    role: 'Директор',
+  });
+  await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: contact.id,
+    signatureId: randomUUID(),
+  }).expect(400);
+  await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: contact.id,
+  }).expect(400);
+  await api(actors.manager, 'delete', `/me/letter-signatures/${saved.id}`).expect(200);
+  await api(actors.manager, 'delete', `/me/letter-signatures/${saved.id}`).expect(404);
+  await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: contact.id,
+    signatureId: saved.id,
+  }).expect(400);
+  await api(actors.manager, 'post', '/me/letter-signatures', data).expect(201);
+});
+
+test('Signatures: upgrades legacy signature without loss and migration is repeatable', async () => {
+  const data = {
+    lastName: 'Старый',
+    firstName: 'Контакт',
+    patronymic: '',
+    workPhone: '123',
+    mobilePhone: '',
+    email: '',
+  };
+  await db.transaction(async (tx) => {
+    await tx.query('DROP TABLE letter_signatures');
+    await tx.query(
+      'CREATE TABLE letter_signatures(user_id uuid PRIMARY KEY REFERENCES users(id),data jsonb NOT NULL)',
+    );
+    await tx.query('INSERT INTO letter_signatures(user_id,data) VALUES($1,$2)', [
+      actors.manager.id,
+      JSON.stringify(data),
+    ]);
+    await tx.query('DELETE FROM schema_migrations WHERE version=2');
+  });
+  await db.migrate();
+  await db.migrate();
+  assert.deepEqual(await s.letters.signatures(actors.manager), [
+    { ...data, id: actors.manager.id },
+  ]);
+  await s.letters.writeSignature(actors.manager, { ...data, firstName: 'Второй' });
+  assert.equal((await s.letters.signatures(actors.manager)).length, 2);
+});
+
 test('CSV download: leaders only, authenticated creation, strict parameters', async () => {
   const body = { from: '2026-09-01', to: '2026-09-15' };
   await request(server).post('/api/dashboard/export-link').send(body).expect(401);
