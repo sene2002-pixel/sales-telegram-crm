@@ -59,7 +59,7 @@ export function LetterForm({
           void run(async () => {
             const result = await api<SavedSignature[]>('/me/letter-signatures');
             setSignatures(result);
-            setSignatureId(result.length === 1 ? result[0].id : '');
+            setSignatureId('');
             setContactId(contacts.length === 1 ? contacts[0].id : '');
             setOpen(true);
           });
@@ -101,8 +101,8 @@ export function LetterForm({
                 setSignatureId(e.target.value);
               }}
             >
-              <option value="" hidden={!signatures.length}>
-                {signatures.length ? 'Выберите подпись' : '+ Добавить подпись'}
+              <option value="" disabled>
+                Выберите подпись
               </option>
               {signatures.map((s) => (
                 <option key={s.id} value={s.id}>
