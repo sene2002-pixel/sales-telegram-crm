@@ -31,6 +31,7 @@ import { resolve, join, basename } from 'node:path';
 import { z, ZodError } from 'zod';
 import { Config } from '../config';
 import { Database } from '../infra/database';
+import { ErrorLog } from '../infra/error-log';
 import { AuthService } from '../services/auth';
 import { CrmService } from '../services/crm';
 import { ReportService, mapReport } from '../services/reports';
@@ -45,6 +46,7 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shared/contracts';
 
 export class Services {
+  errors: ErrorLog;
   auth: AuthService;
   crm: CrmService;
   reports: ReportService;
@@ -57,11 +59,12 @@ export class Services {
     public db: Database,
     public config: Config,
   ) {
+    this.errors = new ErrorLog(db);
     this.auth = new AuthService(db, config);
     this.crm = new CrmService(db);
     this.letters = new LetterService(this.crm, config);
     this.reports = new ReportService(db, this.crm);
-    const telegram = new TelegramAdapter(config),
+    const telegram = new TelegramAdapter(config, this.errors),
       ai = new OpenAiAdapter(config);
     this.worker = new ReportWorker(db, this.reports, ai, ai, telegram, config);
     this.bot = new BotService(config, this.auth, this.reports, this.crm, telegram);
@@ -82,7 +85,8 @@ class AuthGuard implements CanActivate {
 }
 @Catch()
 class Errors implements ExceptionFilter {
-  catch(error: any, host: any) {
+  constructor(private logs: ErrorLog) {}
+  async catch(error: any, host: any) {
     const res: Response = host.switchToHttp().getResponse();
     let status = 500,
       message = 'Внутренняя ошибка сервера';
@@ -106,10 +110,15 @@ class Errors implements ExceptionFilter {
       status = 400;
       message = 'Связанная запись не найдена';
     }
-    if (status >= 500)
-      console.error(
-        JSON.stringify({ event: 'request.failed', status, errorType: error.constructor?.name }),
-      );
+    const req = host.switchToHttp().getRequest();
+    await this.logs.record(error, {
+      event: 'request.failed',
+      status,
+      requestId: res.locals.requestId,
+      actorId: req.actor?.id,
+      // Route template only: actual URLs may contain download tokens or user data.
+      route: typeof req.route?.path === 'string' ? `${req.method} ${req.route.path}` : undefined,
+    });
     res.status(status).json({ message });
   }
 }
@@ -395,6 +404,11 @@ export async function createApp(config: Config, existingDb?: Database) {
   })
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: ['warn', 'error'], bodyParser: false });
+  app.use((_req: Request, res: Response, next: () => void) => {
+    res.locals.requestId = randomUUID();
+    res.setHeader('X-Request-ID', res.locals.requestId);
+    next();
+  });
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -421,12 +435,17 @@ export async function createApp(config: Config, existingDb?: Database) {
     const bucket = buckets.get(key);
     if (!bucket || bucket.until < now) buckets.set(key, { count: 1, until: now + 60000 });
     else if (++bucket.count > (key.endsWith(':auth') ? 30 : 600)) {
+      void services.errors.record(new DomainError(429, 'Превышен лимит запросов'), {
+        event: 'request.rate_limited',
+        status: 429,
+        requestId: res.locals.requestId,
+      });
       res.status(429).json({ message: 'Слишком много запросов. Повторите через минуту' });
       return;
     }
     next();
   });
-  app.useGlobalFilters(new Errors());
+  app.useGlobalFilters(new Errors(services.errors));
   app.use(serveStatic(resolve('dist/web'), { index: 'index.html' }));
   await app.init();
   return { app, services, db };

@@ -1,11 +1,15 @@
 import { Config } from '../config';
+import { ErrorLog } from './error-log';
 import { requireCondition } from '../domain/errors';
 export interface Messenger {
   send(chatId: string, payload: any): Promise<void>;
   download(fileId: string): Promise<Uint8Array>;
 }
 export class TelegramAdapter implements Messenger {
-  constructor(private config: Config) {}
+  constructor(
+    private config: Config,
+    private errors?: ErrorLog,
+  ) {}
   async call(method: string, payload: unknown): Promise<any> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     const response = await fetch(`https://api.telegram.org/bot${this.config.botToken}/${method}`, {
@@ -35,7 +39,9 @@ export class TelegramAdapter implements Messenger {
           if (parsed.protocol === 'https:' && !parsed.username && !parsed.password)
             url = menu.web_app.url;
         }
-      } catch {
+      } catch (error) {
+        // Sending may hold an outbox transaction; do not wait on a second DB connection.
+        void this.errors?.record(error, { event: 'telegram.menu_lookup_failed' });
         // Do not send a known potentially outdated address when lookup fails.
       }
       payload = {

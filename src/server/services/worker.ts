@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Database } from '../infra/database';
+import { ErrorLog } from '../infra/error-log';
 import { SpeechToText, ReportExtractor } from '../infra/ai';
 import { Messenger } from '../infra/telegram';
 import { ReportService } from './reports';
@@ -22,7 +23,7 @@ export class ReportWorker {
     this.timer = setInterval(() => {
       if (!this.running)
         this.running = this.tick()
-          .catch(() => console.error(JSON.stringify({ event: 'worker.error' })))
+          .catch((error) => new ErrorLog(this.db).record(error, { event: 'worker.error' }))
           .finally(() => {
             this.running = undefined;
           });
@@ -110,6 +111,12 @@ export class ReportWorker {
         }
       });
     } catch (error) {
+      await new ErrorLog(this.db).record(error, {
+        event: 'report.processing_failed',
+        actorId: report.author_id,
+        entityId: report.id,
+        attempt: report.attempts,
+      });
       const message =
         error instanceof DomainError
           ? error.message
@@ -127,20 +134,12 @@ export class ReportWorker {
             text: `Не удалось обработать отчёт: ${message}. Откройте CRM для повторной попытки.`,
           });
       });
-      console.error(
-        JSON.stringify({
-          event: 'report.processing_failed',
-          reportId: report.id,
-          attempt: report.attempts,
-          terminal: failed,
-        }),
-      );
     }
     return true;
   }
   async deliverOne() {
     if (!this.config.botToken) return;
-    await this.db.transaction(async (tx) => {
+    const failure = await this.db.transaction(async (tx) => {
       const [message] = await tx.query(
         'SELECT * FROM outbox WHERE NOT sent AND attempts<5 AND available_at<=now() ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1',
       );
@@ -148,13 +147,19 @@ export class ReportWorker {
       try {
         await this.telegram.send(message.chat_id, message.payload);
         await tx.query('UPDATE outbox SET sent=true WHERE id=$1', [message.id]);
-      } catch {
+      } catch (error) {
         await tx.query(
           `UPDATE outbox SET attempts=attempts+1,available_at=now()+interval '30 seconds' WHERE id=$1`,
           [message.id],
         );
-        console.error(JSON.stringify({ event: 'telegram.delivery_failed', messageId: message.id }));
+        return { error, entityId: message.id, attempt: message.attempts + 1 };
       }
     });
+    if (failure)
+      await new ErrorLog(this.db).record(failure.error, {
+        event: 'telegram.delivery_failed',
+        entityId: failure.entityId,
+        attempt: failure.attempt,
+      });
   }
 }

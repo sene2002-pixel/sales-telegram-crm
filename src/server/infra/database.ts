@@ -60,6 +60,12 @@ export class Database implements Sql {
         await tx.query('CREATE INDEX letter_signatures_user ON letter_signatures(user_id)');
         await tx.query('INSERT INTO schema_migrations(version) VALUES(2)');
       }
+      await tx.query(`CREATE TABLE IF NOT EXISTS error_logs (
+        id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),
+        event text NOT NULL, request_id uuid, actor_id uuid, status integer,
+        message text NOT NULL, details jsonb NOT NULL DEFAULT '{}'
+      )`);
+      await tx.query('CREATE INDEX IF NOT EXISTS error_logs_created_at ON error_logs(created_at)');
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

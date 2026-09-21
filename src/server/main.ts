@@ -4,6 +4,7 @@ async function main() {
   const config = makeConfig();
   const { app, services, db } = await createApp(config);
   await app.listen(config.port, config.host);
+  services.errors.start();
   if (config.worker) services.worker.start();
   console.log(
     JSON.stringify({
@@ -18,6 +19,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     await services.worker.stop();
+    await services.errors.stop();
     await app.close();
     await db.close();
   };

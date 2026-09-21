@@ -5,6 +5,7 @@ import { ReportService } from './reports';
 import { CrmService } from './crm';
 import { TelegramAdapter } from '../infra/telegram';
 import { DomainError, requireCondition } from '../domain/errors';
+import { ErrorLog } from '../infra/error-log';
 import { z } from 'zod';
 const sender = z.object({
   id: z.number().int().positive().safe(),
@@ -127,6 +128,7 @@ export class BotService {
         });
     } catch (error) {
       if (error instanceof DomainError && error.status < 500) {
+        await new ErrorLog(this.crm.db).record(error, { event: 'telegram.command_failed' });
         if (callback)
           await this.telegram.call('answerCallbackQuery', {
             callback_query_id: callback.id,
