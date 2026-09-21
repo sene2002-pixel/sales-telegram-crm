@@ -359,6 +359,9 @@ class CrmController {
     response.setHeader('Cache-Control', 'no-store');
     response.type('application/octet-stream').download(path, row.data.name);
   }
+  @Delete('contacts/:id') deleteContact(@Req() r: AuthedRequest, @Param('id') id: string) {
+    return this.s.crm.deleteContact(r.actor, id);
+  }
   @Delete('files/:id') deleteFile(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.deleteFile(r.actor, id);
   }

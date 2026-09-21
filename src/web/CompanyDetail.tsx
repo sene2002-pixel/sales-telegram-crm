@@ -41,6 +41,7 @@ export function CompanyDetail({
     [owner, setOwner] = useState(company.ownerId);
   const [category, setCategory] = useState('docs'),
     [projectId, setProjectId] = useState('');
+  const [deleteContactId, setDeleteContactId] = useState<string | null>(null);
   async function refresh() {
     const d = await api<Detail>(`/companies/${company.id}`);
     setDetail(d);
@@ -336,6 +337,35 @@ export function CompanyDetail({
                       </button>
                     </div>
                   )}
+                  {tab === 'contact' &&
+                    (deleteContactId === r.id ? (
+                      <div className="actions">
+                        <span>Удалить контакт «{r.data.name}»?</span>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            run(async () => {
+                              await api(`/contacts/${r.id}`, 'DELETE');
+                              setDeleteContactId(null);
+                              if (form?.initial?.id === r.id) setForm(null);
+                            })
+                          }
+                        >
+                          Подтвердить удаление
+                        </button>
+                        <button disabled={busy} onClick={() => setDeleteContactId(null)}>
+                          Отмена
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => setDeleteContactId(r.id)}
+                      >
+                        Удалить контакт
+                      </button>
+                    ))}
                 </article>
               ))}
       </div>

@@ -197,6 +197,7 @@ export class CrmService {
       requireCondition(row, 404, 'Запись не найдена');
       await this.company(actor, row.company_id, tx, true);
       const [current] = await tx.query('SELECT * FROM records WHERE id=$1 FOR UPDATE', [id]);
+      requireCondition(current && !current.deleted, 404, 'Запись не найдена');
       requireCondition(
         current.version === input.version,
         409,
@@ -219,6 +220,23 @@ export class CrmService {
         after: data,
       });
       return mapRecord(updated);
+    });
+  }
+  async deleteContact(actor: Actor, id: string) {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.query(
+        "SELECT * FROM records WHERE id=$1 AND kind='contact' AND NOT deleted",
+        [idSchema.parse(id)],
+      );
+      requireCondition(row, 404, 'Контакт не найден');
+      await this.company(actor, row.company_id, tx, true);
+      const deleted = await tx.query(
+        'UPDATE records SET deleted=true,version=version+1 WHERE id=$1 AND NOT deleted RETURNING id',
+        [id],
+      );
+      requireCondition(deleted.length, 404, 'Контакт не найден');
+      await audit(tx, actor.id, 'contact.deleted', id, row.company_id);
+      return { ok: true };
     });
   }
   async deleteFile(actor: Actor, id: string) {

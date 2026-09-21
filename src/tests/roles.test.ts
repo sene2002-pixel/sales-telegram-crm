@@ -134,6 +134,30 @@ test('Letters: recognition stays a draft until explicitly saved', async () => {
   }
 });
 
+test('Contacts: deletion is authorized, soft, audited and blocks letters without contacts', async () => {
+  const contact = await s.crm.createRecord(actors.manager, own.id, 'contact', {
+    name: 'Удаляемый контакт',
+  });
+  await request(server).delete(`/api/contacts/${contact.id}`).expect(401);
+  await api(other, 'delete', `/contacts/${contact.id}`).expect(404);
+  const task = await s.crm.createRecord(actors.manager, own.id, 'task', { text: 'Не контакт' });
+  await api(actors.manager, 'delete', `/contacts/${task.id}`).expect(404);
+  await api(actors.manager, 'delete', `/contacts/${contact.id}`).expect(200);
+  const detail = await s.crm.detail(actors.manager, own.id);
+  assert.equal(
+    detail.records.some((r) => r.id === contact.id),
+    false,
+  );
+  assert.ok(detail.audit.some((a) => a.action === 'contact.deleted'));
+  const [stored] = await db.query('SELECT deleted FROM records WHERE id=$1', [contact.id]);
+  assert.equal(stored.deleted, true);
+  await api(actors.manager, 'delete', `/contacts/${contact.id}`).expect(404);
+  const letter = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
+    contactId: contact.id,
+  }).expect(400);
+  assert.match(letter.body.message, /хотя бы один контакт/);
+});
+
 test('CSV download: leaders only, authenticated creation, strict parameters', async () => {
   const body = { from: '2026-09-01', to: '2026-09-15' };
   await request(server).post('/api/dashboard/export-link').send(body).expect(401);
