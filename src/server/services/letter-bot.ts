@@ -11,6 +11,13 @@ import { CrmService } from './crm';
 import { LetterService } from './letters';
 import { ReportService } from './reports';
 import { userProjection } from './auth';
+import { Sql } from '../infra/database';
+import {
+  assignDefault,
+  checkedSignature,
+  signatureButtons,
+  signatureOptionsText,
+} from './signature-choice';
 
 const short = z.string().trim().max(150);
 export const recipientResearchSchema = z.object({
@@ -47,31 +54,30 @@ export class LetterBot {
     private config: Config,
   ) {}
 
-  async enqueue(actor: Actor, sourceKey: string, query: string) {
+  async enqueue(actor: Actor, sourceKey: string, query: string, transaction?: Sql) {
     requireCondition(
       query.length > 0 && query.length <= 1000,
       400,
       'Напишите: «Подготовь письмо для ООО …», желательно с ИНН и городом',
     );
-    await this.crm.db.transaction(async (tx) => {
-      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+    const enqueue = async (tx: Sql) => {
+      const [user] = await tx.query('SELECT active FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      requireCondition(user?.active, 403, 'Доступ отозван');
       if ((await tx.query('SELECT id FROM letter_jobs WHERE source_key=$1', [sourceKey])).length)
         return;
       const signatures = await tx.query(
-        'SELECT id,is_default FROM letter_signatures WHERE user_id=$1',
+        'SELECT id,data,is_default FROM letter_signatures WHERE user_id=$1 ORDER BY id',
         [actor.id],
       );
       const signature =
         signatures.find((s) => s.is_default) || (signatures.length === 1 ? signatures[0] : null);
       requireCondition(
-        signature,
+        signatures.length,
         400,
-        signatures.length
-          ? 'Выберите подпись по умолчанию в «Мой профиль → Подписи для писем» и повторите запрос'
-          : 'Сначала создайте подпись в «Мой профиль → Подписи для писем»',
+        'Сначала создайте подпись голосовым «Добавь подпись…» или в «Мой профиль → Подписи для писем»',
       );
       const active = await tx.query(
-        "SELECT id FROM letter_jobs WHERE user_id=$1 AND status IN ('queued','processing','ready','sending')",
+        "SELECT id FROM letter_jobs WHERE user_id=$1 AND status IN ('waiting_signature','queued','processing','ready','sending')",
         [actor.id],
       );
       requireCondition(
@@ -79,14 +85,112 @@ export class LetterBot {
         409,
         'Предыдущее письмо ещё обрабатывается. Дождитесь результата',
       );
+      const jobId = randomUUID();
       await tx.query(
-        'INSERT INTO letter_jobs(id,source_key,user_id,chat_id,query,signature_id) VALUES($1,$2,$3,$4,$5,$6)',
-        [randomUUID(), sourceKey, actor.id, actor.telegramId, query, signature.id],
+        'INSERT INTO letter_jobs(id,source_key,user_id,chat_id,query,signature_id,status,signature_options) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+        [
+          jobId,
+          sourceKey,
+          actor.id,
+          actor.telegramId,
+          query,
+          signature?.id || null,
+          signature ? 'queued' : 'waiting_signature',
+          JSON.stringify(signature ? [] : signatures),
+        ],
       );
+      if (!signature) {
+        await this.reports.notify(tx, actor.telegramId, {
+          text: `Подпись по умолчанию не выбрана. Выберите подпись: ваш выбор назначит её подписью по умолчанию для этого и следующих писем. После выбора продолжу создание письма.\n\n${signatureOptionsText(signatures)}`,
+          reply_markup: {
+            inline_keyboard: [
+              ...signatureButtons(signatures, `lp:${jobId}`),
+              [{ text: 'Отмена', callback_data: `lc:${jobId}` }],
+            ],
+          },
+        });
+        return;
+      }
       await this.reports.notify(tx, actor.telegramId, {
         text: 'Ищу компанию и генерального директора, подбираю отраслевые референсы. PDF отправлю сюда и сохраню в CRM. Клиенту письмо не отправляется.',
       });
+    };
+    if (transaction) await enqueue(transaction);
+    else await this.crm.db.transaction(enqueue);
+  }
+
+  async chooseSignature(actor: Actor, id: string, index?: number) {
+    idSchema.parse(id);
+    await this.crm.db.transaction(async (tx) => {
+      const [user] = await tx.query('SELECT active FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      requireCondition(user?.active, 403, 'Доступ отозван');
+      const [job] = await tx.query(
+        'SELECT * FROM letter_jobs WHERE id=$1 AND user_id=$2 FOR UPDATE',
+        [id, actor.id],
+      );
+      requireCondition(job && job.chat_id === actor.telegramId, 404, 'Запрос не найден');
+      if (job.status !== 'waiting_signature') return;
+      if (index === undefined) {
+        await tx.query(
+          "UPDATE letter_jobs SET status='cancelled',signature_options='[]' WHERE id=$1",
+          [id],
+        );
+        await this.reports.notify(tx, actor.telegramId, {
+          text: 'Создание письма отменено. Подпись по умолчанию не изменена.',
+        });
+        return;
+      }
+      requireCondition(Number.isInteger(index) && index >= 0, 400, 'Выберите подпись из списка');
+      const selected = await checkedSignature(tx, actor.id, job.signature_options[index]);
+      await assignDefault(tx, actor.id, selected.id);
+      await tx.query(
+        "UPDATE letter_jobs SET signature_id=$1,status='queued',signature_options='[]',available_at=now() WHERE id=$2",
+        [selected.id, id],
+      );
+      await this.reports.notify(tx, actor.telegramId, {
+        text: 'Подпись назначена по умолчанию. Продолжаю создание письма. PDF отправлю вам в Telegram и сохраню в CRM.',
+      });
     });
+  }
+
+  async processVoice(report: Record<string, any>, token: string, transcript: string) {
+    if (!report.audio_file_id) return false;
+    const query = letterQuery(transcript.trim());
+    if (query === null) return false;
+    try {
+      await this.crm.db.transaction(async (tx) => {
+        const [actor] = await tx.query<Actor>(
+          `SELECT ${userProjection} FROM users WHERE id=$1 AND active FOR UPDATE`,
+          [report.author_id],
+        );
+        requireCondition(
+          actor && actor.telegramId === report.chat_id,
+          403,
+          'Доступ сотрудника изменён',
+        );
+        const rows = await tx.query(
+          `UPDATE reports SET purpose='letter',status='cancelled',transcript=NULL,audio_file_id=NULL,
+           draft=NULL,lease_token=NULL,lease_until=NULL,error=NULL,version=version+1
+           WHERE id=$1 AND lease_token=$2 RETURNING id`,
+          [report.id, token],
+        );
+        if (!rows.length) return;
+        await this.enqueue(actor, report.source_key, query, tx);
+      });
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.status >= 500) throw error;
+      await this.crm.db.transaction(async (tx) => {
+        const rows = await tx.query(
+          `UPDATE reports SET purpose='letter',status='failed',transcript=NULL,audio_file_id=NULL,
+           draft=NULL,lease_token=NULL,lease_until=NULL,error=$3,version=version+1
+           WHERE id=$1 AND lease_token=$2 RETURNING id`,
+          [report.id, token, error.message],
+        );
+        if (rows.length && error.status !== 403)
+          await this.reports.notify(tx, report.chat_id, { text: error.message });
+      });
+    }
+    return true;
   }
 
   start() {

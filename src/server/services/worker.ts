@@ -8,6 +8,7 @@ import { Config } from '../config';
 import { DomainError } from '../domain/errors';
 import { extractionSchema } from '../../shared/contracts';
 import { VoiceSignatures } from './voice-signatures';
+import { LetterBot } from './letter-bot';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
@@ -20,6 +21,7 @@ export class ReportWorker {
     private telegram: Messenger,
     private config: Config,
     private voiceSignatures?: VoiceSignatures,
+    private letterBot?: LetterBot,
   ) {}
   start() {
     this.timer = setInterval(() => {
@@ -79,6 +81,7 @@ export class ReportWorker {
         token,
       ]);
       if (await this.voiceSignatures?.process(report, token, transcript)) return true;
+      if (await this.letterBot?.processVoice(report, token, transcript)) return true;
       const draft = extractionSchema.parse(
         await this.extractor.extract(transcript, new Date(report.created_at).toISOString()),
       );

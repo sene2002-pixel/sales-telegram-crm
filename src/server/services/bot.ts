@@ -8,6 +8,7 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { ErrorLog } from '../infra/error-log';
 import { LetterBot, letterQuery } from './letter-bot';
 import { voiceHelp } from './voice-help';
+import { VoiceSignatures } from './voice-signatures';
 import { z } from 'zod';
 const sender = z.object({
   id: z.number().int().positive().safe(),
@@ -46,6 +47,7 @@ export class BotService {
     private crm: CrmService,
     private telegram: TelegramAdapter,
     private letters?: LetterBot,
+    private voiceSignatures?: VoiceSignatures,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -78,6 +80,11 @@ export class BotService {
         const [action, id, version] = (callback.data || '').split(':');
         if (action === 'save' && id) await this.reports.confirmCurrent(actor, id, Number(version));
         if (action === 'cancel' && id) await this.reports.transition(actor, id, 'cancel');
+        if (action === 'sc' && id) await this.voiceSignatures?.confirm(actor, id);
+        if (action === 'sx' && id) await this.voiceSignatures?.discard(actor, id);
+        if (action === 'sp' && id) await this.voiceSignatures?.choose(actor, id, Number(version));
+        if (action === 'lp' && id) await this.letters?.chooseSignature(actor, id, Number(version));
+        if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
         await this.telegram.call('answerCallbackQuery', {
           callback_query_id: callback.id,
           text: 'Готово',

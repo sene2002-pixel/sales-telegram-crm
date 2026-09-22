@@ -73,7 +73,13 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
       await assert.rejects(bot.enqueue(actor, 'absent', 'Ромашка'), /создайте подпись/);
       const first = await s.letters.writeSignature(actor, signature);
       const second = await s.letters.writeSignature(actor, { ...signature, firstName: 'Иван' });
-      await assert.rejects(bot.enqueue(actor, 'missing-default', 'Ромашка'), /по умолчанию/);
+      await bot.enqueue(actor, 'missing-default', 'Ромашка');
+      const [waiting] = await db.query('SELECT * FROM letter_jobs WHERE source_key=$1', [
+        'missing-default',
+      ]);
+      assert.equal(waiting.status, 'waiting_signature');
+      await bot.chooseSignature(actor, waiting.id);
+      await db.query('DELETE FROM letter_jobs WHERE id=$1', [waiting.id]);
       await assert.rejects(s.letters.setDefault(other, first.id), /не найдена/);
       await s.letters.setDefault(actor, first.id);
       await s.letters.setDefault(actor, second.id);

@@ -74,6 +74,7 @@ export class Services {
     const telegram = new TelegramAdapter(config, this.errors),
       ai = new OpenAiAdapter(config);
     this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
+    this.letterBot = new LetterBot(this.crm, this.letters, this.reports, telegram, config);
     this.worker = new ReportWorker(
       db,
       this.reports,
@@ -82,9 +83,17 @@ export class Services {
       telegram,
       config,
       this.voiceSignatures,
+      this.letterBot,
     );
-    this.letterBot = new LetterBot(this.crm, this.letters, this.reports, telegram, config);
-    this.bot = new BotService(config, this.auth, this.reports, this.crm, telegram, this.letterBot);
+    this.bot = new BotService(
+      config,
+      this.auth,
+      this.reports,
+      this.crm,
+      telegram,
+      this.letterBot,
+      this.voiceSignatures,
+    );
     this.dashboard = new DashboardService(db, config.timezone);
     this.exports = new ExportService(db, this.dashboard, telegram, config);
   }

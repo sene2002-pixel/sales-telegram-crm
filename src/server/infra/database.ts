@@ -95,6 +95,18 @@ export class Database implements Sql {
         data jsonb NOT NULL, transcript text NOT NULL, status text NOT NULL DEFAULT 'pending',
         signature_id uuid, created_at timestamptz NOT NULL DEFAULT now()
       )`);
+      await tx.query('ALTER TABLE letter_jobs ALTER COLUMN signature_id DROP NOT NULL');
+      await tx.query(
+        "ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS signature_options jsonb NOT NULL DEFAULT '[]'",
+      );
+      await tx.query(
+        "ALTER TABLE signature_drafts ADD COLUMN IF NOT EXISTS operation text NOT NULL DEFAULT 'create'",
+      );
+      await tx.query('ALTER TABLE signature_drafts ADD COLUMN IF NOT EXISTS target_id uuid');
+      await tx.query('ALTER TABLE signature_drafts ADD COLUMN IF NOT EXISTS base_data jsonb');
+      await tx.query(
+        "ALTER TABLE signature_drafts ADD COLUMN IF NOT EXISTS options jsonb NOT NULL DEFAULT '[]'",
+      );
       await tx.query(
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'report'",
       );
