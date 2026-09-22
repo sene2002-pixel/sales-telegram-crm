@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
-import { Actor, idSchema } from '../../shared/contracts';
+import { Actor, idSchema, contactSchema } from '../../shared/contracts';
 import {
   signatureSchema,
   cardSchema,
@@ -88,10 +88,24 @@ export class LetterService {
   }
   async signatures(actor: Actor): Promise<SavedSignature[]> {
     const rows = await this.crm.db.query(
-      'SELECT id,data FROM letter_signatures WHERE user_id=$1 ORDER BY id',
+      'SELECT id,data,is_default FROM letter_signatures WHERE user_id=$1 ORDER BY id',
       [actor.id],
     );
-    return rows.map((row) => ({ ...row.data, id: row.id }));
+    return rows.map((row) => ({ ...row.data, id: row.id, isDefault: row.is_default }));
+  }
+  async setDefault(actor: Actor, id: string) {
+    idSchema.parse(id);
+    await this.crm.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      const rows = await tx.query('SELECT id FROM letter_signatures WHERE id=$1 AND user_id=$2', [
+        id,
+        actor.id,
+      ]);
+      requireCondition(rows.length, 404, 'Подпись не найдена');
+      await tx.query('UPDATE letter_signatures SET is_default=false WHERE user_id=$1', [actor.id]);
+      await tx.query('UPDATE letter_signatures SET is_default=true WHERE id=$1', [id]);
+    });
+    return this.signatures(actor);
   }
   async writeSignature(actor: Actor, raw: unknown, id?: string) {
     const data = signatureSchema.parse(raw);
@@ -120,7 +134,8 @@ export class LetterService {
           JSON.stringify(data),
         ]);
       }
-      return { ...data, id };
+      const [saved] = await tx.query('SELECT is_default FROM letter_signatures WHERE id=$1', [id]);
+      return { ...data, id, isDefault: saved.is_default };
     });
   }
   async deleteSignature(actor: Actor, id: string) {
@@ -135,11 +150,12 @@ export class LetterService {
       return { ok: true };
     });
   }
-  private async structured<T>(
+  async structured<T>(
     schema: z.ZodType<T>,
     instructions: string,
     input: any,
     search = false,
+    verifySearchSources = false,
   ): Promise<T> {
     const result = await this.ai.request(
       'responses',
@@ -149,6 +165,7 @@ export class LetterService {
         instructions,
         input,
         ...(search ? { tools: [{ type: 'web_search' }], tool_choice: 'required' } : {}),
+        ...(verifySearchSources ? { include: ['web_search_call.action.sources'] } : {}),
         text: {
           format: {
             type: 'json_schema',
@@ -184,6 +201,21 @@ export class LetterService {
           : 'ИИ вернул некорректные данные. Проверьте исходные данные и повторите попытку',
       );
     }
+    if (verifySearchSources) {
+      const observed = new Set<string>();
+      for (const item of result.output || []) {
+        for (const source of item.action?.sources || []) if (source.url) observed.add(source.url);
+        for (const part of item.content || [])
+          for (const citation of part.annotations || [])
+            if (citation.type === 'url_citation') observed.add(citation.url);
+      }
+      const sources = (validated.data as { sources?: string[] }).sources || [];
+      requireCondition(
+        sources.every((url) => observed.has(url)),
+        502,
+        'Не удалось подтвердить источники поиска. Уточните ИНН компании и повторите запрос',
+      );
+    }
     return validated.data;
   }
   async recognize(file: Express.Multer.File) {
@@ -208,7 +240,18 @@ export class LetterService {
       ],
     );
   }
-  async create(actor: Actor, companyId: string, raw: unknown) {
+  async create(
+    actor: Actor,
+    companyId: string,
+    raw: unknown,
+    discovered?: {
+      name: string;
+      role: string;
+      sources: string[];
+      jobId: string;
+      leaseToken: string;
+    },
+  ) {
     const { contactId, signatureId } = z
       .object({ contactId: idSchema, signatureId: idSchema.optional() })
       .strict()
@@ -216,8 +259,10 @@ export class LetterService {
     const detail = await this.crm.detail(actor, companyId);
     requireCondition(!detail.company.archived, 409, 'Сначала восстановите компанию из архива');
     const contacts = detail.records.filter((r) => r.kind === 'contact');
-    requireCondition(contacts.length, 400, noContacts);
-    const contact = contacts.find((r) => r.id === contactId);
+    requireCondition(discovered || contacts.length, 400, noContacts);
+    const contact = discovered
+      ? { data: contactSchema.parse({ name: discovered.name, role: discovered.role }) }
+      : contacts.find((r) => r.id === contactId);
     requireCondition(contact, 400, 'Выберите контакт этой компании');
     requireCondition(
       contact.data.role?.trim(),
@@ -231,7 +276,7 @@ export class LetterService {
         ? signatures[0]
         : null;
     requireCondition(savedSignature, 400, 'Проверьте и сохраните свою подпись');
-    const { id: selectedSignatureId, ...signatureData } = savedSignature;
+    const { id: selectedSignatureId, isDefault: _isDefault, ...signatureData } = savedSignature;
     const signature = signatureSchema.parse(signatureData);
     requireCondition(!this.active.has(actor.id), 409, 'Письмо уже создаётся. Дождитесь завершения');
     this.active.add(actor.id);
@@ -246,6 +291,7 @@ export class LetterService {
             name: detail.company.name,
             inn: detail.company.inn,
             city: detail.company.city,
+            industry: detail.company.industry,
           },
           contact: { name: contact.data.name, role: contact.data.role },
         }),
@@ -328,7 +374,11 @@ export class LetterService {
       try {
         const record = await this.crm.db.transaction(async (tx) => {
           await this.crm.company(actor, companyId, tx, true);
-          await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+          const [author] = await tx.query('SELECT active,role FROM users WHERE id=$1 FOR UPDATE', [
+            actor.id,
+          ]);
+          requireCondition(author?.active, 403, 'Доступ сотрудника отозван');
+          await this.crm.company({ ...actor, role: author.role }, companyId, tx);
           const [latestSignature] = await tx.query(
             'SELECT data FROM letter_signatures WHERE id=$1 AND user_id=$2',
             [selectedSignatureId, actor.id],
@@ -346,13 +396,42 @@ export class LetterService {
             [contactId, companyId],
           );
           requireCondition(
-            current &&
-              current.data.name === contact.data.name &&
-              current.data.role === contact.data.role,
+            discovered ||
+              (current &&
+                current.data.name === contact.data.name &&
+                current.data.role === contact.data.role),
             409,
             'Контакт изменён. Создайте письмо повторно',
           );
-          return this.crm.createRecord(
+          if (discovered) {
+            const [job] = await tx.query(
+              "SELECT id FROM letter_jobs WHERE id=$1 AND lease_token=$2 AND status='processing' FOR UPDATE",
+              [discovered.jobId, discovered.leaseToken],
+            );
+            requireCondition(job, 409, 'Обработка письма уже перезапущена');
+            const existing = await tx.query(
+              "SELECT id FROM records WHERE company_id=$1 AND kind='contact' AND NOT deleted AND lower(trim(data->>'name'))=lower(trim($2))",
+              [companyId, contact.data.name],
+            );
+            if (!existing.length)
+              await this.crm.createRecord(actor, companyId, 'contact', contact.data, null, tx);
+            await tx.query(
+              'INSERT INTO audit(id,actor_id,company_id,action,entity_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+              [
+                randomUUID(),
+                actor.id,
+                companyId,
+                'letter.recipient_verified',
+                discovered.jobId,
+                JSON.stringify({
+                  name: contact.data.name,
+                  role: contact.data.role,
+                  sources: discovered.sources,
+                }),
+              ],
+            );
+          }
+          const fileRecord = await this.crm.createRecord(
             actor,
             companyId,
             'file',
@@ -365,6 +444,12 @@ export class LetterService {
             null,
             tx,
           );
+          if (discovered)
+            await tx.query(
+              "UPDATE letter_jobs SET file_id=$1,status='ready',lease_until=NULL,lease_token=NULL,attempts=0 WHERE id=$2",
+              [fileRecord.id, discovered.jobId],
+            );
+          return fileRecord;
         });
         return { record, sources: prepared.sources };
       } catch (e) {

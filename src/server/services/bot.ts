@@ -6,6 +6,8 @@ import { CrmService } from './crm';
 import { TelegramAdapter } from '../infra/telegram';
 import { DomainError, requireCondition } from '../domain/errors';
 import { ErrorLog } from '../infra/error-log';
+import { LetterBot, letterQuery } from './letter-bot';
+import { voiceHelp } from './voice-help';
 import { z } from 'zod';
 const sender = z.object({
   id: z.number().int().positive().safe(),
@@ -43,6 +45,7 @@ export class BotService {
     private reports: ReportService,
     private crm: CrmService,
     private telegram: TelegramAdapter,
+    private letters?: LetterBot,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -81,14 +84,24 @@ export class BotService {
         });
         return { ok: true };
       }
+      const query = msg?.text ? letterQuery(msg.text) : null;
+      if (query !== null && this.letters) {
+        await this.letters.enqueue(actor, `telegram:${update.update_id}`, query);
+        return { ok: true };
+      }
       if (command === '/crm')
         await this.telegram.send(chatId, {
           text: 'Ваши компании, задачи и отчёты',
           reply_markup: this.telegram.appButton(),
         });
+      else if (command === '/voice')
+        await this.telegram.send(chatId, {
+          text: voiceHelp(this.config),
+          reply_markup: this.telegram.appButton(),
+        });
       else if (command === '/start' || command === '/help')
         await this.telegram.send(chatId, {
-          text: 'Отправьте голосовое или текст: компания, с кем общались, результат и следующий шаг со сроком. Я подготовлю черновик, вы проверите и сохраните. /crm — база, /tasks — открытые задачи, /myid — ваш Telegram ID. Аудио передаётся сервису распознавания; не отправляйте лишние персональные данные.',
+          text: 'Отправьте голосовое или текст: компания, с кем общались, результат и следующий шаг со сроком. Я подготовлю черновик, вы проверите и сохраните. /voice — все голосовые возможности с примерами, /crm — база, /tasks — открытые задачи, /myid — ваш Telegram ID. Аудио передаётся сервису распознавания; не отправляйте лишние персональные данные.',
           reply_markup: this.telegram.appButton(),
         });
       else if (command === '/tasks') {

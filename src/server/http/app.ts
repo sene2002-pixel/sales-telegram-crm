@@ -33,6 +33,8 @@ import { Config } from '../config';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
 import { FileDownloads } from '../services/file-downloads';
+import { LetterBot } from '../services/letter-bot';
+import { VoiceSignatures } from '../services/voice-signatures';
 import { AuthService } from '../services/auth';
 import { CrmService } from '../services/crm';
 import { ReportService, mapReport } from '../services/reports';
@@ -47,6 +49,8 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shared/contracts';
 
 export class Services {
+  voiceSignatures: VoiceSignatures;
+  letterBot: LetterBot;
   fileDownloads: FileDownloads;
   errors: ErrorLog;
   auth: AuthService;
@@ -69,8 +73,18 @@ export class Services {
     this.reports = new ReportService(db, this.crm);
     const telegram = new TelegramAdapter(config, this.errors),
       ai = new OpenAiAdapter(config);
-    this.worker = new ReportWorker(db, this.reports, ai, ai, telegram, config);
-    this.bot = new BotService(config, this.auth, this.reports, this.crm, telegram);
+    this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
+    this.worker = new ReportWorker(
+      db,
+      this.reports,
+      ai,
+      ai,
+      telegram,
+      config,
+      this.voiceSignatures,
+    );
+    this.letterBot = new LetterBot(this.crm, this.letters, this.reports, telegram, config);
+    this.bot = new BotService(config, this.auth, this.reports, this.crm, telegram, this.letterBot);
     this.dashboard = new DashboardService(db, config.timezone);
     this.exports = new ExportService(db, this.dashboard, telegram, config);
   }
@@ -185,11 +199,33 @@ class PublicController {
 @UseGuards(AuthGuard)
 class CrmController {
   constructor(@Inject(Services) private s: Services) {}
+  @Get('me/signature-drafts') signatureDrafts(@Req() r: AuthedRequest) {
+    return this.s.voiceSignatures.list(r.actor);
+  }
+  @Post('me/signature-drafts/:id/save') saveSignatureDraft(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.s.voiceSignatures.save(r.actor, id, body);
+  }
+  @Delete('me/signature-drafts/:id') discardSignatureDraft(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.s.voiceSignatures.discard(r.actor, id);
+  }
   @Post('files/:id/download-link') downloadLink(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.fileDownloads.issue(r.actor, id);
   }
   @Get('me/letter-signatures') signatures(@Req() r: AuthedRequest) {
     return this.s.letters.signatures(r.actor);
+  }
+  @Post('me/letter-signatures/:id/default') defaultSignature(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.s.letters.setDefault(r.actor, id);
   }
   @Post('me/letter-signatures') createSignature(@Req() r: AuthedRequest, @Body() b: unknown) {
     return this.s.letters.writeSignature(r.actor, b);

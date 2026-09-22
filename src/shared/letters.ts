@@ -16,6 +16,6 @@ export const signatureSchema = z
   .strict();
 export const cardSchema = signatureSchema.extend({ lastName: field, firstName: field });
 export type Signature = z.infer<typeof signatureSchema>;
-export type SavedSignature = Signature & { id: string };
+export type SavedSignature = Signature & { id: string; isDefault?: boolean };
 export const maxSignatures = 3;
 export const noContacts = 'Для создания письма необходимо добавить хотя бы один контакт';

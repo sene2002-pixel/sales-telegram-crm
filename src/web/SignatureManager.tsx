@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { SavedSignature, maxSignatures } from '../shared/letters';
+import { SavedSignature, Signature, maxSignatures } from '../shared/letters';
 import { api } from './api';
 import { SignatureEditor } from './SignatureEditor';
 export function SignatureManager({
@@ -15,11 +15,20 @@ export function SignatureManager({
     [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const [drafts, setDrafts] = useState<{ id: string; data: Signature; transcript: string }[]>([]);
+  const [draftId, setDraftId] = useState('');
   const [editing, setEditing] = useState<SavedSignature | null | undefined>(undefined),
     [deleting, setDeleting] = useState(''),
     [message, setMessage] = useState('');
   useEffect(() => {
     let active = true;
+    api<typeof drafts>('/me/signature-drafts')
+      .then((r) => {
+        if (active) setDrafts(r);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
     api<SavedSignature[]>('/me/letter-signatures')
       .then((r) => {
         if (active) {
@@ -40,6 +49,10 @@ export function SignatureManager({
   return (
     <section>
       <h2>Подписи для писем</h2>
+      <p>
+        Можно отправить боту голосовое: «Добавь подпись», затем ФИО, телефоны и email. Черновик
+        появится здесь для проверки.
+      </p>
       {onBack && editing === undefined && (
         <button disabled={busy} onClick={onBack}>
           Вернуться к письму
@@ -55,10 +68,18 @@ export function SignatureManager({
         <p>Загрузка…</p>
       ) : editing !== undefined ? (
         <SignatureEditor
-          key={editing?.id || 'new'}
+          key={draftId || editing?.id || 'new'}
           initial={editing}
-          onCancel={() => (onBack ? onBack() : setEditing(undefined))}
+          draft={drafts.find((d) => d.id === draftId)}
+          onCancel={() => {
+            setDraftId('');
+            onBack ? onBack() : setEditing(undefined);
+          }}
           onSaved={(value) => {
+            if (draftId) {
+              setDrafts((old) => old.filter((d) => d.id !== draftId));
+              setDraftId('');
+            }
             setItems((old) =>
               old.some((s) => s.id === value.id)
                 ? old.map((s) => (s.id === value.id ? value : s))
@@ -71,13 +92,70 @@ export function SignatureManager({
         />
       ) : (
         <>
+          {drafts.map((d) => (
+            <article className="inset" key={d.id}>
+              <strong>
+                Черновик из голосового:{' '}
+                {[d.data.lastName, d.data.firstName].filter(Boolean).join(' ') || 'проверьте имя'}
+              </strong>
+              <p>Подпись ещё не сохранена. Проверьте телефоны и email.</p>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setDraftId(d.id);
+                  setEditing(null);
+                }}
+              >
+                Проверить голосовую подпись
+              </button>
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  setError('');
+                  try {
+                    await api(`/me/signature-drafts/${d.id}`, 'DELETE');
+                    setDrafts((old) => old.filter((item) => item.id !== d.id));
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Отклонить черновик
+              </button>
+            </article>
+          ))}
           <p>
             Сохранено {items.length} из {maxSignatures}. Подписи доступны только вам.
+          </p>
+          <p>
+            Для писем по запросу в Telegram выберите подпись по умолчанию. Если подпись одна, она
+            используется автоматически.
           </p>
           {items.map((s) => (
             <article className="inset" key={s.id}>
               <strong>{[s.lastName, s.firstName, s.patronymic].filter(Boolean).join(' ')}</strong>
               <p>{[s.workPhone, s.mobilePhone, s.email].filter(Boolean).join(' · ')}</p>
+              <button
+                disabled={busy || s.isDefault}
+                onClick={async () => {
+                  setBusy(true);
+                  setError('');
+                  try {
+                    setItems(
+                      await api<SavedSignature[]>(`/me/letter-signatures/${s.id}/default`, 'POST'),
+                    );
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {s.isDefault ? '✓ По умолчанию' : 'Сделать по умолчанию'}
+              </button>
               <button
                 disabled={busy}
                 onClick={() => {

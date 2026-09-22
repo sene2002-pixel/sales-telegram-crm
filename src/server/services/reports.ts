@@ -87,7 +87,7 @@ export class ReportService {
   async list(actor: Actor) {
     return (
       await this.db.query(
-        `SELECT r.*,u.name AS author_name FROM reports r JOIN users u ON u.id=r.author_id WHERE ($1::boolean OR r.author_id=$2) ORDER BY r.created_at DESC LIMIT 200`,
+        `SELECT r.*,u.name AS author_name FROM reports r JOIN users u ON u.id=r.author_id WHERE ($1::boolean OR r.author_id=$2) AND r.purpose='report' ORDER BY r.created_at DESC LIMIT 200`,
         [isLeader(actor), actor.id],
       )
     ).map(mapReport);
@@ -96,7 +96,11 @@ export class ReportService {
     const [r] = await tx.query(`SELECT * FROM reports WHERE id=$1 ${lock ? 'FOR UPDATE' : ''}`, [
       idSchema.parse(id),
     ]);
-    requireCondition(r && (isLeader(actor) || r.author_id === actor.id), 404, 'Отчёт не найден');
+    requireCondition(
+      r && r.purpose === 'report' && (isLeader(actor) || r.author_id === actor.id),
+      404,
+      'Отчёт не найден',
+    );
     return r;
   }
   async edit(actor: Actor, id: string, version: number, draft: Extraction) {

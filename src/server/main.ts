@@ -6,6 +6,7 @@ async function main() {
   await app.listen(config.port, config.host);
   services.errors.start();
   if (config.worker) services.worker.start();
+  if (config.worker) services.letterBot.start();
   console.log(
     JSON.stringify({
       event: 'server.ready',
@@ -19,6 +20,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     await services.worker.stop();
+    await services.letterBot.stop();
     await services.errors.stop();
     await app.close();
     await db.close();

@@ -22,10 +22,12 @@ export function SignatureEditor({
   initial,
   onSaved,
   onCancel,
+  draft,
 }: {
   initial: SavedSignature | null;
   onSaved: (value: SavedSignature) => void;
   onCancel: () => void;
+  draft?: { id: string; data: Signature; transcript: string };
 }) {
   const [signature, setSignature] = useState<Signature>(
     initial
@@ -37,7 +39,7 @@ export function SignatureEditor({
           mobilePhone: initial.mobilePhone,
           email: initial.email,
         }
-      : empty,
+      : draft?.data || empty,
   );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -56,6 +58,12 @@ export function SignatureEditor({
     <section>
       <h2>{initial ? 'Редактировать подпись' : 'Добавить подпись'}</h2>
       <p>Эта подпись используется в ваших письмах для всех компаний.</p>
+      {draft && (
+        <details>
+          <summary>Распознанный текст голосового</summary>
+          <p className="preserve">{draft.transcript}</p>
+        </details>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -68,7 +76,11 @@ export function SignatureEditor({
             e.preventDefault();
             void run(async () => {
               const result = await api<SavedSignature>(
-                initial ? '/me/letter-signatures/' + initial.id : '/me/letter-signatures',
+                draft
+                  ? `/me/signature-drafts/${draft.id}/save`
+                  : initial
+                    ? '/me/letter-signatures/' + initial.id
+                    : '/me/letter-signatures',
                 initial ? 'PATCH' : 'POST',
                 signature,
               );

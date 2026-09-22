@@ -73,6 +73,31 @@ export class Database implements Sql {
       await tx.query(
         'CREATE INDEX IF NOT EXISTS file_downloads_expiry ON file_downloads(expires_at)',
       );
+      await tx.query(
+        'ALTER TABLE letter_signatures ADD COLUMN IF NOT EXISTS is_default boolean NOT NULL DEFAULT false',
+      );
+      await tx.query(
+        'CREATE UNIQUE INDEX IF NOT EXISTS signature_default ON letter_signatures(user_id) WHERE is_default',
+      );
+      await tx.query(`CREATE TABLE IF NOT EXISTS letter_jobs (
+        id uuid PRIMARY KEY, source_key text UNIQUE NOT NULL, user_id uuid NOT NULL REFERENCES users(id),
+        chat_id text NOT NULL, query text NOT NULL, signature_id uuid NOT NULL,
+        status text NOT NULL DEFAULT 'queued', attempts integer NOT NULL DEFAULT 0,
+        lease_until timestamptz, lease_token uuid, available_at timestamptz NOT NULL DEFAULT now(),
+        file_id uuid REFERENCES records(id), error text, created_at timestamptz NOT NULL DEFAULT now()
+      )`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS letter_jobs_queue ON letter_jobs(status,available_at)',
+      );
+      await tx.query(`CREATE TABLE IF NOT EXISTS signature_drafts (
+        id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES users(id),
+        report_id uuid UNIQUE NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        data jsonb NOT NULL, transcript text NOT NULL, status text NOT NULL DEFAULT 'pending',
+        signature_id uuid, created_at timestamptz NOT NULL DEFAULT now()
+      )`);
+      await tx.query(
+        "ALTER TABLE reports ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'report'",
+      );
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

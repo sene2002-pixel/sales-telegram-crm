@@ -229,7 +229,7 @@ test('Signatures: upgrades legacy signature without loss and migration is repeat
   await db.migrate();
   await db.migrate();
   assert.deepEqual(await s.letters.signatures(actors.manager), [
-    { ...data, id: actors.manager.id },
+    { ...data, id: actors.manager.id, isDefault: false },
   ]);
   await s.letters.writeSignature(actors.manager, { ...data, firstName: 'Второй' });
   assert.equal((await s.letters.signatures(actors.manager)).length, 2);
@@ -1110,7 +1110,7 @@ test('[BOT-04] /myid never replies in groups or mismatched private chats', async
   await bot.handle(mismatch);
   assert.equal(messages.length, 0);
 });
-for (const command of ['/start', '/help', '/crm', '/tasks'])
+for (const command of ['/start', '/help', '/crm', '/tasks', '/voice', '/voice@crm_bot'])
   test(`[BOT-01] ${command}: meaningful response, app button and scoped tasks`, async () => {
     await s.crm.createRecord(actors.manager, own.id, 'task', { text: 'Своя задача' });
     await s.crm.createRecord(other, foreign.id, 'task', { text: 'Чужая задача' });
@@ -1119,6 +1119,13 @@ for (const command of ['/start', '/help', '/crm', '/tasks'])
     assert.equal(messages.length, 1);
     assert.equal(messages[0].reply_markup.inline_keyboard[0][0].web_app.url, config.publicUrl);
     assert.ok(messages[0].text.length > 10);
+    if (command.startsWith('/voice')) {
+      assert.match(messages[0].text, /Отчёт о работе/);
+      assert.match(messages[0].text, /Добавь подпись/);
+      assert.match(messages[0].text, /Сохранить изменения/);
+      assert.ok(messages[0].text.length <= 4096);
+      assert.equal((await s.reports.list(actors.manager)).length, 0);
+    }
     if (command === '/tasks') {
       assert.match(messages[0].text, /Своя задача/);
       assert.doesNotMatch(messages[0].text, /Чужая задача/);

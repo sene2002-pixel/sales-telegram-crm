@@ -13,6 +13,7 @@ async function main() {
     commands: [
       { command: 'start', description: 'Начать работу' },
       { command: 'help', description: 'Как отправить отчёт' },
+      { command: 'voice', description: 'Все голосовые возможности' },
       { command: 'crm', description: 'Открыть CRM' },
       { command: 'tasks', description: 'Мои задачи' },
       { command: 'myid', description: 'Узнать свой Telegram ID' },
