@@ -65,7 +65,9 @@ export class ReportService {
         await audit(tx, actor.id, 'report.received', created.id);
         if (input.chatId)
           await this.notify(tx, input.chatId, {
-            text: 'Отчёт принят. Подготовлю черновик для проверки.',
+            text: input.audioFileId
+              ? 'Голосовое принято. Распознаю запрос.'
+              : 'Отчёт принят. Подготовлю черновик для проверки.',
           });
         return mapReport(created);
       }
@@ -273,10 +275,16 @@ export class ReportService {
   async transition(actor: Actor, id: string, action: 'cancel' | 'retry') {
     return this.db.transaction(async (tx) => {
       const r = await this.get(actor, id, tx, true);
+      if (action === 'cancel' && r.status === 'cancelled') return { ok: true };
+      requireCondition(
+        action !== 'cancel' || r.status !== 'saved',
+        409,
+        'Отчёт уже сохранён. Эта кнопка не удаляет сохранённые данные. Измените их в CRM',
+      );
       requireCondition(
         action === 'retry'
           ? r.status === 'failed'
-          : ['review', 'queued', 'failed'].includes(r.status),
+          : ['review', 'queued', 'processing', 'failed'].includes(r.status),
         409,
         'Недопустимое состояние отчёта',
       );

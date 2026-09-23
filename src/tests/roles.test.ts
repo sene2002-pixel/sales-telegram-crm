@@ -794,7 +794,7 @@ for (const role of roles) {
         role === 'manager' ? 404 : 201,
       );
       await api(actor, 'post', `/reports/${ownReport.id}/${action}`).expect(
-        action === 'retry' ? 409 : 409,
+        action === 'retry' ? 409 : 201,
       );
     });
   }
@@ -1172,6 +1172,70 @@ test('[BOT-03] callbacks save, reject stale versions and cancel review', async (
   const cancelled = await review();
   await bot.handle(callback(`cancel:${cancelled.id}`));
   assert.equal((await s.reports.get(actors.manager, cancelled.id)).status, 'cancelled');
+  await bot.handle(callback(`cancel:${cancelled.id}`));
+  assert.equal(callbacks.at(-1).text, 'Отчёт отменён');
+  assert.notEqual(callbacks.at(-1).show_alert, true);
+  await bot.handle(callback(`cancel:${r.id}`));
+  assert.match(callbacks.at(-1).text, /уже сохранён/);
+  assert.equal((await s.reports.get(actors.manager, r.id)).status, 'saved');
+});
+test('cancel during extraction invalidates lease and late worker cannot restore review', async () => {
+  const r = await s.reports.enqueue(actors.manager, { text: 'Текст', sourceKey: randomUUID() });
+  const worker = new ReportWorker(
+    db,
+    s.reports,
+    { transcribe: async () => '' },
+    {
+      extract: async () => {
+        assert.equal((await s.reports.get(actors.manager, r.id)).status, 'processing');
+        await s.reports.transition(actors.manager, r.id, 'cancel');
+        // Deliberately fail after cancellation: the worker catch must also respect the lease.
+        throw new DomainError(502, 'Запоздавшая ошибка');
+      },
+    },
+    { download: async () => new Uint8Array(), send: async () => {} },
+    config,
+  );
+  await worker.processOne();
+  const cancelled = await s.reports.get(actors.manager, r.id);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.lease_token, null);
+  assert.equal(cancelled.error, null);
+  await s.reports.transition(actors.manager, r.id, 'cancel');
+  assert.equal((await s.reports.get(actors.manager, r.id)).version, cancelled.version);
+});
+test('unknown commands do not create reports, including after voice transcription', async () => {
+  const { bot, messages } = fakeBot();
+  await bot.handle(message('/unknown'));
+  await bot.handle(message('Покажи погоду'));
+  assert.ok(messages.every((m) => m.text.includes('Не знаю такой команды')));
+  assert.equal((await s.reports.list(actors.manager)).length, 0);
+  const r = await s.reports.enqueue(actors.manager, {
+    audioFileId: 'voice',
+    chatId: actors.manager.telegramId,
+    sourceKey: randomUUID(),
+  });
+  const worker = new ReportWorker(
+    db,
+    s.reports,
+    { transcribe: async () => 'Удали подпись Иванова' },
+    {
+      extract: async () => {
+        throw new Error('Unknown command must not become report');
+      },
+    },
+    { download: async () => new Uint8Array([1]), send: async () => {} },
+    config,
+  );
+  await worker.processOne();
+  assert.equal((await s.reports.list(actors.manager)).length, 0);
+  const [row] = await db.query('SELECT * FROM reports WHERE id=$1', [r.id]);
+  assert.equal(row.purpose, 'command');
+  assert.equal(row.status, 'cancelled');
+  assert.equal(row.transcript, null);
+  const notifications = await db.query('SELECT payload FROM outbox');
+  assert.ok(notifications.some((n) => n.payload.text.includes('Не знаю такой команды')));
+  assert.ok(notifications.some((n) => n.payload.text.includes('Голосовое принято')));
 });
 test('[QUEUE-01] transient failure retries with delay; success preserves transcript and review warning', async () => {
   const r = await s.reports.enqueue(actors.manager, { text: 'Текст', sourceKey: randomUUID() });

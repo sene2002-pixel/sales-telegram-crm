@@ -8,6 +8,7 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { ErrorLog } from '../infra/error-log';
 import { LetterBot, letterQuery } from './letter-bot';
 import { voiceHelp } from './voice-help';
+import { looksLikeCommand, unknownCommand } from './command-intent';
 import { VoiceSignatures } from './voice-signatures';
 import { z } from 'zod';
 const sender = z.object({
@@ -87,7 +88,7 @@ export class BotService {
         if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
         await this.telegram.call('answerCallbackQuery', {
           callback_query_id: callback.id,
-          text: 'Готово',
+          text: action === 'cancel' ? 'Отчёт отменён' : 'Готово',
         });
         return { ok: true };
       }
@@ -127,6 +128,8 @@ export class BotService {
             : 'Открытых задач нет.',
           reply_markup: this.telegram.appButton(),
         });
+      } else if (msg?.text && looksLikeCommand(msg.text)) {
+        await this.telegram.send(chatId, { text: unknownCommand });
       } else if (msg?.voice || msg?.text) {
         requireCondition(
           !msg.voice ||

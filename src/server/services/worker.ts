@@ -9,6 +9,7 @@ import { DomainError } from '../domain/errors';
 import { extractionSchema } from '../../shared/contracts';
 import { VoiceSignatures } from './voice-signatures';
 import { LetterBot } from './letter-bot';
+import { looksLikeCommand, unknownCommand } from './command-intent';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
@@ -82,6 +83,17 @@ export class ReportWorker {
       ]);
       if (await this.voiceSignatures?.process(report, token, transcript)) return true;
       if (await this.letterBot?.processVoice(report, token, transcript)) return true;
+      if (looksLikeCommand(transcript)) {
+        await this.db.transaction(async (tx) => {
+          const rows = await tx.query(
+            "UPDATE reports SET purpose='command',status='cancelled',transcript=NULL,audio_file_id=NULL,draft=NULL,error=NULL,lease_until=NULL,lease_token=NULL,version=version+1 WHERE id=$1 AND lease_token=$2 RETURNING id",
+            [report.id, token],
+          );
+          if (rows.length && report.chat_id)
+            await this.reports.notify(tx, report.chat_id, { text: unknownCommand });
+        });
+        return true;
+      }
       const draft = extractionSchema.parse(
         await this.extractor.extract(transcript, new Date(report.created_at).toISOString()),
       );
