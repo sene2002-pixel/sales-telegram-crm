@@ -1,10 +1,13 @@
 // Compare page identity, not raw URL spelling. Do not equate different paths,
-// query parameters, subdomains or protocols: those can identify other entities.
+// meaningful query parameters, subdomains or protocols: those can identify other entities.
 export function sourceKey(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   try {
     const url = new URL(raw);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    // Search providers append tracking markers while the model commonly returns the canonical URL.
+    // They do not identify the document and must not make an otherwise identical source fail validation.
+    for (const key of [...url.searchParams.keys()]) if (/^utm_/i.test(key)) url.searchParams.delete(key);
     // Preserve hash-router routes; only document fragments/text highlights are ignored.
     if (!/^#(?:!|\/)/.test(url.hash)) url.hash = '';
     return url.href;

@@ -2,8 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { observedSources, sourceKey } from '../server/services/search-sources';
 
-test('URL identity normalizes host, default port, root slash and fragments only', () => {
+test('URL identity normalizes host, default port, root slash, fragments and UTM markers', () => {
   assert.equal(sourceKey('https://EXAMPLE.com:443#contacts'), sourceKey('https://example.com/'));
+  assert.equal(
+    sourceKey('https://example.com/company?id=1&utm_source=search&utm_campaign=crm'),
+    sourceKey('https://example.com/company?id=1'),
+  );
+  assert.equal(
+    sourceKey('https://example.com/company?UTM_SOURCE=search&id=1'),
+    sourceKey('https://example.com/company?id=1'),
+  );
   for (const url of [
     'https://example.com/Company',
     'https://example.com/company/',
