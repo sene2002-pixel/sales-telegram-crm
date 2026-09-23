@@ -124,6 +124,99 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         /источники/,
       );
     });
+    await t.test(
+      'equivalent source URLs retain provider URL; query and path changes are rejected',
+      async () => {
+        s.letters.ai.request = async () =>
+          response({ ...research, sources: ['https://EXAMPLE.com:443/company#management'] });
+        const verified = await s.letters.structured(
+          recipientResearchSchema,
+          'search',
+          'Стройтрансгаз',
+          true,
+          true,
+        );
+        assert.deepEqual(verified.sources, sources);
+        for (const url of [
+          'https://example.com/other',
+          'https://example.com/company?id=2',
+          'http://example.com/company',
+          'https://example.com/company/',
+        ]) {
+          s.letters.ai.request = async () => response({ ...research, sources: [url] });
+          await assert.rejects(
+            s.letters.structured(recipientResearchSchema, 'search', 'Стройтрансгаз', true, true),
+            /ИНН.*не обязателен/,
+          );
+        }
+      },
+    );
+    await t.test(
+      'completed page opening and citations are recognized; missing evidence is logged safely',
+      async () => {
+        const message = {
+          type: 'message',
+          content: [{ type: 'output_text', text: JSON.stringify(research) }],
+        };
+        s.letters.ai.request = async () => ({
+          status: 'completed',
+          output: [
+            {
+              type: 'web_search_call',
+              status: 'completed',
+              action: { type: 'open_page', url: sources[0] },
+            },
+            message,
+          ],
+        });
+        assert.deepEqual(
+          (await s.letters.structured(recipientResearchSchema, 'search', 'company', true, true))
+            .sources,
+          sources,
+        );
+        s.letters.ai.request = async () => ({
+          status: 'completed',
+          output: [
+            {
+              content: [
+                { ...message.content[0], annotations: [{ type: 'url_citation', url: sources[0] }] },
+              ],
+            },
+          ],
+        });
+        assert.deepEqual(
+          (await s.letters.structured(recipientResearchSchema, 'search', 'company', true, true))
+            .sources,
+          sources,
+        );
+        s.letters.ai.request = async () => ({
+          status: 'completed',
+          output: [
+            {
+              type: 'web_search_call',
+              status: 'failed',
+              action: { type: 'open_page', url: sources[0] },
+            },
+            message,
+          ],
+        });
+        await assert.rejects(
+          s.letters.structured(recipientResearchSchema, 'search', 'company', true, true),
+          /источники/,
+        );
+        s.letters.ai.request = async () => response({ ...research, sources: [] });
+        await assert.rejects(
+          s.letters.structured(recipientResearchSchema, 'search', 'company', true, true),
+          /источники/,
+        );
+        const logs = await db.query(
+          "SELECT event,message FROM error_logs WHERE event IN ('letter.sources_missing','letter.sources_mismatch')",
+        );
+        assert.ok(logs.some((log) => log.event === 'letter.sources_missing'));
+        assert.ok(logs.some((log) => log.event === 'letter.sources_mismatch'));
+        assert.ok(logs.every((log) => !log.message.includes('https://')));
+      },
+    );
     await t.test('missing LPR does not create companies or contacts', async () => {
       s.letters.ai.request = async () =>
         response({ status: 'not_found', company: research.company, recipient: null, sources });

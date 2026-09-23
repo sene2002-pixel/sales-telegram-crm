@@ -16,7 +16,9 @@ import {
 import { CrmService } from './crm';
 import { Config } from '../config';
 import { OpenAiAdapter } from '../infra/ai';
-import { requireCondition } from '../domain/errors';
+import { DomainError, requireCondition } from '../domain/errors';
+import { ErrorLog } from '../infra/error-log';
+import { observedSources, sourceKey } from './search-sources';
 
 const line = z
   .string()
@@ -162,7 +164,11 @@ export class LetterService {
       JSON.stringify({
         model: this.config.letterModel,
         store: false,
-        instructions,
+        instructions:
+          instructions +
+          (verifySearchSources
+            ? '\nПоле sources: копируй точные URL использованных источников из результатов web_search или цитат. Не сокращай пути, не меняй домен, протокол и параметры URL. Не придумывай ссылки.'
+            : ''),
         input,
         ...(search ? { tools: [{ type: 'web_search' }], tool_choice: 'required' } : {}),
         ...(verifySearchSources ? { include: ['web_search_call.action.sources'] } : {}),
@@ -202,19 +208,29 @@ export class LetterService {
       );
     }
     if (verifySearchSources) {
-      const observed = new Set<string>();
-      for (const item of result.output || []) {
-        for (const source of item.action?.sources || []) if (source.url) observed.add(source.url);
-        for (const part of item.content || [])
-          for (const citation of part.annotations || [])
-            if (citation.type === 'url_citation') observed.add(citation.url);
-      }
+      const observed = observedSources(result.output || []);
       const sources = (validated.data as { sources?: string[] }).sources || [];
-      requireCondition(
-        sources.every((url) => observed.has(url)),
-        502,
-        'Не удалось подтвердить источники поиска. Уточните ИНН компании и повторите запрос',
-      );
+      const unmatched = sources.filter((url) => !observed.has(sourceKey(url) || ''));
+      const missing = (validated.data as { status?: string }).status === 'found' && !sources.length;
+      if (unmatched.length || missing) {
+        await new ErrorLog(this.crm.db).record(
+          new DomainError(
+            502,
+            `Проверка источников: получено=${observed.size}, заявлено=${sources.length}, несовпадений=${unmatched.length}`,
+          ),
+          { event: observed.size ? 'letter.sources_mismatch' : 'letter.sources_missing' },
+        );
+        throw new DomainError(
+          502,
+          'Сервис поиска не смог подтвердить источники. Письмо не создано. Повторите запрос позже — ИНН для повторной попытки не обязателен',
+        );
+      }
+      // Persist the URL returned by the search provider, not its model-rewritten spelling.
+      if (sources.length)
+        return schema.parse({
+          ...validated.data,
+          sources: [...new Set(sources.map((url) => observed.get(sourceKey(url)!)!))],
+        });
     }
     return validated.data;
   }
