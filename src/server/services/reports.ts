@@ -47,6 +47,7 @@ export class ReportService {
       audioFileId?: string;
       text?: string;
       sentAt?: string;
+      purpose?: 'dialogue';
     },
   ) {
     requireCondition(
@@ -56,7 +57,7 @@ export class ReportService {
     );
     return this.db.transaction(async (tx) => {
       const [created] = await tx.query(
-        `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
+        `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at,purpose) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
         [
           randomUUID(),
           actor.id,
@@ -65,6 +66,7 @@ export class ReportService {
           input.audioFileId || null,
           input.text || null,
           input.sentAt || new Date().toISOString(),
+          input.purpose || 'report',
         ],
       );
       if (created) {

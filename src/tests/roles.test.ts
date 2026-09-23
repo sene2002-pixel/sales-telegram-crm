@@ -1120,9 +1120,9 @@ for (const command of ['/start', '/help', '/crm', '/tasks', '/voice', '/voice@cr
     assert.equal(messages[0].reply_markup.inline_keyboard[0][0].web_app.url, config.publicUrl);
     assert.ok(messages[0].text.length > 10);
     if (command.startsWith('/voice')) {
-      assert.match(messages[0].text, /Отчёт о работе/);
+      assert.match(messages[0].text, /Результат разговора и задача/);
       assert.match(messages[0].text, /Добавь подпись/);
-      assert.match(messages[0].text, /Сохранить изменения/);
+      assert.match(messages[0].text, /каждое покажу и попрошу подтвердить отдельно/);
       assert.ok(messages[0].text.length <= 4096);
       assert.equal((await s.reports.list(actors.manager)).length, 0);
     }

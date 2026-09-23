@@ -164,6 +164,7 @@ export class LetterService {
     input: any,
     search = false,
     verifySearchSources = false,
+    options: { schemaName?: string; maxOutputTokens?: number; temperature?: number } = {},
   ): Promise<T> {
     const result = await this.trace(
       'letter.ai.request',
@@ -171,7 +172,7 @@ export class LetterService {
         model: this.config.letterModel,
         search,
         verifySearchSources,
-        schemaName: 'letter_data',
+        schemaName: options.schemaName || 'letter_data',
       },
       () =>
         this.ai.request(
@@ -179,6 +180,8 @@ export class LetterService {
           JSON.stringify({
             model: this.config.letterModel,
             store: false,
+            ...(options.maxOutputTokens ? { max_output_tokens: options.maxOutputTokens } : {}),
+            ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
             instructions: protectedInstructions(
               instructions +
                 (verifySearchSources
@@ -191,7 +194,7 @@ export class LetterService {
             text: {
               format: {
                 type: 'json_schema',
-                name: 'letter_data',
+                name: options.schemaName || 'letter_data',
                 strict: true,
                 schema: z.toJSONSchema(schema, { target: 'draft-7' }),
               },

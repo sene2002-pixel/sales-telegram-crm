@@ -14,6 +14,7 @@ import { DiagnosticLog } from '../infra/diagnostic-log';
 import { VoiceContacts } from './voice-contacts';
 import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
 import { securityIntent, securityReply } from './pico-security';
+import { DialogueService } from './dialogue';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
@@ -31,6 +32,7 @@ export class ReportWorker {
     private letterBot?: LetterBot,
     private diagnostics?: DiagnosticLog,
     private voiceContacts?: VoiceContacts,
+    private dialogue?: DialogueService,
   ) {}
   start() {
     if (this.timer) return;
@@ -68,7 +70,11 @@ export class ReportWorker {
     const token = randomUUID();
     const report = await this.db.transaction(async (tx) => {
       const [r] = await tx.query(
-        `SELECT * FROM reports WHERE (status='queued' AND available_at<=now()) OR (status='processing' AND lease_until<now()) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`,
+        `SELECT r.* FROM reports r WHERE ((r.status='queued' AND r.available_at<=now()) OR (r.status='processing' AND r.lease_until<now()))
+         AND (r.purpose<>'dialogue' OR NOT EXISTS (
+           SELECT 1 FROM reports earlier WHERE earlier.author_id=r.author_id AND earlier.purpose='dialogue'
+           AND earlier.status IN ('queued','processing') AND earlier.received_seq<r.received_seq
+         )) ORDER BY r.received_seq FOR UPDATE OF r SKIP LOCKED LIMIT 1`,
       );
       if (!r) return null;
       if (r.attempts >= 3) {
@@ -87,9 +93,11 @@ export class ReportWorker {
             await this.reports.processing.run(r.source_key, () =>
               this.reports.notify(tx, r.chat_id, {
                 text:
-                  r.purpose === 'contact'
-                    ? 'Подготовка контакта прерывалась трижды. Контакт не создан. Повторите голосовую команду.'
-                    : 'Обработка отчёта прерывалась трижды. Откройте CRM для повторной попытки.',
+                  r.purpose === 'dialogue'
+                    ? 'Не удалось разобрать запрос после трёх попыток. Новые действия не выполнены. Повторите запрос.'
+                    : r.purpose === 'contact'
+                      ? 'Подготовка контакта прерывалась трижды. Контакт не создан. Повторите голосовую команду.'
+                      : 'Обработка отчёта прерывалась трижды. Откройте CRM для повторной попытки.',
               }),
             );
         };
@@ -167,6 +175,16 @@ export class ReportWorker {
               tx,
             );
           });
+          return true;
+        }
+        if (report.purpose === 'dialogue' && this.dialogue) {
+          await this.db.query('UPDATE reports SET transcript=$1 WHERE id=$2 AND lease_token=$3', [
+            transcript,
+            report.id,
+            token,
+          ]);
+          await this.reports.processing.stage(report.source_key, 'Разбираю запрос и контекст…');
+          await this.dialogue.process(report, token, transcript);
           return true;
         }
         const signature = signatureOperation(transcript);
@@ -296,7 +314,9 @@ export class ReportWorker {
             await this.reports.notify(tx, report.chat_id, {
               text: contact
                 ? `Не удалось подготовить контакт: ${message}. Контакт не создан. Повторите голосовую команду.`
-                : `Не удалось обработать отчёт: ${message}. Откройте CRM для повторной попытки.`,
+                : report.purpose === 'dialogue'
+                  ? `Не удалось разобрать запрос: ${message}. Новые действия не выполнены. Повторите запрос.`
+                  : `Не удалось обработать отчёт: ${message}. Откройте CRM для повторной попытки.`,
             });
           else if (rows.length && !failed)
             await this.reports.processing.stage(

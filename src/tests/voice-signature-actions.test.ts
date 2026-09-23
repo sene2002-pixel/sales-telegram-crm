@@ -351,7 +351,7 @@ test('voice signature confirmation, edits, defaults, ambiguity, ACL and letter c
       },
     );
     assert.ok(voiceHelp(config).length < 4096);
-    assert.match(voiceHelp(config), /Редактирование подписи/);
+    assert.match(voiceHelp(config), /Поменяй email в подписи/);
     for (const row of await db.query('SELECT payload FROM outbox'))
       for (const buttons of row.payload.reply_markup?.inline_keyboard || [])
         for (const button of buttons)

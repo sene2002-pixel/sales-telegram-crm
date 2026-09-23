@@ -136,6 +136,25 @@ export class Database implements Sql {
       await tx.query(
         "ALTER TABLE reports ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'report'",
       );
+      // Telegram dates have only second precision; UUID order must not reorder a dialogue.
+      await tx.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS received_seq bigserial');
+      await tx.query(`CREATE TABLE IF NOT EXISTS dialogue_state (
+        user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        company jsonb, revision integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now()
+      )`);
+      await tx.query(`CREATE TABLE IF NOT EXISTS dialogue_actions (
+        id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES users(id),
+        report_id uuid NOT NULL REFERENCES reports(id), position integer NOT NULL,
+        sequence bigserial UNIQUE, status text NOT NULL DEFAULT 'queued',
+        payload jsonb NOT NULL, company jsonb, snapshot jsonb, options jsonb NOT NULL DEFAULT '[]',
+        created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(report_id,position)
+      )`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS dialogue_actions_user ON dialogue_actions(user_id,sequence)',
+      );
+      await tx.query(
+        'ALTER TABLE dialogue_actions ADD COLUMN IF NOT EXISTS preview_version integer NOT NULL DEFAULT 0',
+      );
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

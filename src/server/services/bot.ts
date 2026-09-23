@@ -16,6 +16,7 @@ import { VoiceContacts } from './voice-contacts';
 import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
 import { securityIntent, securityReply } from './pico-security';
 import { picoGreeting } from './pico-greeting';
+import { DialogueService } from './dialogue';
 const sender = z.object({
   id: z.number().int().positive().safe(),
   first_name: z.string().optional(),
@@ -56,6 +57,7 @@ export class BotService {
     private voiceSignatures?: VoiceSignatures,
     private diagnostics?: DiagnosticLog,
     private voiceContacts?: VoiceContacts,
+    private dialogue?: DialogueService,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -94,11 +96,13 @@ export class BotService {
       kind: callback ? 'callback' : msg?.voice ? 'voice' : 'text',
       text: blocked
         ? '[SECURITY_REQUEST]'
-        : msg?.text && signatureOperation(msg.text)
-          ? '[SIGNATURE]'
-          : msg?.text && looksLikeContactCommand(msg.text)
-            ? '[CONTACT]'
-            : msg?.text,
+        : this.dialogue && msg?.text
+          ? '[DIALOGUE]'
+          : msg?.text && signatureOperation(msg.text)
+            ? '[SIGNATURE]'
+            : msg?.text && looksLikeContactCommand(msg.text)
+              ? '[CONTACT]'
+              : msg?.text,
       duration: msg?.voice?.duration,
       size: msg?.voice?.file_size,
     });
@@ -147,6 +151,11 @@ export class BotService {
         if (action === 'cp' && id) await this.voiceContacts?.choose(actor, id, Number(version));
         if (action === 'lp' && id) await this.letters?.chooseSignature(actor, id, Number(version));
         if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
+        if (action === 'da' && id)
+          await this.dialogue?.callback(actor, id, 'confirm', Number(version));
+        if (action === 'dx' && id) await this.dialogue?.callback(actor, id, 'skip');
+        if (action === 'dp' && id)
+          await this.dialogue?.callback(actor, id, 'choose', Number(version));
         await this.telegram.call('answerCallbackQuery', {
           callback_query_id: callback.id,
           text:
@@ -160,7 +169,7 @@ export class BotService {
         return { ok: true };
       }
       const query = msg?.text ? letterQuery(msg.text) : null;
-      if (query !== null && this.letters) {
+      if (query !== null && this.letters && !this.dialogue) {
         await this.diagnostics?.record('command.routed', { route: 'letter', query });
         await this.letters.enqueue(actor, `telegram:${update.update_id}`, query);
         return { ok: true };
@@ -200,6 +209,29 @@ export class BotService {
                 .slice(0, 3900)
             : 'Открытых задач нет.',
           reply_markup: this.telegram.appButton(),
+        });
+      } else if (
+        this.dialogue &&
+        (msg?.voice || msg?.text) &&
+        (!msg.text?.startsWith('/') || command === '/letter')
+      ) {
+        requireCondition(
+          !msg.voice ||
+            (msg.voice.duration <= this.config.maxVoiceSeconds &&
+              (msg.voice.file_size || 0) <= this.config.maxVoiceBytes),
+          413,
+          'Голосовое слишком длинное или большое',
+        );
+        await this.reports.enqueue(actor, {
+          sourceKey: `telegram:${update.update_id}`,
+          chatId,
+          audioFileId: msg.voice?.file_id,
+          text:
+            command === '/letter'
+              ? msg.text?.replace(/^\/letter(?:@\w+)?/, 'Подготовь письмо')
+              : msg.text,
+          sentAt: new Date(msg.date * 1000).toISOString(),
+          purpose: 'dialogue',
         });
       } else if (msg?.text && isContactCreateRequest(msg.text)) {
         await this.diagnostics?.record('command.routed', { route: 'contact_voice_only' });

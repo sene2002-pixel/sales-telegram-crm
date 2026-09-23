@@ -148,7 +148,7 @@ test('voice letters route atomically, require signature, deduplicate and guard s
         ),
       );
     }
-    assert.match(voiceHelp(config), /3\. Генерация информационного письма/);
+    assert.match(voiceHelp(config), /4\. Информационное письмо/);
     assert.ok(voiceHelp(config).length < 4096);
   } finally {
     await app.close();

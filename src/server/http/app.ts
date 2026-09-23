@@ -42,6 +42,7 @@ import { CrmService } from '../services/crm';
 import { ReportService, mapReport } from '../services/reports';
 import { ReportWorker } from '../services/worker';
 import { BotService } from '../services/bot';
+import { DialogueService } from '../services/dialogue';
 import { DashboardService } from '../services/dashboard';
 import { ExportService } from '../services/exports';
 import { LetterService } from '../services/letters';
@@ -65,6 +66,7 @@ export class Services {
   dashboard: DashboardService;
   exports: ExportService;
   letters: LetterService;
+  dialogue: DialogueService;
   constructor(
     public db: Database,
     public config: Config,
@@ -88,6 +90,14 @@ export class Services {
       config,
       this.diagnostics,
     );
+    this.dialogue = new DialogueService(
+      this.crm,
+      this.reports,
+      this.letters,
+      this.letterBot,
+      config,
+      this.diagnostics,
+    );
     this.worker = new ReportWorker(
       db,
       this.reports,
@@ -99,6 +109,7 @@ export class Services {
       this.letterBot,
       this.diagnostics,
       this.voiceContacts,
+      this.dialogue,
     );
     this.bot = new BotService(
       config,
@@ -110,6 +121,7 @@ export class Services {
       this.voiceSignatures,
       this.diagnostics,
       this.voiceContacts,
+      this.dialogue,
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.exports = new ExportService(db, this.dashboard, telegram, config);

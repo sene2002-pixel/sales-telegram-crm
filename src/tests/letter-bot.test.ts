@@ -141,23 +141,45 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
       assert.equal((await s.letters.signatures(actor)).filter((s) => s.isDefault).length, 0);
       await s.letters.setDefault(actor, first.id);
     });
-    await t.test('webhook enqueues once and does not create report', async () => {
-      const update = {
-        update_id: 987654,
-        message: {
-          message_id: 1,
-          date: Math.floor(Date.now() / 1000),
-          from: { id: 12345 },
-          chat: { id: 12345, type: 'private' },
-          text: 'Подготовь письмо для ООО Ромашка',
-        },
-      };
-      await s.bot.handle(update);
-      await s.bot.handle(update);
-      assert.equal((await db.query('SELECT * FROM letter_jobs')).length, 1);
-      assert.equal((await db.query('SELECT * FROM reports')).length, 0);
-      await assert.rejects(bot.enqueue(actor, 'another', 'Ромашка'), /ещё обрабатывается/);
-    });
+    await t.test(
+      'webhook plans once and enqueues letter only after individual confirmation',
+      async () => {
+        const update = {
+          update_id: 987654,
+          message: {
+            message_id: 1,
+            date: Math.floor(Date.now() / 1000),
+            from: { id: 12345 },
+            chat: { id: 12345, type: 'private' },
+            text: 'Подготовь письмо для ООО Ромашка',
+          },
+        };
+        await s.bot.handle(update);
+        await s.bot.handle(update);
+        assert.equal((await db.query('SELECT * FROM letter_jobs')).length, 0);
+        assert.equal((await db.query("SELECT * FROM reports WHERE purpose='dialogue'")).length, 1);
+        s.letters.ai.request = async () =>
+          response({
+            mode: 'append',
+            discussedCompany: null,
+            reply: '',
+            actions: [
+              {
+                kind: 'letter',
+                company: { mode: 'named', name: 'ООО Ромашка', inn: '', city: '' },
+              },
+            ],
+          });
+        await s.worker.processOne();
+        const [action] = await db.query("SELECT * FROM dialogue_actions WHERE status='ready'");
+        assert.ok(action);
+        assert.equal((await db.query('SELECT * FROM letter_jobs')).length, 0);
+        await s.dialogue.callback(actor, action.id, 'confirm', action.preview_version);
+        assert.equal((await db.query('SELECT * FROM letter_jobs')).length, 1);
+        assert.equal((await db.query("SELECT * FROM reports WHERE purpose='report'")).length, 0);
+        await assert.rejects(bot.enqueue(actor, 'another', 'Ромашка'), /ещё обрабатывается/);
+      },
+    );
     await t.test('ambiguous company makes no CRM records and asks for clarification', async () => {
       s.letters.ai.request = async () =>
         response({ status: 'ambiguous', company: null, recipient: null, sources: [] });
