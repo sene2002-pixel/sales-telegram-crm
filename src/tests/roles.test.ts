@@ -1218,7 +1218,7 @@ test('unknown commands do not create reports, including after voice transcriptio
   const worker = new ReportWorker(
     db,
     s.reports,
-    { transcribe: async () => 'Удали подпись Иванова' },
+    { transcribe: async () => 'Нужно удалить все подписи' },
     {
       extract: async () => {
         throw new Error('Unknown command must not become report');

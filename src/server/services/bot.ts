@@ -12,6 +12,8 @@ import { looksLikeCommand, unknownCommand } from './command-intent';
 import { VoiceSignatures, signatureOperation } from './voice-signatures';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import { z } from 'zod';
+import { VoiceContacts } from './voice-contacts';
+import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
 const sender = z.object({
   id: z.number().int().positive().safe(),
   first_name: z.string().optional(),
@@ -51,6 +53,7 @@ export class BotService {
     private letters?: LetterBot,
     private voiceSignatures?: VoiceSignatures,
     private diagnostics?: DiagnosticLog,
+    private voiceContacts?: VoiceContacts,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -86,7 +89,12 @@ export class BotService {
       messageId: msg?.message_id,
       sentAt: msg?.date,
       kind: callback ? 'callback' : msg?.voice ? 'voice' : 'text',
-      text: msg?.text && signatureOperation(msg.text) ? '[SIGNATURE]' : msg?.text,
+      text:
+        msg?.text && signatureOperation(msg.text)
+          ? '[SIGNATURE]'
+          : msg?.text && looksLikeContactCommand(msg.text)
+            ? '[CONTACT]'
+            : msg?.text,
       duration: msg?.voice?.duration,
       size: msg?.voice?.file_size,
     });
@@ -118,11 +126,19 @@ export class BotService {
         if (action === 'sc' && id) await this.voiceSignatures?.confirm(actor, id);
         if (action === 'sx' && id) await this.voiceSignatures?.discard(actor, id);
         if (action === 'sp' && id) await this.voiceSignatures?.choose(actor, id, Number(version));
+        if (action === 'cc' && id) await this.voiceContacts?.confirm(actor, id);
+        if (action === 'cx' && id) await this.voiceContacts?.discard(actor, id);
+        if (action === 'cp' && id) await this.voiceContacts?.choose(actor, id, Number(version));
         if (action === 'lp' && id) await this.letters?.chooseSignature(actor, id, Number(version));
         if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
         await this.telegram.call('answerCallbackQuery', {
           callback_query_id: callback.id,
-          text: action === 'cancel' ? 'Отчёт отменён' : 'Готово',
+          text:
+            action === 'cancel'
+              ? 'Отчёт отменён'
+              : action === 'cx'
+                ? 'Создание контакта отменено'
+                : 'Готово',
         });
         await this.diagnostics?.record('telegram.callback.completed', { action, entityId: id });
         return { ok: true };
@@ -163,6 +179,11 @@ export class BotService {
                 .slice(0, 3900)
             : 'Открытых задач нет.',
           reply_markup: this.telegram.appButton(),
+        });
+      } else if (msg?.text && isContactCreateRequest(msg.text)) {
+        await this.diagnostics?.record('command.routed', { route: 'contact_voice_only' });
+        await this.telegram.send(chatId, {
+          text: 'Для создания контакта отправьте голосовое: «Создай контакт для ООО Рога и копыта. Иванов Иван, директор, телефон …, email …». Перед сохранением покажу данные для проверки.',
         });
       } else if (msg?.text && looksLikeCommand(msg.text)) {
         await this.diagnostics?.record('command.routed', { route: 'unknown' });

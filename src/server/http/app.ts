@@ -36,6 +36,7 @@ import { DiagnosticLog } from '../infra/diagnostic-log';
 import { FileDownloads } from '../services/file-downloads';
 import { LetterBot } from '../services/letter-bot';
 import { VoiceSignatures } from '../services/voice-signatures';
+import { VoiceContacts } from '../services/voice-contacts';
 import { AuthService } from '../services/auth';
 import { CrmService } from '../services/crm';
 import { ReportService, mapReport } from '../services/reports';
@@ -52,6 +53,7 @@ import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shar
 export class Services {
   diagnostics: DiagnosticLog;
   voiceSignatures: VoiceSignatures;
+  voiceContacts: VoiceContacts;
   letterBot: LetterBot;
   fileDownloads: FileDownloads;
   errors: ErrorLog;
@@ -77,6 +79,7 @@ export class Services {
     this.reports = new ReportService(db, this.crm, this.diagnostics);
     const telegram = new TelegramAdapter(config, this.errors);
     this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
+    this.voiceContacts = new VoiceContacts(db, this.crm, this.letters, this.reports, config);
     this.letterBot = new LetterBot(
       this.crm,
       this.letters,
@@ -95,6 +98,7 @@ export class Services {
       this.voiceSignatures,
       this.letterBot,
       this.diagnostics,
+      this.voiceContacts,
     );
     this.bot = new BotService(
       config,
@@ -105,6 +109,7 @@ export class Services {
       this.letterBot,
       this.voiceSignatures,
       this.diagnostics,
+      this.voiceContacts,
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.exports = new ExportService(db, this.dashboard, telegram, config);

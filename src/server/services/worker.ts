@@ -11,6 +11,8 @@ import { VoiceSignatures, signatureOperation } from './voice-signatures';
 import { LetterBot } from './letter-bot';
 import { looksLikeCommand, unknownCommand } from './command-intent';
 import { DiagnosticLog } from '../infra/diagnostic-log';
+import { VoiceContacts } from './voice-contacts';
+import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
@@ -25,6 +27,7 @@ export class ReportWorker {
     private voiceSignatures?: VoiceSignatures,
     private letterBot?: LetterBot,
     private diagnostics?: DiagnosticLog,
+    private voiceContacts?: VoiceContacts,
   ) {}
   start() {
     this.timer = setInterval(() => {
@@ -64,7 +67,10 @@ export class ReportWorker {
           );
           if (r.chat_id)
             await this.reports.notify(tx, r.chat_id, {
-              text: 'Обработка отчёта прерывалась трижды. Откройте CRM для повторной попытки.',
+              text:
+                r.purpose === 'contact'
+                  ? 'Подготовка контакта прерывалась трижды. Контакт не создан. Повторите голосовую команду.'
+                  : 'Обработка отчёта прерывалась трижды. Откройте CRM для повторной попытки.',
             });
         };
         if (this.diagnostics)
@@ -84,6 +90,7 @@ export class ReportWorker {
     });
     if (!report) return false;
     const process = async () => {
+      let contact = report.purpose === 'contact';
       await this.diagnostics?.record('report.claimed', {
         kind: report.audio_file_id ? 'voice' : 'text',
         resumed: !!report.transcript,
@@ -105,11 +112,14 @@ export class ReportWorker {
             : transcribe());
         }
         const signature = signatureOperation(transcript);
+        contact = isContactCreateRequest(transcript);
         await this.diagnostics?.record(
           'voice.transcript',
           signature
             ? { redacted: 'signature', operation: signature, characters: transcript.length }
-            : { text: transcript },
+            : looksLikeContactCommand(transcript)
+              ? { redacted: 'contact', characters: transcript.length }
+              : { text: transcript },
         );
         await this.db.query('UPDATE reports SET transcript=$1 WHERE id=$2 AND lease_token=$3', [
           transcript,
@@ -123,6 +133,11 @@ export class ReportWorker {
             route: 'signature',
             operation: signature,
           });
+          return true;
+        }
+        if (contact) await this.diagnostics?.record('contact.processing.started');
+        if (await this.voiceContacts?.process(report, token, transcript)) {
+          await this.diagnostics?.record('command.routed', { route: 'contact' });
           return true;
         }
         if (await this.letterBot?.processVoice(report, token, transcript)) {
@@ -212,7 +227,9 @@ export class ReportWorker {
           );
           if (rows.length && failed && report.chat_id)
             await this.reports.notify(tx, report.chat_id, {
-              text: `Не удалось обработать отчёт: ${message}. Откройте CRM для повторной попытки.`,
+              text: contact
+                ? `Не удалось подготовить контакт: ${message}. Контакт не создан. Повторите голосовую команду.`
+                : `Не удалось обработать отчёт: ${message}. Откройте CRM для повторной попытки.`,
             });
         });
       }
