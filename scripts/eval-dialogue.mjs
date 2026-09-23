@@ -22,6 +22,26 @@ const ai = new OpenAiAdapter(config);
 const none = { mode: 'none', name: '', inn: '', city: '' };
 const cases = [
   {
+    name: 'archive company without exact command',
+    text: 'Убери предприятие Тестовая Альфа из базы',
+    kinds: ['company_archive'],
+  },
+  {
+    name: 'delete means archive',
+    text: 'Удали компанию Тестовая Альфа',
+    kinds: ['company_archive'],
+  },
+  {
+    name: 'restore archived company',
+    text: 'Верни компанию Тестовая Альфа из архива',
+    kinds: ['company_restore'],
+  },
+  {
+    name: 'negated archive',
+    text: 'Не удаляй компанию Тестовая Альфа, ничего не меняй',
+    kinds: [],
+  },
+  {
     name: 'letter for company and director missing in CRM stays one action',
     text: 'Подготовь письмо ООО Тестовая Альфа, компании и директора пока нет в CRM, найди их сам и сохрани при подготовке письма.',
     kinds: ['letter'],

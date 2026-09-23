@@ -66,6 +66,11 @@ export class CrmService {
   }
   async create(actor: Actor, raw: unknown, ownerId = actor.id, tx?: Sql): Promise<Company> {
     const data = companySchema.parse(raw);
+    requireCondition(
+      !data.archived || actor.role === 'admin',
+      403,
+      'Создание в архиве доступно только суперадмину',
+    );
     if (!tx) return this.db.transaction((t) => this.create(actor, data, ownerId, t));
     requireCondition(
       ownerId === actor.id || isLeader(actor),
@@ -93,11 +98,15 @@ export class CrmService {
     return this.db.transaction(async (tx) => {
       const previous = await this.company(actor, id, tx, true);
       requireCondition(previous.version === version, 409, 'Карточка изменена. Обновите страницу');
+      if (previous.archived !== data.archived)
+        await this.checkArchivePermission(actor, previous, data.archived, tx);
       await tx.query(
         'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
         [JSON.stringify(data), id],
       );
       await audit(tx, actor.id, 'company.updated', id, id, { before: previous, after: data });
+      if (previous.archived !== data.archived)
+        await audit(tx, actor.id, data.archived ? 'company.archived' : 'company.restored', id, id);
       return this.company(actor, id, tx);
     });
   }
@@ -105,6 +114,10 @@ export class CrmService {
     requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
     return this.db.transaction(async (tx) => {
       const company = await this.company(actor, id, tx, true);
+      if (actor.role === 'supervisor') {
+        await this.checkArchivePermission(actor, company, true, tx);
+        await this.checkArchivePermission(actor, { ...company, ownerId }, true, tx);
+      }
       requireCondition(company.version === version, 409, 'Карточка изменена');
       const [owner] = await tx.query('SELECT id FROM users WHERE id=$1 AND active=true', [
         idSchema.parse(ownerId),
@@ -135,6 +148,56 @@ export class CrmService {
       [id],
     );
     return { company, records, audit: events };
+  }
+  async checkArchivePermission(
+    actor: Actor,
+    company: Company,
+    archived: boolean,
+    tx: Sql = this.db,
+  ) {
+    const [current] = await tx.query('SELECT role,active FROM users WHERE id=$1 FOR SHARE', [
+      actor.id,
+    ]);
+    requireCondition(current?.active, 403, 'Доступ заблокирован');
+    if (current.role === 'admin') return;
+    requireCondition(
+      archived && current.role === 'supervisor',
+      403,
+      archived
+        ? 'Удаление доступно руководителю и суперадмину'
+        : 'Восстановление доступно только суперадмину',
+    );
+    const [owner] = await tx.query('SELECT supervisor_id FROM users WHERE id=$1 FOR SHARE', [
+      company.ownerId,
+    ]);
+    requireCondition(
+      company.ownerId === actor.id || owner?.supervisor_id === actor.id,
+      403,
+      'Можно удалить только компании своей команды',
+    );
+  }
+  async setArchived(
+    actor: Actor,
+    id: string,
+    archived: boolean,
+    version: number,
+    tx?: Sql,
+  ): Promise<Company> {
+    if (!tx) return this.db.transaction((t) => this.setArchived(actor, id, archived, version, t));
+    const company = await this.company(actor, id, tx, true);
+    await this.checkArchivePermission(actor, company, archived, tx);
+    requireCondition(company.version === version, 409, 'Карточка изменена. Обновите страницу');
+    requireCondition(
+      company.archived !== archived,
+      409,
+      archived ? 'Компания уже в архиве' : 'Компания уже восстановлена',
+    );
+    await tx.query(
+      "UPDATE companies SET data=jsonb_set(data,'{archived}',$2::jsonb),version=version+1,updated_at=now() WHERE id=$1",
+      [id, JSON.stringify(archived)],
+    );
+    await audit(tx, actor.id, archived ? 'company.archived' : 'company.restored', id, id);
+    return this.company(actor, id, tx);
   }
   async records(actor: Actor, kind: RecordKind) {
     const rows = await this.db.query(

@@ -351,6 +351,17 @@ class CrmController {
     const input = z.object({ ownerId: idSchema, version: z.number().int().positive() }).parse(b);
     return this.s.crm.assign(r.actor, id, input.ownerId, input.version);
   }
+  @Post('companies/:id/archive') archive(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    const input = z
+      .object({ archived: z.boolean(), version: z.number().int().positive() })
+      .strict()
+      .parse(b);
+    return this.s.crm.setArchived(r.actor, id, input.archived, input.version);
+  }
   @Get('records/:kind') records(@Req() r: AuthedRequest, @Param('kind') kind: string) {
     return this.s.crm.records(
       r.actor,

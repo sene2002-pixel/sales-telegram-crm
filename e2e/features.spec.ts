@@ -66,7 +66,7 @@ for (const [role, team, access] of [
   });
 }
 test('[UI-02] search, city, segment, division and archive filters', async ({ page }) => {
-  await login(page);
+  await login(page, 'Администратор');
   const prefix = unique();
   await company(page, prefix + ' Москва', {
     city: 'Москва',
@@ -92,9 +92,49 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
   await page.getByRole('combobox', { name: 'Все направления' }).selectOption('lv');
   await expect(page.locator('.company-card')).toContainText(prefix + ' Москва');
   await page.getByRole('combobox', { name: 'Все направления' }).selectOption('');
-  await page.getByRole('button', { name: 'Архив', exact: true }).click();
+  await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
   await expect(page.locator('.company-card')).toHaveCount(1);
   await expect(page.locator('.company-card')).toContainText(prefix + ' Архив');
+});
+test('Company archive and restore buttons require confirmation and preserve contacts', async ({
+  page,
+}) => {
+  await login(page, 'Администратор');
+  const c = await company(page);
+  await api(page, `/companies/${c.id}/records/contact`, { data: { name: 'Сохранённый контакт' } });
+  await reload(page);
+  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
+  const confirmation = page.getByRole('alertdialog');
+  await expect(confirmation).toContainText('Контакты, задачи и файлы сохранятся');
+  await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await expect(
+    dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
+  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  await dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
+  await expect(dialog).toContainText('Сохранённый контакт');
+});
+test('Company archive controls are unavailable to managers', async ({ page }) => {
+  await login(page);
+  const c = await company(page);
+  await reload(page);
+  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toHaveCount(
+    0,
+  );
+  await dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();
+  await expect(dialog.getByLabel('В архиве', { exact: true })).toHaveCount(0);
 });
 test('[UI-03] contact/project/history forms and protected file download/archive', async ({
   page,

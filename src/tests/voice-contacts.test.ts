@@ -321,7 +321,10 @@ test('voice contacts require an existing accessible company and an explicit conf
       const actor = await owner();
       const other = await owner();
       await s.crm.create(other, { name: 'Рога и копыта', city: 'Секретный город' });
-      await s.crm.create(actor, { name: 'Рога и копыта', archived: true });
+      const archived = await s.crm.create(actor, { name: 'Рога и копыта' });
+      await db.query("UPDATE companies SET data=jsonb_set(data,'{archived}','true') WHERE id=$1", [
+        archived.id,
+      ]);
       await cancelled(await voice(actor));
       const texts = (await messages(actor)).map((m) => m.text).join('\n');
       assert.equal(texts.includes('Секретный город'), false);

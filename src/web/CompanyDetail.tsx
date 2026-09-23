@@ -42,6 +42,7 @@ export function CompanyDetail({
   const [category, setCategory] = useState('docs'),
     [projectId, setProjectId] = useState('');
   const [deleteContactId, setDeleteContactId] = useState<string | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   async function refresh() {
     const d = await api<Detail>(`/companies/${company.id}`);
     setDetail(d);
@@ -117,6 +118,45 @@ export function CompanyDetail({
       <button onClick={() => setEdit(!edit)}>
         {edit ? 'Скрыть форму' : 'Редактировать компанию'}
       </button>
+      {(user.role === 'admin' ||
+        (!c.archived &&
+          user.role === 'supervisor' &&
+          (c.ownerId === user.id ||
+            users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))) && (
+        <button disabled={busy} onClick={() => setConfirmArchive(true)}>
+          {c.archived ? 'Восстановить компанию' : 'Удалить компанию'}
+        </button>
+      )}
+      {confirmArchive && (
+        <section
+          className="panel"
+          role="alertdialog"
+          aria-label={c.archived ? 'Восстановление компании' : 'Удаление компании'}
+        >
+          <p>
+            {c.archived
+              ? `Восстановить «${c.name}»?`
+              : `Перенести «${c.name}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет только суперадмин.`}
+          </p>
+          <button
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await api(`/companies/${c.id}/archive`, 'POST', {
+                  archived: !c.archived,
+                  version: c.version,
+                });
+                setConfirmArchive(false);
+              })
+            }
+          >
+            Подтвердить
+          </button>
+          <button disabled={busy} onClick={() => setConfirmArchive(false)}>
+            Отмена
+          </button>
+        </section>
+      )}
       {edit && (
         <CompanyForm
           initial={c}
@@ -128,12 +168,19 @@ export function CompanyDetail({
           }}
         />
       )}
-      {user.role !== 'manager' && (
+      {(user.role === 'admin' ||
+        (user.role === 'supervisor' &&
+          (c.ownerId === user.id ||
+            users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))) && (
         <div className="assign">
           <Field label="Передать компанию">
             <select value={owner} onChange={(e) => setOwner(e.target.value)}>
               {users
-                .filter((u) => u.active)
+                .filter(
+                  (u) =>
+                    u.active &&
+                    (user.role === 'admin' || u.id === user.id || u.supervisorId === user.id),
+                )
                 .map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}

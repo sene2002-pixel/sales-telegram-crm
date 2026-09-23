@@ -16,7 +16,14 @@ export function Team({
   const [stats, setStats] = useState<any[]>([]),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  const [person, setPerson] = useState({ telegramId: '', name: '', role: 'manager', active: true });
+  const emptyPerson = {
+    telegramId: '',
+    name: '',
+    role: 'manager',
+    active: true,
+    supervisorId: null as string | null,
+  };
+  const [person, setPerson] = useState(emptyPerson);
   const [showEmployees, setShowEmployees] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit' | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
@@ -91,6 +98,9 @@ export function Team({
                 {u.name}
                 {u.id === user.id ? ' · Вы' : ''} · {labels[u.role]} ·{' '}
                 {u.active ? 'активен' : 'заблокирован'}
+                {u.supervisorId
+                  ? ` · Руководитель: ${users.find((person) => person.id === u.supervisorId)?.name || '—'}`
+                  : ''}
               </p>
               {user.role === 'admin' && !u.telegramId.startsWith('dev-') && (
                 <button
@@ -102,6 +112,7 @@ export function Team({
                       name: u.name,
                       role: u.role,
                       active: u.active,
+                      supervisorId: u.supervisorId ?? null,
                     });
                     setMode('edit');
                     setError('');
@@ -189,7 +200,7 @@ export function Team({
           <button
             disabled={busy}
             onClick={() => {
-              setPerson({ telegramId: '', name: '', role: 'manager', active: true });
+              setPerson(emptyPerson);
               setMode('add');
               setError('');
             }}
@@ -220,7 +231,7 @@ export function Team({
                       );
                     await api('/users', 'POST', person);
                     await onChanged();
-                    setPerson({ telegramId: '', name: '', role: 'manager', active: true });
+                    setPerson(emptyPerson);
                     setMode(null);
                     setShowEmployees(true);
                   } catch (e) {
@@ -250,9 +261,34 @@ export function Team({
                   <Select
                     value={person.role}
                     options={roles}
-                    onChange={(role) => setPerson({ ...person, role })}
+                    onChange={(role) =>
+                      setPerson({
+                        ...person,
+                        role,
+                        supervisorId: role === 'manager' ? person.supervisorId : null,
+                      })
+                    }
                   />
                 </Field>
+                {person.role === 'manager' && (
+                  <Field label="Руководитель">
+                    <select
+                      value={person.supervisorId ?? ''}
+                      onChange={(e) =>
+                        setPerson({ ...person, supervisorId: e.target.value || null })
+                      }
+                    >
+                      <option value="">Не назначен</option>
+                      {users
+                        .filter((u) => u.role === 'supervisor' && u.active)
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                )}
                 <label className="check">
                   <input
                     type="checkbox"

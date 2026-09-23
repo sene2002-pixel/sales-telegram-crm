@@ -8,6 +8,7 @@ export interface Actor {
   role: Role;
   telegramId: string;
   active: boolean;
+  supervisorId?: string | null;
 }
 export const segments = ['shchitovik', 'oem', 'end_client', 'contractor'] as const;
 export const stages = ['new', 'dialogue', 'proposal', 'supply', 'closed'] as const;

@@ -428,6 +428,10 @@ beforeEach(async () => {
     supervisor: await s.auth.byTelegram('33333'),
   };
   other = await s.auth.byTelegram('44444');
+  await db.query('UPDATE users SET supervisor_id=$1 WHERE id=ANY($2::uuid[])', [
+    actors.supervisor.id,
+    [actors.manager.id, other.id],
+  ]);
   own = await s.crm.create(actors.manager, { ...input, name: 'Своя компания' });
   foreign = await s.crm.create(other, { ...input, name: 'Чужая компания' });
 });
@@ -439,6 +443,78 @@ after(async () => {
     await postgres.end();
   }
   if (dir) await rm(dir, { recursive: true, force: true });
+});
+
+test('Company archive: team boundary, API bypass, retention, stale versions and admin restore', async () => {
+  const contact = await s.crm.createRecord(actors.manager, own.id, 'contact', { name: 'Контакт' });
+  await db.query('UPDATE users SET supervisor_id=NULL WHERE id=$1', [other.id]);
+  await api(actors.supervisor, 'post', `/companies/${foreign.id}/archive`, {
+    archived: true,
+    version: 1,
+  }).expect(403);
+  await api(actors.supervisor, 'patch', `/companies/${foreign.id}`, {
+    version: 1,
+    data: { ...foreign, archived: true },
+  }).expect(400);
+  await api(actors.supervisor, 'patch', `/companies/${foreign.id}`, {
+    version: 1,
+    data: { ...input, archived: true },
+  }).expect(403);
+  await api(actors.supervisor, 'post', `/companies/${foreign.id}/assign`, {
+    ownerId: actors.supervisor.id,
+    version: 1,
+  }).expect(403);
+  await api(actors.manager, 'post', `/companies/${own.id}/archive`, {
+    archived: true,
+    version: 1,
+  }).expect(403);
+  await api(actors.supervisor, 'post', `/companies/${own.id}/archive`, {
+    archived: true,
+    version: 1,
+  }).expect(201);
+  await api(actors.admin, 'post', `/companies/${own.id}/archive`, {
+    archived: false,
+    version: 1,
+  }).expect(409);
+  await api(actors.supervisor, 'post', `/companies/${own.id}/archive`, {
+    archived: false,
+    version: 2,
+  }).expect(403);
+  await api(actors.admin, 'post', `/companies/${own.id}/archive`, {
+    archived: false,
+    version: 2,
+  }).expect(201);
+  const detail = (await api(actors.admin, 'get', `/companies/${own.id}`).expect(200)).body;
+  assert.ok(detail.records.some((r: any) => r.id === contact.id));
+  assert.ok(detail.audit.some((a: any) => a.action === 'company.archived'));
+  assert.ok(detail.audit.some((a: any) => a.action === 'company.restored'));
+  const ownLeader = await s.crm.create(actors.supervisor, { name: 'Руководитель' });
+  await api(actors.supervisor, 'post', `/companies/${ownLeader.id}/archive`, {
+    archived: true,
+    version: 1,
+  }).expect(201);
+  await api(actors.admin, 'post', `/companies/${foreign.id}/archive`, {
+    archived: true,
+    version: 1,
+  }).expect(201);
+});
+
+test('Supervisor assignment is admin-only and requires an active supervisor', async () => {
+  const body = {
+    telegramId: other.telegramId,
+    name: other.name,
+    role: 'manager',
+    active: true,
+    supervisorId: actors.supervisor.id,
+  };
+  await api(actors.supervisor, 'post', '/users', body).expect(403);
+  await api(actors.admin, 'post', '/users', { ...body, supervisorId: actors.manager.id }).expect(
+    400,
+  );
+  await api(actors.admin, 'post', '/users', body).expect(201);
+  assert.equal((await s.auth.byTelegram(other.telegramId)).supervisorId, actors.supervisor.id);
+  await api(actors.admin, 'post', '/users', { ...body, supervisorId: null }).expect(201);
+  assert.equal((await s.auth.byTelegram(other.telegramId)).supervisorId, null);
 });
 
 for (const role of roles) {
@@ -572,7 +648,13 @@ for (const role of roles) {
     await api(actor, 'patch', `/companies/${own.id}`, {
       version: 1,
       data: { ...input, archived: true },
-    }).expect(200);
+    }).expect(role === 'manager' ? 403 : 200);
+    if (role === 'manager') {
+      await api(actors.admin, 'post', `/companies/${own.id}/archive`, {
+        archived: true,
+        version: 1,
+      }).expect(201);
+    }
     for (const [kind, data] of [
       ['contact', { name: 'A' }],
       ['project', { name: 'P' }],
@@ -582,7 +664,14 @@ for (const role of roles) {
       await api(actor, 'post', `/companies/${own.id}/records/${kind}`, { data }).expect(409);
     const archived = await api(actor, 'get', `/companies/${own.id}`).expect(200);
     assert.equal(archived.body.company.archived, true);
-    await api(actor, 'patch', `/companies/${own.id}`, { version: 2, data: input }).expect(200);
+    await api(actor, 'patch', `/companies/${own.id}`, { version: 2, data: input }).expect(
+      role === 'admin' ? 200 : 403,
+    );
+    if (role !== 'admin')
+      await api(actors.admin, 'post', `/companies/${own.id}/archive`, {
+        archived: false,
+        version: 2,
+      }).expect(201);
     await api(actor, 'post', `/companies/${own.id}/records/contact`, {
       data: { name: 'Теперь можно' },
     }).expect(201);
@@ -922,7 +1011,7 @@ test('[FILES-02] file size/category/missing input/cross-project/archived company
     .field('projectId', project.id)
     .attach('file', Buffer.from('x'), 'x.txt')
     .expect(400);
-  await api(actor, 'patch', `/companies/${own.id}`, {
+  await api(actors.admin, 'patch', `/companies/${own.id}`, {
     version: 1,
     data: { ...input, archived: true },
   }).expect(200);
@@ -977,7 +1066,7 @@ test('[REPORT-05] matching by INN/exact name, ambiguity, archive, null fields an
   }).expect(201);
   assert.equal(applied.body.result.length, 2);
   const blocked = await review();
-  await api(actor, 'patch', `/companies/${own.id}`, {
+  await api(actors.admin, 'patch', `/companies/${own.id}`, {
     version: detail.version,
     data: { ...input, archived: true },
   }).expect(200);

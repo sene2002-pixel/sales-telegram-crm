@@ -60,7 +60,8 @@ export function verifyTelegram(
 export function isLeader(actor: Actor) {
   return actor.role === 'admin' || actor.role === 'supervisor';
 }
-export const userProjection = 'id, telegram_id AS "telegramId", name, role, active';
+export const userProjection =
+  'id, telegram_id AS "telegramId", name, role, active, supervisor_id AS "supervisorId"';
 export class AuthService {
   constructor(
     private db: Database,
@@ -148,6 +149,7 @@ export class AuthService {
         name: z.string().trim().min(1).max(200),
         role: z.enum(roles),
         active: z.boolean(),
+        supervisorId: z.string().uuid().nullable().optional(),
       })
       .strict()
       .parse(raw);
@@ -166,12 +168,31 @@ export class AuthService {
         requireCondition(admins.length > 1, 409, 'Нельзя отключить последнего администратора');
       }
       const id = existing?.id || randomUUID();
+      const supervisorId =
+        input.supervisorId === undefined
+          ? input.role === 'manager'
+            ? (existing?.supervisorId ?? null)
+            : null
+          : input.supervisorId;
+      if (supervisorId) {
+        const [supervisor] = await tx.query(
+          "SELECT id FROM users WHERE id=$1 AND role='supervisor' AND active=true",
+          [supervisorId],
+        );
+        requireCondition(
+          supervisor && supervisorId !== id && input.role === 'manager',
+          400,
+          'Руководителя можно назначить менеджеру. Выберите активного руководителя',
+        );
+      }
+      if (existing?.role === 'supervisor' && (input.role !== 'supervisor' || !input.active))
+        await tx.query('UPDATE users SET supervisor_id=NULL WHERE supervisor_id=$1', [id]);
       await tx.query(
-        `INSERT INTO users(id,telegram_id,name,role,active) VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_id) DO UPDATE SET name=$3,role=$4,active=$5`,
-        [id, input.telegramId, input.name, input.role, input.active],
+        `INSERT INTO users(id,telegram_id,name,role,active,supervisor_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(telegram_id) DO UPDATE SET name=$3,role=$4,active=$5,supervisor_id=$6`,
+        [id, input.telegramId, input.name, input.role, input.active, supervisorId],
       );
       await audit(tx, actor.id, 'user.updated', id, null, input);
-      return { id, ...input };
+      return { id, ...input, supervisorId };
     });
   }
 }

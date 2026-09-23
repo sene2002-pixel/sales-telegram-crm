@@ -166,14 +166,6 @@ export function CompanyForm({
           <textarea rows={3} value={data.notes} onChange={(e) => update('notes', e.target.value)} />
         </Field>
       </div>
-      <label className="check wide">
-        <input
-          type="checkbox"
-          checked={data.archived}
-          onChange={(e) => update('archived', e.target.checked)}
-        />
-        В архиве
-      </label>
       {error && (
         <p role="alert" className="error wide">
           {error}

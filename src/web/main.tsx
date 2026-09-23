@@ -398,7 +398,7 @@ function App() {
                 </select>
               )}
               <button className={archive ? 'active' : ''} onClick={() => setArchive(!archive)}>
-                {archive ? '✓ Архив' : 'Архив'}
+                {archive ? '✓ Архив компаний' : 'Архив компаний'}
               </button>
             </div>
             <div className="section-head">

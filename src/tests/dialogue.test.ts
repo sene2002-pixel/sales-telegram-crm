@@ -147,6 +147,87 @@ test('dialogue actions, durable context and individual confirmations', async (t)
   };
   try {
     await t.test(
+      'voice archive and restore require confirmation, preserve records and recheck team membership',
+      async () => {
+        const leader = await actor(),
+          employee = await actor(),
+          admin = await actor();
+        await db.query("UPDATE users SET role='supervisor' WHERE id=$1", [leader.id]);
+        await db.query("UPDATE users SET role='admin' WHERE id=$1", [admin.id]);
+        leader.role = 'supervisor';
+        admin.role = 'admin';
+        await db.query('UPDATE users SET supervisor_id=$1 WHERE id=$2', [leader.id, employee.id]);
+        const c = await s.crm.create(employee, { name: 'Архив Альфа' });
+        await s.crm.createRecord(employee, c.id, 'contact', person);
+        await submit(
+          leader,
+          plan([{ kind: 'company_archive', company: named(c.name) }]),
+          'Удали компанию Архив Альфа',
+        );
+        let task = await current(leader);
+        assert.equal(task.status, 'ready');
+        assert.equal((await s.crm.company(admin, c.id)).archived, false);
+        await db.query('UPDATE users SET supervisor_id=NULL WHERE id=$1', [employee.id]);
+        await assert.rejects(
+          s.dialogue.callback(leader, task.id, 'confirm', task.preview_version),
+          { status: 403 },
+        );
+        await db.query('UPDATE users SET supervisor_id=$1 WHERE id=$2', [leader.id, employee.id]);
+        await s.dialogue.callback(leader, task.id, 'confirm', task.preview_version);
+        assert.equal((await s.crm.company(admin, c.id)).archived, true);
+        assert.equal(await count(c.id, 'contact'), 1);
+        await submit(
+          leader,
+          plan([{ kind: 'company_restore', company: named(c.name) }]),
+          'Восстанови Альфу',
+        );
+        task = await current(leader);
+        assert.equal(task.status, 'needs_info');
+        assert.match(task.snapshot.question, /только суперадмину/);
+        await s.dialogue.callback(leader, task.id, 'skip');
+        await submit(
+          admin,
+          plan([{ kind: 'company_restore', company: named(c.name) }]),
+          'Верни Альфу из архива',
+        );
+        task = await current(admin);
+        assert.equal(task.status, 'ready');
+        await s.dialogue.callback(admin, task.id, 'confirm', task.preview_version);
+        assert.equal((await s.crm.company(admin, c.id)).archived, false);
+        await submit(admin, plan([{ kind: 'company_archive', company: named(c.name) }]));
+        task = await current(admin);
+        await s.dialogue.callback(admin, task.id, 'skip');
+        assert.equal((await s.crm.company(admin, c.id)).archived, false);
+        await submit(employee, plan([{ kind: 'company_archive', company: named(c.name) }]));
+        task = await current(employee);
+        assert.equal(task.status, 'needs_info');
+        await s.dialogue.callback(employee, task.id, 'skip');
+        const twin = await s.crm.create(employee, { name: c.name, city: 'Казань' });
+        await s.crm.setArchived(admin, twin.id, true, twin.version);
+        const latest = await s.crm.company(admin, c.id);
+        await s.crm.setArchived(admin, c.id, true, latest.version);
+        await submit(admin, plan([{ kind: 'company_restore', company: named(c.name) }]));
+        task = await current(admin);
+        assert.equal(task.status, 'selecting');
+        assert.equal(task.options.length, 2);
+        const index = task.options.findIndex((option: any) => option.id === twin.id);
+        await s.dialogue.callback(admin, task.id, 'choose', index);
+        task = await current(admin);
+        assert.equal(task.status, 'ready');
+        await s.dialogue.callback(admin, task.id, 'confirm', task.preview_version);
+        assert.equal((await s.crm.company(admin, twin.id)).archived, false);
+        assert.equal((await s.crm.company(admin, c.id)).archived, true);
+        await submit(
+          admin,
+          plan([{ kind: 'company_restore', company: named('Неизвестная компания') }]),
+        );
+        task = await current(admin);
+        assert.equal(task.status, 'needs_info');
+        assert.equal(task.snapshot.remedy, undefined, 'restore must never offer company creation');
+        await s.dialogue.callback(admin, task.id, 'skip');
+      },
+    );
+    await t.test(
       'letters request signature first and never require pre-created company or contact after cancellation',
       async () => {
         const a = await actor();

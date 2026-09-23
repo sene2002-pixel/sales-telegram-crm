@@ -52,6 +52,8 @@ const titles: Record<DialogueAction['kind'], string> = {
   company_create: 'Создать компанию',
   company_import: 'Распознать карточку компании',
   company_update: 'Обновить компанию',
+  company_archive: 'Удалить компанию в архив',
+  company_restore: 'Восстановить компанию',
   signature_create: 'Создать подпись',
   signature_edit: 'Изменить подпись',
   signature_delete: 'Удалить подпись',
@@ -119,10 +121,10 @@ export class DialogueService {
       [userId, company ? JSON.stringify(company) : null],
     );
   }
-  private async accessible(tx: Sql, actor: Actor) {
+  private async accessible(tx: Sql, actor: Actor, archived = false) {
     return tx.query(
-      "SELECT id,owner_id,data,version FROM companies WHERE ($1::boolean OR owner_id=$2) AND NOT (data->>'archived')::boolean",
-      [isLeader(actor), actor.id],
+      "SELECT id,owner_id,data,version FROM companies WHERE ($1::boolean OR owner_id=$2) AND (data->>'archived')::boolean=$3",
+      [isLeader(actor), actor.id, archived],
     );
   }
   private context(row: any): CompanyContext {
@@ -502,9 +504,11 @@ export class DialogueService {
       if (row.company.inn && !validInn(row.company.inn))
         return this.ask(tx, actor, row, 'Уточните ИНН: распознан некорректный номер.');
       const matches = row.company.id
-        ? (await this.accessible(tx, actor)).filter((c) => c.id === row.company.id)
+        ? (await this.accessible(tx, actor, a.kind === 'company_restore')).filter(
+            (c) => c.id === row.company.id,
+          )
         : this.matches(
-            await this.accessible(tx, actor),
+            await this.accessible(tx, actor, a.kind === 'company_restore'),
             a.kind === 'company_import' ? { ...row.company, city: '' } : row.company,
           );
       if (matches.length > 1)
@@ -548,6 +552,15 @@ export class DialogueService {
           row,
           'Компания уже существует. Уточните, нужно ли обновить её данные.',
         );
+      if (!matches.length && (a.kind === 'company_archive' || a.kind === 'company_restore'))
+        return this.ask(
+          tx,
+          actor,
+          row,
+          a.kind === 'company_restore'
+            ? 'Компания в архиве не найдена. Уточните название.'
+            : 'Активная компания не найдена. Уточните название.',
+        );
       if (!matches.length && a.kind !== 'company_create' && a.kind !== 'letter')
         return this.ask(
           tx,
@@ -574,6 +587,18 @@ export class DialogueService {
     let data: any;
     let notice = '';
     let changes: string | undefined;
+    if (a.kind === 'company_archive' || a.kind === 'company_restore') {
+      const c = await this.crm.company(actor, row.company.id, tx);
+      try {
+        await this.crm.checkArchivePermission(actor, c, a.kind === 'company_archive', tx);
+      } catch (error) {
+        return this.ask(tx, actor, row, (error as Error).message);
+      }
+      notice =
+        a.kind === 'company_archive'
+          ? 'Компания уйдёт в архив. Данные сохранятся. Восстановить сможет только суперадмин.'
+          : 'Компания вернётся из архива вместе с данными.';
+    }
     if (a.kind === 'contact_create')
       data = contactSchema.safeParse({
         name: a.data.name || '',
@@ -889,7 +914,11 @@ export class DialogueService {
         if (choice === 'company') {
           const previousName = row.company.name;
           const c = await this.crm.company(actor, selected.id, tx, true);
-          requireCondition(!c.archived, 409, 'Компания в архиве');
+          requireCondition(
+            c.archived === (row.payload.kind === 'company_restore'),
+            409,
+            'Состояние компании изменилось',
+          );
           row.company = { id: c.id, name: c.name, city: c.city, inn: c.inn };
           await tx.query('UPDATE dialogue_actions SET company=$2 WHERE id=$1', [
             id,
@@ -936,7 +965,9 @@ export class DialogueService {
     if (s.company) {
       const c = await this.crm.company(actor, s.company.id, tx, true);
       requireCondition(
-        !c.archived && c.version === s.company.version && c.ownerId === s.company.ownerId,
+        c.archived === (a.kind === 'company_restore') &&
+          c.version === s.company.version &&
+          c.ownerId === s.company.ownerId,
         409,
         'Компания изменилась. Отправьте уточнение, чтобы получить новое подтверждение',
       );
@@ -1020,6 +1051,14 @@ export class DialogueService {
       const state = await this.state(tx, actor.id);
       if (state.company && companyName(state.company.name) === companyName(c.name))
         await this.remember(tx, actor.id, { id: c.id, name: c.name, city: c.city, inn: c.inn });
+    } else if (a.kind === 'company_archive' || a.kind === 'company_restore') {
+      await this.crm.setArchived(
+        actor,
+        row.company.id,
+        a.kind === 'company_archive',
+        s.company.version,
+        tx,
+      );
     } else if (a.kind === 'company_update') {
       await tx.query(
         'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
