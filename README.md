@@ -9,6 +9,11 @@ CRM для менеджеров: компании, контакты, проек�
 - [Архитектура и ограничения](docs/ARCHITECTURE.md)
 - [Развёртывание и эксплуатация](docs/OPERATIONS.md)
 - [Результаты проверки](docs/VERIFICATION.md)
+- [Приветствие Pico](docs/PICO_GREETING.md)
+- [Визуальный стиль и аватар Pico](docs/PICO_VISUAL_STYLE.md)
+- [Временные статусы обработки](docs/PROCESSING_STATUS.md)
+- [Защита инструкций и служебных данных Pico](docs/PICO_SECURITY.md)
+- [Оставшиеся требования Asana и вопросы](docs/ASANA_IMPLEMENTATION.md)
 
 ## Что нужно для работы
 

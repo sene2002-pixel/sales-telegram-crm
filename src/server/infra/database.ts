@@ -79,6 +79,19 @@ export class Database implements Sql {
       );
       await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS trace_id text');
       await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS actor_id uuid');
+      await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS processing_key text');
+      await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS processing_generation integer');
+      await tx.query(`CREATE TABLE IF NOT EXISTS processing_messages (
+        source_key text PRIMARY KEY, chat_id text NOT NULL, text text NOT NULL,
+        active boolean NOT NULL DEFAULT true, generation integer NOT NULL DEFAULT 1, message_id text, sent_text text,
+        available_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      )`);
+      await tx.query(
+        'ALTER TABLE processing_messages ADD COLUMN IF NOT EXISTS generation integer NOT NULL DEFAULT 1',
+      );
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS processing_messages_pending ON processing_messages(available_at,updated_at) WHERE active OR message_id IS NOT NULL',
+      );
       await tx.query(`CREATE TABLE IF NOT EXISTS file_downloads (
         token_hash text PRIMARY KEY, owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         file_id uuid NOT NULL REFERENCES records(id) ON DELETE CASCADE, expires_at timestamptz NOT NULL

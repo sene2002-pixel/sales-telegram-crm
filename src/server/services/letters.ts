@@ -20,6 +20,7 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { ErrorLog } from '../infra/error-log';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import { observedSources, sourceKey } from './search-sources';
+import { protectedInstructions } from './pico-security';
 
 const line = z
   .string()
@@ -178,11 +179,12 @@ export class LetterService {
           JSON.stringify({
             model: this.config.letterModel,
             store: false,
-            instructions:
+            instructions: protectedInstructions(
               instructions +
-              (verifySearchSources
-                ? '\nПоле sources: копируй точные URL использованных источников из результатов web_search или цитат. Не сокращай пути, не меняй домен, протокол и параметры URL. Не придумывай ссылки.'
-                : ''),
+                (verifySearchSources
+                  ? '\nПоле sources: копируй точные URL использованных источников из результатов web_search или цитат. Не сокращай пути, не меняй домен, протокол и параметры URL. Не придумывай ссылки.'
+                  : ''),
+            ),
             input,
             ...(search ? { tools: [{ type: 'web_search' }], tool_choice: 'required' } : {}),
             ...(verifySearchSources ? { include: ['web_search_call.action.sources'] } : {}),

@@ -14,6 +14,7 @@ import { CrmService } from './crm';
 import { requireCondition } from '../domain/errors';
 import { isLeader } from './auth';
 import { audit } from '../infra/audit';
+import { ProcessingStatus } from '../infra/processing-status';
 
 export function mapReport(r: any): Report {
   return {
@@ -30,11 +31,14 @@ export function mapReport(r: any): Report {
   };
 }
 export class ReportService {
+  readonly processing: ProcessingStatus;
   constructor(
     public db: Database,
     private crm: CrmService,
     private diagnostics?: DiagnosticLog,
-  ) {}
+  ) {
+    this.processing = new ProcessingStatus(db);
+  }
   async enqueue(
     actor: Actor,
     input: {
@@ -75,11 +79,12 @@ export class ReportService {
         );
         await audit(tx, actor.id, 'report.received', created.id);
         if (input.chatId)
-          await this.notify(tx, input.chatId, {
-            text: input.audioFileId
-              ? 'Голосовое принято. Распознаю запрос.'
-              : 'Отчёт принят. Подготовлю черновик для проверки.',
-          });
+          await this.processing.begin(
+            tx,
+            input.sourceKey,
+            input.chatId,
+            input.audioFileId ? 'Распознаю голосовой запрос…' : 'Анализирую информацию…',
+          );
         return mapReport(created);
       }
       const [existing] = await tx.query(
@@ -97,14 +102,18 @@ export class ReportService {
   }
   async notify(tx: Sql, chatId: string, payload: unknown) {
     const id = randomUUID();
+    const processingKey = this.processing.key;
+    const generation = processingKey ? await this.processing.finish(tx, processingKey) : null;
     await tx.query(
-      'INSERT INTO outbox(id,chat_id,payload,trace_id,actor_id) VALUES($1,$2,$3,$4,$5)',
+      'INSERT INTO outbox(id,chat_id,payload,trace_id,actor_id,processing_key,processing_generation) VALUES($1,$2,$3,$4,$5,$6,$7)',
       [
         id,
         chatId,
         JSON.stringify(payload),
         this.diagnostics?.context?.traceId || null,
         this.diagnostics?.context?.actorId || null,
+        processingKey || null,
+        generation || null,
       ],
     );
     await this.diagnostics?.record('notification.queued', { outboxId: id }, tx);
@@ -316,6 +325,9 @@ export class ReportService {
         [action === 'retry' ? 'queued' : 'cancelled', id],
       );
       await audit(tx, actor.id, `report.${action}`, id);
+      if (action === 'cancel') await this.processing.finish(tx, r.source_key);
+      else if (r.chat_id)
+        await this.processing.begin(tx, r.source_key, r.chat_id, 'Повторяю обработку…');
       return { ok: true };
     });
   }

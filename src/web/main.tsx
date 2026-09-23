@@ -152,14 +152,24 @@ function App() {
   if (!user)
     return (
       <main className="login">
-        <div className="brand-mark">к</div>
-        <p className="eyebrow">КОМАНДА. КЛИЕНТЫ. РЕЗУЛЬТАТ.</p>
-        <h1>Контакт</h1>
+        <img
+          className="brand-mark"
+          src="/brand/pico-avatar.png"
+          alt="Pico — AI-помощник"
+          width="112"
+          height="112"
+        />
+        <p className="eyebrow">ТВОЙ AI-ПОМОЩНИК В TELEGRAM</p>
+        <h1>Pico</h1>
         <p className="muted">
           CRM, которая начинается
           <br />с одного голосового сообщения.
         </p>
-        {loading ? <p>Подключение…</p> : <p>Откройте приложение кнопкой CRM в Telegram-боте.</p>}
+        {loading ? (
+          <p role="status">Подключение…</p>
+        ) : (
+          <p>Откройте приложение кнопкой CRM в Telegram-боте.</p>
+        )}
         {error && (
           <p className="error" role="alert">
             {error}
@@ -242,8 +252,8 @@ function App() {
     <div className="app-shell">
       <aside>
         <div className="logo">
-          <span className="brand-mark">к</span>
-          <strong>Контакт</strong>
+          <img className="brand-mark" src="/brand/pico-avatar.png" alt="" width="40" height="40" />
+          <strong>Pico</strong>
           <span className="beta">CRM</span>
         </div>
         <nav>
@@ -280,12 +290,24 @@ function App() {
       </aside>
       <main className="workspace">
         <header>
-          <button className="text-button" onClick={() => setHelp(true)}>
-            Права и помощь
-          </button>
-          <div>
+          <div className="header-leading">
+            <div className="mobile-brand" aria-label="Pico CRM">
+              <img
+                className="brand-mark"
+                src="/brand/pico-avatar.png"
+                alt=""
+                width="28"
+                height="28"
+              />
+              <strong>Pico</strong>
+            </div>
+            <button className="text-button" onClick={() => setHelp(true)}>
+              Права и помощь
+            </button>
+          </div>
+          <div className="connection-state">
             <span className="online-dot" />
-            Подключено{' '}
+            <span className="connection-label">Подключено</span>{' '}
             <button
               className="text-button"
               onClick={() => refresh().catch((e) => setError(e.message))}

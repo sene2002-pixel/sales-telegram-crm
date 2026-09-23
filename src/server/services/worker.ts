@@ -13,10 +13,13 @@ import { looksLikeCommand, unknownCommand } from './command-intent';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import { VoiceContacts } from './voice-contacts';
 import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
+import { securityIntent, securityReply } from './pico-security';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
   private running?: Promise<void>;
+  private deliveryTimer?: NodeJS.Timeout;
+  private delivering?: Promise<void>;
   constructor(
     private db: Database,
     private reports: ReportService,
@@ -30,18 +33,32 @@ export class ReportWorker {
     private voiceContacts?: VoiceContacts,
   ) {}
   start() {
+    if (this.timer) return;
     this.timer = setInterval(() => {
       if (!this.running)
-        this.running = this.tick()
+        this.running = this.processOne()
+          .then(() => {})
           .catch((error) => new ErrorLog(this.db).record(error, { event: 'worker.error' }))
           .finally(() => {
             this.running = undefined;
           });
     }, 1500);
+    // Delivery must continue while transcription/search/AI is awaiting a response.
+    this.deliveryTimer = setInterval(() => {
+      if (!this.delivering)
+        this.delivering = this.deliverOne()
+          .catch((error) => new ErrorLog(this.db).record(error, { event: 'worker.delivery_error' }))
+          .finally(() => {
+            this.delivering = undefined;
+          });
+    }, 1500);
   }
   async stop() {
     clearInterval(this.timer);
-    await this.running;
+    clearInterval(this.deliveryTimer);
+    this.timer = undefined;
+    this.deliveryTimer = undefined;
+    await Promise.all([this.running, this.delivering]);
   }
   async tick() {
     await this.processOne();
@@ -59,6 +76,7 @@ export class ReportWorker {
           `UPDATE reports SET status='failed',lease_until=NULL,lease_token=NULL,error='Обработка прерывалась трижды. Повторите вручную',version=version+1 WHERE id=$1`,
           [r.id],
         );
+        await this.reports.processing.finish(tx, r.source_key);
         const notify = async () => {
           await this.diagnostics?.record(
             'report.attempts_exhausted',
@@ -66,12 +84,14 @@ export class ReportWorker {
             tx,
           );
           if (r.chat_id)
-            await this.reports.notify(tx, r.chat_id, {
-              text:
-                r.purpose === 'contact'
-                  ? 'Подготовка контакта прерывалась трижды. Контакт не создан. Повторите голосовую команду.'
-                  : 'Обработка отчёта прерывалась трижды. Откройте CRM для повторной попытки.',
-            });
+            await this.reports.processing.run(r.source_key, () =>
+              this.reports.notify(tx, r.chat_id, {
+                text:
+                  r.purpose === 'contact'
+                    ? 'Подготовка контакта прерывалась трижды. Контакт не создан. Повторите голосовую команду.'
+                    : 'Обработка отчёта прерывалась трижды. Откройте CRM для повторной попытки.',
+              }),
+            );
         };
         if (this.diagnostics)
           await this.diagnostics.run(
@@ -86,6 +106,13 @@ export class ReportWorker {
         `UPDATE reports SET status='processing',lease_until=now()+interval '4 minutes',lease_token=$1,attempts=attempts+1 WHERE id=$2`,
         [token, r.id],
       );
+      if (r.chat_id)
+        await this.reports.processing.begin(
+          tx,
+          r.source_key,
+          r.chat_id,
+          r.transcript ? 'Анализирую информацию…' : 'Распознаю голосовой запрос…',
+        );
       return { ...r, attempts: r.attempts + 1 };
     });
     if (!report) return false;
@@ -111,6 +138,37 @@ export class ReportWorker {
             ? this.diagnostics.span('voice.transcribe', { bytes: audio.length }, transcribe)
             : transcribe());
         }
+        const restricted = securityIntent(transcript);
+        if (restricted) {
+          await this.db.transaction(async (tx) => {
+            const rows = await tx.query(
+              `UPDATE reports SET purpose='command',status='cancelled',transcript=NULL,audio_file_id=NULL,
+               draft=NULL,error=NULL,lease_until=NULL,lease_token=NULL,version=version+1
+               WHERE id=$1 AND lease_token=$2 RETURNING id`,
+              [report.id, token],
+            );
+            if (!rows.length) return;
+            const kind = report.audio_file_id ? 'voice' : 'text';
+            const text = await securityReply(
+              tx,
+              report.author_id,
+              restricted,
+              kind,
+              report.source_key,
+            );
+            if (report.chat_id) await this.reports.notify(tx, report.chat_id, { text });
+            await this.diagnostics?.record(
+              'security.request_blocked',
+              {
+                intent: restricted,
+                kind,
+                characters: transcript.length,
+              },
+              tx,
+            );
+          });
+          return true;
+        }
         const signature = signatureOperation(transcript);
         contact = isContactCreateRequest(transcript);
         await this.diagnostics?.record(
@@ -128,6 +186,14 @@ export class ReportWorker {
         ]);
         if (signature)
           await this.diagnostics?.record('signature.processing.started', { operation: signature });
+        await this.reports.processing.stage(
+          report.source_key,
+          signature
+            ? 'Анализирую данные подписи…'
+            : contact
+              ? 'Собираю данные контакта…'
+              : 'Анализирую запрос…',
+        );
         if (await this.voiceSignatures?.process(report, token, transcript)) {
           await this.diagnostics?.record('command.routed', {
             route: 'signature',
@@ -158,6 +224,7 @@ export class ReportWorker {
         }
         await this.diagnostics?.record('command.routed', { route: 'report' });
         await this.diagnostics?.record('report.extraction.started');
+        await this.reports.processing.stage(report.source_key, 'Подготавливаю черновик…');
         const draft = extractionSchema.parse(
           await this.extractor.extract(transcript, new Date(report.created_at).toISOString()),
         );
@@ -231,21 +298,40 @@ export class ReportWorker {
                 ? `Не удалось подготовить контакт: ${message}. Контакт не создан. Повторите голосовую команду.`
                 : `Не удалось обработать отчёт: ${message}. Откройте CRM для повторной попытки.`,
             });
+          else if (rows.length && !failed)
+            await this.reports.processing.stage(
+              report.source_key,
+              'Повторю обработку через несколько секунд…',
+              tx,
+            );
+        });
+      } finally {
+        // Covers cancellation, revoked access and commands that do not enqueue a reply.
+        // A routed letter keeps the same source key until its own result is ready.
+        await this.db.transaction(async (tx) => {
+          const [active] = await tx.query(
+            `SELECT id FROM reports WHERE source_key=$1 AND status IN ('queued','processing')
+             UNION ALL SELECT id FROM letter_jobs WHERE source_key=$1 AND status IN ('queued','processing','ready','sending')`,
+            [report.source_key],
+          );
+          if (!active) await this.reports.processing.finish(tx, report.source_key);
         });
       }
       return true;
     };
-    return this.diagnostics
-      ? this.diagnostics.run(
-          {
-            traceId: report.source_key,
-            actorId: report.author_id,
-            entityId: report.id,
-            attempt: report.attempts,
-          },
-          process,
-        )
-      : process();
+    return this.reports.processing.run(report.source_key, () =>
+      this.diagnostics
+        ? this.diagnostics.run(
+            {
+              traceId: report.source_key,
+              actorId: report.author_id,
+              entityId: report.id,
+              attempt: report.attempts,
+            },
+            process,
+          )
+        : process(),
+    );
   }
   async deliverOne() {
     if (!this.config.botToken) return;
@@ -256,16 +342,27 @@ export class ReportWorker {
       if (!message) return;
       const deliver = async () => {
         const started = Date.now();
+        let cleaning = !!message.processing_key;
         await this.diagnostics?.record(
           'notification.delivery.started',
           { outboxId: message.id },
           tx,
         );
         try {
-          await this.telegram.send(message.chat_id, message.payload);
+          const current =
+            !message.processing_key ||
+            (await this.reports.processing.clear(
+              tx,
+              message.processing_key,
+              this.telegram,
+              message.processing_generation ?? undefined,
+            ));
+          cleaning = false;
+          // A manual retry supersedes a queued failure notification from the prior attempt.
+          if (current) await this.telegram.send(message.chat_id, message.payload);
           await tx.query('UPDATE outbox SET sent=true WHERE id=$1', [message.id]);
           await this.diagnostics?.record(
-            'notification.delivery.completed',
+            current ? 'notification.delivery.completed' : 'notification.delivery.superseded',
             { outboxId: message.id, durationMs: Date.now() - started },
             tx,
           );
@@ -276,13 +373,14 @@ export class ReportWorker {
               outboxId: message.id,
               durationMs: Date.now() - started,
               errorType: error instanceof Error ? error.constructor.name : 'Unknown',
-              terminal: message.attempts + 1 >= 5,
+              terminal: !cleaning && message.attempts + 1 >= 5,
+              phase: cleaning ? 'processing_cleanup' : 'result',
             },
             tx,
           );
           await tx.query(
-            `UPDATE outbox SET attempts=attempts+1,available_at=now()+interval '30 seconds' WHERE id=$1`,
-            [message.id],
+            `UPDATE outbox SET attempts=attempts+$2,available_at=now()+interval '30 seconds' WHERE id=$1`,
+            [message.id, cleaning ? 0 : 1],
           );
           return { error, entityId: message.id, attempt: message.attempts + 1 };
         }
@@ -304,6 +402,12 @@ export class ReportWorker {
         event: 'telegram.delivery_failed',
         entityId: failure.entityId,
         attempt: failure.attempt,
+      });
+    const statusFailure = await this.reports.processing.deliverOne(this.telegram);
+    if (statusFailure)
+      await new ErrorLog(this.db).record(statusFailure.error, {
+        event: 'telegram.processing_status_failed',
+        entityId: statusFailure.key,
       });
   }
 }

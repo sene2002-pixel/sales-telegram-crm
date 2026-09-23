@@ -8,7 +8,7 @@ import { createApp } from '../server/http/app';
 import { makeConfig } from '../server/config';
 import { Actor } from '../shared/contracts';
 import { LetterBot, letterQuery, recipientResearchSchema } from '../server/services/letter-bot';
-import { TelegramAdapter } from '../server/infra/telegram';
+import { ProcessingMessageUndeletable, TelegramAdapter } from '../server/infra/telegram';
 
 test('letter intent recognizes requests, not historical reports', () => {
   for (const text of [
@@ -298,6 +298,18 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
           });
         };
         await bot.enqueue(actor, 'success', 'ООО Ромашка');
+        const deliveryOrder: string[] = [];
+        telegram.sendProcessing = async () => {
+          deliveryOrder.push('status');
+          return 91;
+        };
+        telegram.editProcessing = async () => true;
+        telegram.deleteProcessing = async (chatId, id) => {
+          assert.equal(chatId, actor.telegramId);
+          assert.equal(id, '91');
+          deliveryOrder.push('delete');
+        };
+        await s.reports.processing.deliverOne(telegram);
         await bot.tick();
         const [job] = await db.query("SELECT * FROM letter_jobs WHERE source_key='success'");
         assert.equal(job.status, 'ready');
@@ -306,13 +318,35 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         assert.equal(company.data.industry, 'Энергетика');
         let sends = 0;
         telegram.sendPdf = async (chatId, content) => {
+          deliveryOrder.push('pdf');
           assert.equal(chatId, actor.telegramId);
           assert.equal(Buffer.from(content).subarray(0, 5).toString(), '%PDF-');
           if (++sends === 1) throw new Error('temporary');
         };
-        await bot.tick();
+        const removeStatus = telegram.deleteProcessing;
+        telegram.deleteProcessing = async () => {
+          throw new Error('Temporary cleanup failure');
+        };
+        for (let attempt = 0; attempt < 6; attempt++) {
+          await db.query('UPDATE letter_jobs SET available_at=now() WHERE id=$1', [job.id]);
+          await bot.tick();
+          const [deferred] = await db.query(
+            'SELECT status,attempts,file_id FROM letter_jobs WHERE id=$1',
+            [job.id],
+          );
+          assert.equal(deferred.status, 'ready');
+          assert.equal(deferred.attempts, job.attempts);
+          assert.equal(deferred.file_id, job.file_id);
+        }
+        assert.equal(sends, 0, 'cleanup retries must not attempt PDF delivery');
+        assert.equal(requests, 2, 'cleanup retries must not regenerate the PDF');
+        telegram.deleteProcessing = removeStatus;
         await db.query('UPDATE letter_jobs SET available_at=now() WHERE id=$1', [job.id]);
         await bot.tick();
+        assert.deepEqual(deliveryOrder, ['status', 'delete', 'pdf']);
+        await db.query('UPDATE letter_jobs SET available_at=now() WHERE id=$1', [job.id]);
+        await bot.tick();
+        assert.deepEqual(deliveryOrder, ['status', 'delete', 'pdf', 'pdf']);
         assert.equal(requests, 2);
         assert.equal(
           (await db.query('SELECT status FROM letter_jobs WHERE id=$1', [job.id]))[0].status,
@@ -332,6 +366,25 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         await bot.tick();
         assert.equal((await db.query('SELECT * FROM companies')).length, 1);
         assert.equal((await db.query("SELECT * FROM records WHERE kind='contact'")).length, 1);
+        await s.reports.processing.deliverOne(telegram);
+        telegram.deleteProcessing = async () => {
+          throw new ProcessingMessageUndeletable();
+        };
+        await bot.tick();
+        assert.equal(
+          (await db.query("SELECT status FROM letter_jobs WHERE source_key='repeat-company'"))[0]
+            .status,
+          'sent',
+          'a permanently undeletable status must not suppress the PDF',
+        );
+        assert.equal(
+          (
+            await db.query(
+              "SELECT * FROM error_logs WHERE event='telegram.processing_delete_forbidden'",
+            )
+          ).length,
+          1,
+        );
       },
     );
   } finally {

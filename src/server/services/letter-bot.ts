@@ -145,20 +145,25 @@ export class LetterBot {
         ),
       );
       if (!signature) {
-        await this.reports.notify(tx, actor.telegramId, {
-          text: `Подпись по умолчанию не выбрана. Выберите подпись: ваш выбор назначит её подписью по умолчанию для этого и следующих писем. После выбора продолжу создание письма.\n\n${signatureOptionsText(signatures)}`,
-          reply_markup: {
-            inline_keyboard: [
-              ...signatureButtons(signatures, `lp:${jobId}`),
-              [{ text: 'Отмена', callback_data: `lc:${jobId}` }],
-            ],
-          },
-        });
+        await this.reports.processing.run(sourceKey, () =>
+          this.reports.notify(tx, actor.telegramId, {
+            text: `Подпись по умолчанию не выбрана. Выберите подпись: ваш выбор назначит её подписью по умолчанию для этого и следующих писем. После выбора продолжу создание письма.\n\n${signatureOptionsText(signatures)}`,
+            reply_markup: {
+              inline_keyboard: [
+                ...signatureButtons(signatures, `lp:${jobId}`),
+                [{ text: 'Отмена', callback_data: `lc:${jobId}` }],
+              ],
+            },
+          }),
+        );
         return;
       }
-      await this.reports.notify(tx, actor.telegramId, {
-        text: 'Ищу компанию и генерального директора, подбираю отраслевые референсы. PDF отправлю сюда и сохраню в CRM. Клиенту письмо не отправляется.',
-      });
+      await this.reports.processing.begin(
+        tx,
+        sourceKey,
+        actor.telegramId,
+        'Собираю данные компании и получателя… PDF отправлю вам и сохраню в CRM. Клиенту письмо не отправляется.',
+      );
     };
     const execute = async () => {
       try {
@@ -229,6 +234,12 @@ export class LetterBot {
         await this.reports.notify(tx, actor.telegramId, {
           text: 'Подпись назначена по умолчанию. Продолжаю создание письма. PDF отправлю вам в Telegram и сохраню в CRM.',
         });
+        await this.reports.processing.begin(
+          tx,
+          job.source_key,
+          actor.telegramId,
+          'Подпись назначена по умолчанию. Собираю данные для письма…',
+        );
       };
       if (this.diagnostics)
         await this.diagnostics.run(
@@ -341,11 +352,13 @@ export class LetterBot {
           attempts: row.attempts,
         });
         const notify = () =>
-          this.reports.notify(tx, row.chat_id, {
-            text: row.file_id
-              ? 'PDF сохранён в компании, но не удалось доставить его в Telegram. Скачайте файл из CRM.'
-              : 'Не удалось завершить письмо после нескольких попыток. Повторите запрос с ИНН компании.',
-          });
+          this.reports.processing.run(row.source_key, () =>
+            this.reports.notify(tx, row.chat_id, {
+              text: row.file_id
+                ? 'PDF сохранён в компании, но не удалось доставить его в Telegram. Скачайте файл из CRM.'
+                : 'Не удалось завершить письмо после нескольких попыток. Повторите запрос с ИНН компании.',
+            }),
+          );
         if (this.diagnostics)
           await this.diagnostics.run(
             {
@@ -362,6 +375,12 @@ export class LetterBot {
       await tx.query(
         "UPDATE letter_jobs SET status=$1,lease_token=$2,lease_until=now()+interval '15 minutes',attempts=attempts+1 WHERE id=$3",
         [row.file_id ? 'sending' : 'processing', token, row.id],
+      );
+      await this.reports.processing.begin(
+        tx,
+        row.source_key,
+        row.chat_id,
+        row.file_id ? 'Подготавливаю PDF к отправке…' : 'Собираю данные компании и получателя…',
       );
       await recordClaim('letter.claimed', {
         previousStatus: row.status,
@@ -394,6 +413,35 @@ export class LetterBot {
           const content = await readFile(
             join(this.config.dataDir, 'files', idSchema.parse(file.data.key)),
           );
+          try {
+            await this.crm.db.transaction(async (tx) => {
+              await this.reports.processing.finish(tx, job.source_key);
+              await this.reports.processing.clear(tx, job.source_key, this.telegram);
+            });
+          } catch (error) {
+            // No PDF send was attempted. Cleanup has its own retry lifecycle and
+            // must not consume the job's generation/delivery retry allowance.
+            await new ErrorLog(this.crm.db).record(error, {
+              event: 'telegram.processing_cleanup_deferred',
+              actorId: job.user_id,
+              entityId: job.id,
+            });
+            await this.crm.db.transaction(async (tx) => {
+              const rows = await tx.query(
+                `UPDATE letter_jobs SET status='ready',attempts=GREATEST(attempts-1,0),
+                 lease_until=NULL,lease_token=NULL,available_at=now()+interval '30 seconds'
+                 WHERE id=$1 AND lease_token=$2 RETURNING id`,
+                [job.id, token],
+              );
+              if (rows.length)
+                await this.reports.processing.stage(
+                  job.source_key,
+                  'Подготавливаю PDF к отправке…',
+                  tx,
+                );
+            });
+            return;
+          }
           const sendPdf = () => this.telegram.sendPdf(actor.telegramId, content, file.data.name);
           if (this.diagnostics)
             await this.diagnostics.span(
@@ -501,6 +549,7 @@ export class LetterBot {
           return created;
         });
         const recipient = research.recipient;
+        await this.reports.processing.stage(job.source_key, 'Подбираю референсы и формирую PDF…');
         const createLetter = () =>
           this.letters.create(
             actor,
@@ -543,6 +592,12 @@ export class LetterBot {
                 ? 'Письмо сохранено в CRM, но доставка в Telegram не удалась. Скачайте PDF из карточки компании.'
                 : message,
             });
+          else if (rows.length)
+            await this.reports.processing.stage(
+              job.source_key,
+              'Повторю подготовку письма через несколько секунд…',
+              tx,
+            );
           await this.diagnostics?.record(
             'letter.processing_failed',
             {
@@ -558,16 +613,18 @@ export class LetterBot {
         });
       }
     };
-    if (this.diagnostics)
-      await this.diagnostics.run(
-        {
-          traceId: job.source_key,
-          actorId: job.user_id,
-          entityId: job.id,
-          attempt: job.attempts,
-        },
-        process,
-      );
-    else await process();
+    await this.reports.processing.run(job.source_key, async () => {
+      if (this.diagnostics)
+        await this.diagnostics.run(
+          {
+            traceId: job.source_key,
+            actorId: job.user_id,
+            entityId: job.id,
+            attempt: job.attempts,
+          },
+          process,
+        );
+      else await process();
+    });
   }
 }

@@ -1235,7 +1235,11 @@ test('unknown commands do not create reports, including after voice transcriptio
   assert.equal(row.transcript, null);
   const notifications = await db.query('SELECT payload FROM outbox');
   assert.ok(notifications.some((n) => n.payload.text.includes('Не знаю такой команды')));
-  assert.ok(notifications.some((n) => n.payload.text.includes('Голосовое принято')));
+  const [progress] = await db.query('SELECT * FROM processing_messages WHERE source_key=$1', [
+    row.source_key,
+  ]);
+  assert.ok(progress);
+  assert.equal(progress.active, false);
 });
 test('[QUEUE-01] transient failure retries with delay; success preserves transcript and review warning', async () => {
   const r = await s.reports.enqueue(actors.manager, { text: 'Текст', sourceKey: randomUUID() });

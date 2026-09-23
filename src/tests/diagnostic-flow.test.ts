@@ -150,8 +150,19 @@ test(
       assert.match(job.error, /не смог подтвердить источники/);
       assert.equal((await db.query('SELECT * FROM companies')).length, 0);
 
+      // Progress is now one temporary DB-backed status, not permanent outbox messages.
+      assert.equal((await db.query('SELECT * FROM outbox')).length, 0);
+      const [progress] = await db.query('SELECT * FROM processing_messages WHERE source_key=$1', [
+        traceId,
+      ]);
+      assert.equal(progress.active, true);
+      assert.equal(progress.chat_id, actor.telegramId);
+      // Exhaust retries to exercise the actual final notification and its trace.
+      await db.query('UPDATE letter_jobs SET attempts=2,available_at=now() WHERE id=$1', [job.id]);
+      await s.letterBot.tick();
+
       const outbox = await db.query('SELECT * FROM outbox ORDER BY available_at,id');
-      assert.equal(outbox.length, 2);
+      assert.equal(outbox.length, 1);
       for (const message of outbox) {
         assert.equal(message.trace_id, traceId);
         assert.equal(message.actor_id, actor.id);
@@ -159,7 +170,7 @@ test(
       }
       await worker.deliverOne();
       await worker.deliverOne();
-      assert.equal(delivered.length, 2);
+      assert.equal(delivered.length, 1);
       assert.ok(delivered.every((message) => message.chatId === actor.telegramId));
       assert.equal((await db.query('SELECT * FROM outbox WHERE NOT sent')).length, 0);
 
@@ -203,7 +214,7 @@ test(
       assert.equal(retry.details.retryDelaySeconds, 30);
       assert.equal(retry.details.status, 502);
       const deliveries = logs.filter((log) => log.event === 'notification.delivery.completed');
-      assert.equal(deliveries.length, 2);
+      assert.equal(deliveries.length, 1);
       for (const delivery of deliveries) {
         assert.ok(outbox.some((message) => message.id === delivery.entity_id));
         assert.equal(delivery.details.outboxId, delivery.entity_id);

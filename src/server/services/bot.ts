@@ -14,6 +14,8 @@ import { DiagnosticLog } from '../infra/diagnostic-log';
 import { z } from 'zod';
 import { VoiceContacts } from './voice-contacts';
 import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
+import { securityIntent, securityReply } from './pico-security';
+import { picoGreeting } from './pico-greeting';
 const sender = z.object({
   id: z.number().int().positive().safe(),
   first_name: z.string().optional(),
@@ -83,14 +85,16 @@ export class BotService {
       });
       return { ok: true };
     }
+    const blocked = msg?.text ? securityIntent(msg.text) : null;
     await this.diagnostics?.record('telegram.received', {
       updateId: update.update_id,
       telegramUserId: from.id,
       messageId: msg?.message_id,
       sentAt: msg?.date,
       kind: callback ? 'callback' : msg?.voice ? 'voice' : 'text',
-      text:
-        msg?.text && signatureOperation(msg.text)
+      text: blocked
+        ? '[SECURITY_REQUEST]'
+        : msg?.text && signatureOperation(msg.text)
           ? '[SIGNATURE]'
           : msg?.text && looksLikeContactCommand(msg.text)
             ? '[CONTACT]'
@@ -114,6 +118,18 @@ export class BotService {
         actorName: actor.name,
         role: actor.role,
       });
+      if (!callback && blocked) {
+        const text = await this.crm.db.transaction((tx) =>
+          securityReply(tx, actor.id, blocked, 'text', `telegram:${update.update_id}`),
+        );
+        await this.diagnostics?.record('security.request_blocked', {
+          intent: blocked,
+          kind: 'text',
+          characters: msg?.text?.length,
+        });
+        await this.telegram.send(chatId, { text });
+        return { ok: true };
+      }
       if (callback) {
         const [action, id, version] = (callback.data || '').split(':');
         await this.diagnostics?.record('telegram.callback.started', {
@@ -159,7 +175,12 @@ export class BotService {
           text: voiceHelp(this.config),
           reply_markup: this.telegram.appButton(),
         });
-      else if (command === '/start' || command === '/help')
+      else if (command === '/start')
+        await this.telegram.send(chatId, {
+          text: picoGreeting,
+          reply_markup: this.telegram.appButton(),
+        });
+      else if (command === '/help')
         await this.telegram.send(chatId, {
           text: 'Отправьте голосовое или текст: компания, с кем общались, результат и следующий шаг со сроком. Я подготовлю черновик, вы проверите и сохраните. /voice — все голосовые возможности с примерами, /crm — база, /tasks — открытые задачи, /myid — ваш Telegram ID. Аудио передаётся сервису распознавания; не отправляйте лишние персональные данные.',
           reply_markup: this.telegram.appButton(),

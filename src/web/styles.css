@@ -5,18 +5,24 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #202b35;
-  background: #f7f8fa;
+  color: #19244d;
+  background: #f5f7ff;
   font-synthesis: none;
-  --line: #e6e9ed;
-  --muted: #75818d;
-  --green: #23634c;
+  --line: #e1e6f5;
+  --muted: #65739a;
+  --primary: #4657ed;
+  --primary-hover: #3543cf;
+  --soft: #eef1ff;
+  --surface: #fff;
+  --canvas: #f5f7ff;
+  --shadow: 0 4px 18px #4358ad08;
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
+  background: radial-gradient(ellipse at 85% 0%, #edf0ff, transparent 45%), var(--canvas);
 }
 button,
 input,
@@ -31,10 +37,13 @@ button {
   color: inherit;
   padding: 10px 16px;
   border-radius: 10px;
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 button:hover {
-  background: #edf2ee;
+  background: var(--soft);
 }
 button:disabled {
   opacity: 0.5;
@@ -44,7 +53,7 @@ button:focus-visible,
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid #759b89;
+  outline: 2px solid #7785ee;
   outline-offset: 2px;
 }
 input,
@@ -52,7 +61,7 @@ textarea,
 select {
   width: 100%;
   padding: 11px 12px;
-  border: 1px solid #dfe4e8;
+  border: 1px solid var(--line);
   border-radius: 9px;
   background: #fff;
   color: inherit;
@@ -96,13 +105,15 @@ p {
   margin: 0 0 12px;
 }
 .primary {
-  background: var(--green);
+  background: var(--primary);
   color: #fff;
-  border-color: var(--green);
+  border-color: var(--primary);
   font-weight: 700;
+  box-shadow: 0 3px 8px #4657ed18;
 }
 .primary:hover {
-  background: #184b38;
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
 }
 .app-shell {
   display: grid;
@@ -111,7 +122,7 @@ p {
 }
 aside {
   border-right: 1px solid var(--line);
-  background: #fff;
+  background: linear-gradient(180deg, #fff, #f9faff);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -124,24 +135,24 @@ aside {
   gap: 10px;
   align-items: center;
   padding: 0 8px 38px;
-  font-size: 21px;
+  font-size: 25px;
+  letter-spacing: -0.7px;
 }
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  background: var(--green);
-  border-radius: 11px;
-  color: #e6f0cc;
-  font-size: 29px;
-  font-weight: 800;
-  line-height: 1;
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 50%;
 }
 .beta {
   font-size: 9px;
-  color: #859182;
-  padding-top: 6px;
+  color: var(--primary);
+  background: var(--soft);
+  border-radius: 6px;
+  padding: 4px 6px;
+  letter-spacing: 0.5px;
 }
 nav {
   display: flex;
@@ -158,15 +169,15 @@ nav button {
   align-items: center;
   gap: 14px;
   padding: 13px 14px;
-  color: #75818d;
+  color: var(--muted);
 }
 nav button span {
   font-size: 20px;
   line-height: 1;
 }
 nav .active {
-  background: #edf3ef;
-  color: var(--green);
+  background: var(--soft);
+  color: var(--primary);
 }
 .profile {
   margin-top: auto;
@@ -190,8 +201,8 @@ nav .active {
   display: inline-grid;
   place-items: center;
   flex-shrink: 0;
-  background: #ecede4;
-  color: #677150;
+  background: #eeebff;
+  color: #6850aa;
   border-radius: 50%;
   width: 31px;
   height: 31px;
@@ -207,6 +218,7 @@ nav .active {
   max-width: 1600px;
   width: 100%;
   margin: auto;
+  min-width: 0;
 }
 .workspace > header {
   display: flex;
@@ -217,12 +229,25 @@ nav .active {
   color: var(--muted);
   border-bottom: 1px solid var(--line);
   margin-bottom: 34px;
+  gap: 10px;
+}
+.header-leading,
+.connection-state {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.header-leading {
+  gap: 12px;
+}
+.mobile-brand {
+  display: none;
 }
 .online-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
-  background: #78a888;
+  background: #24a383;
   border-radius: 50%;
   margin-right: 7px;
 }
@@ -246,6 +271,7 @@ nav .active {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 13px;
+  box-shadow: var(--shadow);
 }
 .metrics span {
   display: block;
@@ -298,12 +324,12 @@ nav .active {
   text-align: left;
   padding: 20px;
   border-radius: 14px;
-  box-shadow: 0 3px 6px #1d2a3510;
+  box-shadow: var(--shadow);
   min-width: 0;
 }
 .company-card:hover {
   background: #fff;
-  border-color: #9fb4a7;
+  border-color: #aab5f2;
   transform: translateY(-1px);
 }
 .company-card h2 {
@@ -324,12 +350,12 @@ nav .active {
   font-weight: 700;
 }
 .color-0 {
-  background: #e9efdf;
-  color: #667a43;
+  background: #eeebff;
+  color: #6850aa;
 }
 .color-1 {
-  background: #e5edf7;
-  color: #4d6e92;
+  background: #e6f4ff;
+  color: #28669c;
 }
 .color-2 {
   background: #f6edde;
@@ -368,7 +394,7 @@ nav .active {
 .count {
   font-size: 10px;
   padding: 4px 8px;
-  background: #e9ecef;
+  background: var(--soft);
   border-radius: 6px;
   color: var(--muted);
   margin-left: 7px;
@@ -378,12 +404,12 @@ nav .active {
   text-align: center;
   color: var(--muted);
   font-size: 13px;
-  border: 1px dashed #dbe0e5;
+  border: 1px dashed #cdd6f2;
   border-radius: 14px;
   margin-top: 20px;
 }
 .empty h3 {
-  color: #33433a;
+  color: #19244d;
 }
 .panel {
   padding: 24px;
@@ -391,6 +417,7 @@ nav .active {
   background: white;
   border-radius: 14px;
   margin: 20px 0;
+  box-shadow: var(--shadow);
 }
 .panel h3 {
   margin-top: 0;
@@ -421,8 +448,8 @@ nav .active {
   display: inline-block;
   font-size: 10px;
   padding: 5px 9px;
-  background: #edf0f3;
-  color: #687582;
+  background: var(--soft);
+  color: var(--muted);
   border-radius: 6px;
 }
 .status.review {
@@ -438,8 +465,8 @@ nav .active {
   color: #ad4e37;
 }
 .status.processing {
-  background: #e8effa;
-  color: #4b71a3;
+  background: var(--soft);
+  color: #4153c7;
 }
 .field {
   display: flex;
@@ -448,7 +475,7 @@ nav .active {
   font-size: 12px;
 }
 .field > span {
-  color: #697581;
+  color: var(--muted);
   font-size: 11px;
 }
 .form-grid {
@@ -483,13 +510,14 @@ nav .active {
 }
 .tabs .active,
 .filters .active {
-  background: #253e32;
+  background: var(--primary);
+  border-color: var(--primary);
   color: white;
 }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: #16252273;
+  background: #18234d66;
   z-index: 10;
   display: flex;
   justify-content: center;
@@ -502,10 +530,10 @@ nav .active {
   max-width: 100%;
   max-height: 92vh;
   overflow: auto;
-  background: #fafbfc;
+  background: var(--canvas);
   border-radius: 20px;
   padding: 26px;
-  box-shadow: 0 20px 90px #0003;
+  box-shadow: 0 20px 90px #1b285b33;
 }
 .modal > .section-head h2 {
   margin: 0 0 10px;
@@ -523,7 +551,7 @@ nav .active {
 }
 .chips > span {
   font-size: 10px;
-  background: #e9eef0;
+  background: var(--soft);
   padding: 5px 8px;
   border-radius: 6px;
 }
@@ -636,14 +664,14 @@ nav .active {
 .sticky {
   position: sticky;
   bottom: 0;
-  background: #fafbfc;
+  background: var(--canvas);
   padding: 12px 0;
   border-top: 1px solid var(--line);
 }
 .text-button {
   border: 0;
   background: transparent;
-  color: #55776a;
+  color: #4e61b1;
   font-size: 11px;
   padding: 8px;
 }
@@ -690,7 +718,7 @@ nav .active {
   background: white;
 }
 .checkbox {
-  border: 1px solid #cbd3d0;
+  border: 1px solid #c8d0eb;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -698,7 +726,7 @@ nav .active {
   flex-shrink: 0;
 }
 .checkbox.checked {
-  background: var(--green);
+  background: var(--primary);
   color: #fff;
 }
 .task-text {
@@ -719,7 +747,7 @@ nav .active {
 }
 .done {
   text-decoration: line-through;
-  color: #95a09a;
+  color: #8590ad;
 }
 .calendar {
   display: grid;
@@ -738,11 +766,11 @@ nav .active {
 }
 .calendar button span {
   font-size: 9px;
-  color: var(--green);
+  color: var(--primary);
 }
 .calendar .selected {
-  border: 2px solid var(--green);
-  background: #edf3ef;
+  border: 2px solid var(--primary);
+  background: var(--soft);
 }
 .table-wrap {
   overflow: auto;
@@ -766,7 +794,7 @@ th {
   font-size: 10px;
   color: var(--muted);
   font-weight: 500;
-  background: #fafbfc;
+  background: var(--canvas);
 }
 td small {
   display: block;
@@ -781,14 +809,15 @@ td small {
   justify-content: center;
   padding: 30px;
   text-align: center;
-  background: radial-gradient(ellipse at 50% 30%, #e9efdf, transparent 60%);
+  background:
+    radial-gradient(ellipse at 35% 30%, #e4f5ff, transparent 50%),
+    radial-gradient(ellipse at 75% 40%, #eeebff, transparent 50%), var(--canvas);
 }
 .login .brand-mark {
-  width: 65px;
-  height: 65px;
-  font-size: 54px;
-  border-radius: 21px;
-  margin-bottom: 30px;
+  width: 112px;
+  height: 112px;
+  margin-bottom: 24px;
+  box-shadow: 0 12px 38px #655bd31c;
 }
 .login h1 {
   font-size: 58px;
@@ -799,7 +828,8 @@ td small {
 }
 .demo {
   padding: 20px;
-  border: 1px dashed #bbcabf;
+  border: 1px dashed #c5ccef;
+  background: #ffffffaa;
   border-radius: 14px;
   font-size: 12px;
 }
@@ -812,7 +842,7 @@ td small {
 details {
   font-size: 12px;
   padding: 12px;
-  background: #eef1f3;
+  background: var(--soft);
   border-radius: 8px;
 }
 @media (min-width: 1500px) {
@@ -886,6 +916,18 @@ details {
     height: 60px;
     margin-bottom: 26px;
     padding-top: env(safe-area-inset-top);
+  }
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #19244d;
+    font-size: 16px;
+    letter-spacing: -0.4px;
+  }
+  .mobile-brand .brand-mark {
+    width: 28px;
+    height: 28px;
   }
   h1 {
     font-size: 25px;
@@ -997,6 +1039,17 @@ details {
   }
   .login h1 {
     font-size: 48px;
+  }
+}
+@media (max-width: 440px) {
+  .connection-label {
+    display: none;
+  }
+  .header-leading {
+    gap: 6px;
+  }
+  .workspace > header .text-button {
+    padding-inline: 4px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,9 +1,25 @@
 import { Config } from '../config';
 import { ErrorLog } from './error-log';
-import { requireCondition } from '../domain/errors';
+import { DomainError, requireCondition } from '../domain/errors';
 export interface Messenger {
   send(chatId: string, payload: any): Promise<void>;
   download(fileId: string): Promise<Uint8Array>;
+  sendProcessing?(chatId: string, text: string): Promise<number>;
+  editProcessing?(chatId: string, messageId: string, text: string): Promise<boolean>;
+  deleteProcessing?(chatId: string, messageId: string): Promise<void>;
+}
+class TelegramCallError extends DomainError {
+  constructor(
+    public code: number,
+    public description: string,
+  ) {
+    super(502, `Telegram отклонил запрос (HTTP ${code})`);
+  }
+}
+export class ProcessingMessageUndeletable extends DomainError {
+  constructor() {
+    super(502, 'Telegram запретил удаление временного сообщения; очистка не блокирует результат');
+  }
 }
 export class TelegramAdapter implements Messenger {
   constructor(
@@ -18,10 +34,55 @@ export class TelegramAdapter implements Messenger {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(25_000),
     });
-    requireCondition(response.ok, 502, `Telegram недоступен (HTTP ${response.status})`);
-    const result: any = await response.json();
-    requireCondition(result.ok, 502, 'Telegram отклонил запрос');
+    const result: any = await response.json().catch(() => null);
+    if (!response.ok || !result?.ok)
+      throw new TelegramCallError(result?.error_code || response.status, result?.description || '');
     return result.result;
+  }
+  async sendProcessing(chatId: string, text: string) {
+    const result = await this.call('sendMessage', {
+      chat_id: chatId,
+      text,
+      disable_notification: true,
+    });
+    requireCondition(
+      Number.isSafeInteger(result?.message_id) && result.message_id > 0,
+      502,
+      'Telegram не вернул идентификатор сообщения',
+    );
+    return result.message_id as number;
+  }
+  async editProcessing(chatId: string, messageId: string, text: string) {
+    try {
+      await this.call('editMessageText', { chat_id: chatId, message_id: Number(messageId), text });
+      return true;
+    } catch (error) {
+      if (error instanceof TelegramCallError && error.code === 400) {
+        if (/message is not modified/i.test(error.description)) return true;
+        if (/message to edit not found/i.test(error.description)) return false;
+      }
+      throw error;
+    }
+  }
+  async deleteProcessing(chatId: string, messageId: string) {
+    try {
+      await this.call('deleteMessage', { chat_id: chatId, message_id: Number(messageId) });
+    } catch (error) {
+      // Repeated delivery / manual deletion is already the desired outcome.
+      if (
+        error instanceof TelegramCallError &&
+        error.code === 400 &&
+        /message to delete not found/i.test(error.description)
+      )
+        return;
+      if (
+        error instanceof TelegramCallError &&
+        error.code === 400 &&
+        /message (?:can'?t|cannot) be deleted|not enough rights to delete/i.test(error.description)
+      )
+        throw new ProcessingMessageUndeletable();
+      throw error;
+    }
   }
   async send(chatId: string, payload: any) {
     // The menu can be updated independently (e.g. by a dynamic tunnel sync).
