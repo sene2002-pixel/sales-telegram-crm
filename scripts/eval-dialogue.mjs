@@ -22,6 +22,16 @@ const ai = new OpenAiAdapter(config);
 const none = { mode: 'none', name: '', inn: '', city: '' };
 const cases = [
   {
+    name: 'letter for company and director missing in CRM stays one action',
+    text: 'Подготовь письмо ООО Тестовая Альфа, компании и директора пока нет в CRM, найди их сам и сохрани при подготовке письма.',
+    kinds: ['letter'],
+  },
+  {
+    name: 'next letter after cancelled signature still requires letter workflow',
+    text: 'Создание подписи я отменил. Теперь отправь письмо ООО Тестовая Бета, её нет в CRM.',
+    kinds: ['letter'],
+  },
+  {
     name: 'letter without preposition',
     text: 'Подготовь письмо АО Стройтрансгаз',
     kinds: ['letter'],

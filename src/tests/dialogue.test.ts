@@ -147,6 +147,48 @@ test('dialogue actions, durable context and individual confirmations', async (t)
   };
   try {
     await t.test(
+      'letters request signature first and never require pre-created company or contact after cancellation',
+      async () => {
+        const a = await actor();
+        await submit(
+          a,
+          plan([letter({ ...named('Новая Альфа'), inn: '123' }), letter(named('Новая Бета'))]),
+        );
+        const first = await current(a);
+        assert.equal(
+          first.snapshot.remedy,
+          'signature_create',
+          'signature takes precedence even over company validation',
+        );
+        await s.dialogue.callback(a, first.id, 'remedy');
+        await s.dialogue.callback(a, first.id, 'skip');
+        const second = await current(a);
+        assert.equal(second.payload.kind, 'letter');
+        assert.equal(second.snapshot.remedy, 'signature_create');
+        assert.equal(second.company.name, 'Новая Бета');
+        assert.match(second.snapshot.question, /Заранее создавать компанию и контакт не нужно/);
+        await s.dialogue.callback(a, second.id, 'remedy');
+        await submit(
+          a,
+          plan([{ kind: 'signature_create', company: none, data: signature }], { mode: 'replace' }),
+          'Иванов Иван',
+          false,
+        );
+        const repair = await current(a);
+        await s.dialogue.callback(a, repair.id, 'confirm', repair.preview_version);
+        assert.equal((await s.crm.list(a)).length, 0, 'saving signature must not create company');
+        const restored = await current(a);
+        assert.equal(restored.payload.kind, 'letter');
+        assert.equal(restored.status, 'ready');
+        assert.equal(restored.snapshot.remedy, undefined);
+        await s.dialogue.callback(a, restored.id, 'confirm', restored.preview_version);
+        const [job] = await db.query('SELECT * FROM letter_jobs WHERE user_id=$1', [a.id]);
+        assert.equal(job.query, 'Новая Бета');
+        assert.equal(job.status, 'queued');
+        assert.equal((await actions(a))[1].status, 'executing');
+      },
+    );
+    await t.test(
       'running letter counts toward limit and cannot be replaced by a text correction',
       async () => {
         const a = await actor();

@@ -470,6 +470,21 @@ export class DialogueService {
   private async prepare(tx: Sql, actor: Actor, row: any) {
     let a = dialogueActionSchema.parse(row.payload);
     let snapshot: any = row.snapshot || {};
+    // A letter discovers and saves its company/recipient itself. Its first
+    // prerequisite is the employee's signature, even when CRM has no company.
+    if (a.kind === 'letter') {
+      const signatures = await tx.query('SELECT id FROM letter_signatures WHERE user_id=$1', [
+        actor.id,
+      ]);
+      if (!signatures.length)
+        return this.ask(
+          tx,
+          actor,
+          row,
+          'Нет подписи сотрудника. Сначала создайте подпись. После подтверждения письма найду компанию и получателя и сохраню недостающие данные в CRM. Заранее создавать компанию и контакт не нужно.',
+          'signature_create',
+        );
+    }
     if (!a.kind.startsWith('signature_')) {
       if ((a.kind === 'company_create' || a.kind === 'company_import') && row.company) {
         row.company = {
