@@ -1079,7 +1079,7 @@ for (const from of [22222, 99999])
     assert.equal(messages.length, 2);
     for (const reply of messages) {
       assert.equal(reply.chatId, String(from));
-      assert.ok(reply.text.includes(`Telegram ID: ${from}\n`));
+      assert.ok(reply.text.includes(`Ваш ID: ${from}\n`));
       assert.doesNotMatch(reply.text, /44444/);
       assert.equal(reply.reply_markup, undefined);
     }
@@ -1094,7 +1094,7 @@ test('[BOT-04] /myid works for blocked users without reactivating access', async
   await db.query('UPDATE users SET active=false WHERE id=$1', [actors.manager.id]);
   const { bot, messages } = fakeBot();
   await bot.handle(message('/myid'));
-  assert.match(messages[0].text, /Telegram ID: 22222/);
+  assert.match(messages[0].text, /Ваш ID: 22222/);
   await assert.rejects(s.auth.byTelegram('22222'));
   assert.equal((await s.reports.list(actors.admin)).length, 0);
 });
@@ -1120,9 +1120,9 @@ for (const command of ['/start', '/help', '/crm', '/tasks', '/voice', '/voice@cr
     assert.equal(messages[0].reply_markup.inline_keyboard[0][0].web_app.url, config.publicUrl);
     assert.ok(messages[0].text.length > 10);
     if (command.startsWith('/voice')) {
-      assert.match(messages[0].text, /Результат разговора и задача/);
+      assert.match(messages[0].text, /Разговоры и задачи/);
       assert.match(messages[0].text, /Добавь подпись/);
-      assert.match(messages[0].text, /каждое покажу и попрошу подтвердить отдельно/);
+      assert.match(messages[0].text, /Перед сохранением — проверка и подтверждение/);
       assert.ok(messages[0].text.length <= 4096);
       assert.equal((await s.reports.list(actors.manager)).length, 0);
     }

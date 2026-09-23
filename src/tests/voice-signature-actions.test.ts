@@ -221,7 +221,7 @@ test('voice signature confirmation, edits, defaults, ambiguity, ACL and letter c
         const draft = await voice('Выбери подпись по умолчанию', { targetName: '', changes });
         assert.equal(draft.status, 'selecting');
         const messages = await db.query('SELECT payload FROM outbox');
-        assert.ok(messages.some((m) => m.payload.text.includes('Ваш выбор назначит')));
+        assert.ok(messages.some((m) => m.payload.text.includes('Выберите основную подпись')));
         const index = draft.options.findIndex((o: any) => o.id === secondId);
         await callback(`sp:${draft.id}:${index}`);
         await callback(`sp:${draft.id}:${1 - index}`);

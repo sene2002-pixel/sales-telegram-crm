@@ -138,7 +138,7 @@ export class VoiceSignatures {
         );
         if (rows.length && report.chat_id)
           await this.reports.notify(tx, report.chat_id, {
-            text: 'Для подписи нужны фамилия и имя. Повторите голосовое: «Создай подпись. Иванов Иван», затем при необходимости продиктуйте отчество, телефоны и email. Перед сохранением покажу данные для проверки.',
+            text: 'Назовите фамилию и имя: «Создай подпись: Иванов Иван». Телефон и email — по желанию.',
           });
       });
       return true;
@@ -249,7 +249,7 @@ export class VoiceSignatures {
       );
       if (status === 'selecting' || status === 'selecting_delete')
         await this.reports.notify(tx, report.chat_id, {
-          text: `${deleteByChoice ? 'Выберите подпись для удаления. Нажатие на подпись сразу удалит её, без дополнительного подтверждения. Восстановить её можно только созданием заново. Готовые PDF останутся без изменений. Если удалите основную подпись, другая не назначится автоматически.' : operation === 'default' ? 'Выберите подпись. Ваш выбор назначит её подписью по умолчанию для следующих писем.' : operation === 'delete' ? 'Выберите подпись для удаления. Затем покажу её данные и попрошу подтверждение. Сейчас ничего не удаляется.' : 'Выберите подпись для редактирования. Затем покажу изменения для подтверждения; основная подпись не изменится.'}\n\n${signatureOptionsText(options)}`,
+          text: `${deleteByChoice ? 'Выбор сразу удалит подпись без подтверждения. Восстановление — только созданием заново. PDF останутся. Новую основную выберите сами.' : operation === 'default' ? 'Выберите основную подпись для следующих писем.' : operation === 'delete' ? 'Выберите подпись. Удаление — после подтверждения.' : 'Выберите подпись для правки. Затем — подтверждение. Основная не меняется.'}\n\n${signatureOptionsText(options)}`,
           reply_markup: {
             inline_keyboard: [
               ...signatureButtons(options, `sp:${id}`).map((row) =>
@@ -274,7 +274,7 @@ export class VoiceSignatures {
     data: Record<string, string>,
   ) {
     await this.reports.notify(tx, chatId, {
-      text: `${operation === 'default' ? 'Назначить эту подпись по умолчанию?' : operation === 'delete' ? 'Удалить эту подпись?' : 'Проверьте подпись перед сохранением:'}\n\nФИО: ${signatureName(data) || '—'}\nРабочий телефон: ${data.workPhone || '—'}\nМобильный: ${data.mobilePhone || '—'}\nEmail: ${data.email || '—'}\n\n${operation === 'create' ? 'Для исправления откройте CRM → Мой профиль → «Проверить голосовую подпись» и нажмите «Сохранить изменения». ' : ''}${operation === 'delete' ? 'После удаления подпись потребуется создать заново. Готовые PDF останутся без изменений. Если подпись была основной, другая не назначится автоматически. ' : ''}До подтверждения данные не изменяются.`,
+      text: `${operation === 'default' ? 'Назначить эту подпись по умолчанию?' : operation === 'delete' ? 'Удалить эту подпись?' : 'Проверьте подпись перед сохранением:'}\n\nФИО: ${signatureName(data) || '—'}\nРабочий телефон: ${data.workPhone || '—'}\nМобильный: ${data.mobilePhone || '—'}\nEmail: ${data.email || '—'}\n\n${operation === 'create' ? 'Исправления: CRM → Мой профиль → «Проверить голосовую подпись». ' : ''}${operation === 'delete' ? 'Удаление необратимо. PDF останутся. Новую основную выберите сами. ' : ''}Сохранение — после подтверждения.`,
       reply_markup: {
         inline_keyboard: [
           [
@@ -317,7 +317,7 @@ export class VoiceSignatures {
           [selected.id, id],
         );
         await this.reports.notify(tx, actor.telegramId, {
-          text: 'Подпись назначена по умолчанию. Буду использовать её для следующих писем.',
+          text: 'Основная подпись назначена.',
         });
       } else {
         const proposed =
@@ -437,7 +437,7 @@ export class VoiceSignatures {
       );
       if (fromBot)
         await this.reports.notify(tx, actor.telegramId, {
-          text: 'Подпись сохранена. Её можно использовать для писем.',
+          text: 'Подпись сохранена.',
         });
       return { ...data, id: signatureId, isDefault: false };
     });

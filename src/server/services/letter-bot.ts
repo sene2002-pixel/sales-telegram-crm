@@ -147,7 +147,7 @@ export class LetterBot {
       if (!signature) {
         await this.reports.processing.run(sourceKey, () =>
           this.reports.notify(tx, actor.telegramId, {
-            text: `Подпись по умолчанию не выбрана. Выберите подпись: ваш выбор назначит её подписью по умолчанию для этого и следующих писем. После выбора продолжу создание письма.\n\n${signatureOptionsText(signatures)}`,
+            text: `Выберите основную подпись для этого и следующих писем. Затем продолжу.\n\n${signatureOptionsText(signatures)}`,
             reply_markup: {
               inline_keyboard: [
                 ...signatureButtons(signatures, `lp:${jobId}`),
@@ -162,7 +162,7 @@ export class LetterBot {
         tx,
         sourceKey,
         actor.telegramId,
-        'Собираю данные компании и получателя… PDF отправлю вам и сохраню в CRM. Клиенту письмо не отправляется.',
+        'Ищу компанию и получателя… PDF — вам и в CRM, не клиенту.',
       );
     };
     const execute = async () => {
@@ -232,7 +232,7 @@ export class LetterBot {
           tx,
         );
         await this.reports.notify(tx, actor.telegramId, {
-          text: 'Подпись назначена по умолчанию. Продолжаю создание письма. PDF отправлю вам в Telegram и сохраню в CRM.',
+          text: 'Основная подпись выбрана. Готовлю PDF — вам и в CRM.',
         });
         await this.reports.processing.begin(
           tx,
@@ -355,7 +355,7 @@ export class LetterBot {
           this.reports.processing.run(row.source_key, () =>
             this.reports.notify(tx, row.chat_id, {
               text: row.file_id
-                ? 'PDF сохранён в компании, но не удалось доставить его в Telegram. Скачайте файл из CRM.'
+                ? 'PDF в CRM. Отправка не удалась — скачайте из карточки.'
                 : 'Не удалось завершить письмо после нескольких попыток. Повторите запрос с ИНН компании.',
             }),
           );
@@ -589,7 +589,7 @@ export class LetterBot {
           if (rows.length && terminal)
             await this.reports.notify(tx, job.chat_id, {
               text: job.file_id
-                ? 'Письмо сохранено в CRM, но доставка в Telegram не удалась. Скачайте PDF из карточки компании.'
+                ? 'PDF в CRM. Отправка не удалась — скачайте из карточки.'
                 : message,
             });
           else if (rows.length)

@@ -1,7 +1,6 @@
 import { looksLikeContactCommand } from './contact-intent';
 
-export const unknownCommand =
-  'Не знаю такой команды. Отправьте /voice, чтобы посмотреть доступные команды и примеры.';
+export const unknownCommand = 'Не знаю такой команды. Примеры — /voice.';
 
 // Apply only after supported commands. Historical meeting notes remain reports.
 export function looksLikeCommand(text: string) {

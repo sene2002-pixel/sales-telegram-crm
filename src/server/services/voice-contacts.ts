@@ -94,16 +94,12 @@ export class VoiceContacts {
         ),
       );
       if (!contact.success) {
-        await notify(
-          `Проверьте имя и email контакта. Имя обязательно; должность, телефон и email можно не указывать. Повторите полную команду: ${example}. Контакт не создан.`,
-        );
+        await notify(`Проверьте имя и email. Повторите: ${example}. Контакт не создан.`);
         return;
       }
       const inn = parsed.inn.trim();
       if (inn && !validInn(inn)) {
-        await notify(
-          'Не удалось распознать корректный ИНН компании. Повторите команду с правильным ИНН или названием компании. Контакт не создан.',
-        );
+        await notify('ИНН не распознан. Повторите с ИНН или названием компании.');
         return;
       }
       const companies = await tx.query(
@@ -131,14 +127,12 @@ export class VoiceContacts {
         }));
       if (!matches.length) {
         await notify(
-          'Компания не найдена среди доступных активных компаний CRM. Сначала создайте компанию в CRM (или восстановите её из архива), затем повторите голосовую команду. Контакт не создан.',
+          'Компания не найдена. Сначала создайте её или восстановите из архива. Затем повторите команду. Контакт не создан.',
         );
         return;
       }
       if (matches.length > 10) {
-        await notify(
-          'Найдено слишком много компаний с таким названием. Повторите полную команду с городом или ИНН. Контакт не создан.',
-        );
+        await notify('Много совпадений. Укажите город или ИНН. Контакт не создан.');
         return;
       }
       const draft: ContactDraft = {
@@ -153,7 +147,7 @@ export class VoiceContacts {
       if (draft.company) await this.preview(tx, report.chat_id, report.id, draft);
       else
         await this.reports.notify(tx, report.chat_id, {
-          text: `Найдено несколько компаний. Выберите компанию для контакта ${draft.data.name}. После выбора покажу данные для проверки; пока ничего не сохраняется.\n\n${matches.map((item, index) => `${index + 1}. ${item.name.slice(0, 150)} · ${item.city.slice(0, 70) || 'город не указан'} · ИНН ${item.inn || 'не указан'}`).join('\n\n')}`,
+          text: `Найдено несколько компаний. Выберите компанию для контакта ${draft.data.name}. Затем — проверка данных.\n\n${matches.map((item, index) => `${index + 1}. ${item.name.slice(0, 150)} · ${item.city.slice(0, 70) || 'город не указан'} · ИНН ${item.inn || 'не указан'}`).join('\n\n')}`,
           reply_markup: {
             inline_keyboard: [
               ...matches.map((item, index) => [
@@ -212,7 +206,7 @@ export class VoiceContacts {
     const company = draft.company!;
     const data = draft.data;
     return this.reports.notify(tx, chatId, {
-      text: `Проверьте контакт перед сохранением:\n\nКомпания: ${company.name}\nГород: ${company.city || '—'}\nИНН: ${company.inn || '—'}\n\nИмя: ${data.name}\nДолжность: ${data.role || '—'}\nТелефон: ${data.phone || '—'}\nEmail: ${data.email || '—'}\n\nПока контакт не создан. Для исправления нажмите «Отмена» и повторите полную голосовую команду.`,
+      text: `Проверьте контакт перед сохранением:\n\nКомпания: ${company.name}\nГород: ${company.city || '—'}\nИНН: ${company.inn || '—'}\n\nИмя: ${data.name}\nДолжность: ${data.role || '—'}\nТелефон: ${data.phone || '—'}\nEmail: ${data.email || '—'}\n\nДля правки отмените и повторите команду.`,
       reply_markup: {
         inline_keyboard: [
           [

@@ -86,8 +86,8 @@ export function securityRefusal(intent: SecurityIntent, repeated = false) {
   if (repeated)
     return 'Не могу раскрывать или менять внутренние инструкции. Помогу с рабочими задачами CRM.';
   if (intent === 'override')
-    return 'Я не могу менять или раскрывать внутренние инструкции. Рабочие данные можно изменять через предусмотренные функции CRM. Пришлите голосовое с нужной рабочей задачей; доступные команды — /voice.';
-  return 'Эту информацию я не могу раскрыть. Зато помогу с рабочими задачами CRM: пришлите голосовое с отчётом, письмом, контактом или подписью. Доступные команды — /voice.';
+    return 'Не меняю и не раскрываю внутренние инструкции. Команды CRM — /voice.';
+  return 'Не раскрываю внутренние инструкции. Помогу с задачами CRM — /voice.';
 }
 
 // Use an existing metadata-only audit event for repeat handling across workers/restarts.

@@ -228,8 +228,8 @@ export class DialogueService {
             queueLimit,
         422,
         open.length >= queueLimit && plan.mode !== 'replace'
-          ? 'В очереди уже 5 задач. Подтвердите или отмените предыдущие, затем повторите запрос. Новые задачи не добавлены.'
-          : `В очереди максимум 5 задач. Сейчас ожидают: ${open.length}; в запросе действий: ${plan.actions.length}. Запрос целиком не добавлен. Уменьшите число действий или сначала завершите предыдущие задачи.`,
+          ? 'Очередь заполнена: 5/5. Завершите или отмените задачу и повторите запрос.'
+          : `Лимит: 5. В очереди: ${open.length}, новых: ${plan.actions.length}. Запрос не добавлен — сократите его или освободите место.`,
       );
       // A prerequisite is a step inside the blocked task, not a new queue slot.
       // Corrections must retain the original task and all following tasks.
@@ -278,7 +278,7 @@ export class DialogueService {
         );
         if (open.length)
           await this.reports.notify(tx, actor.telegramId, {
-            text: 'Обновил неподтверждённые действия с учётом уточнения. Старые кнопки больше не действуют. Проверяйте новые подтверждения.',
+            text: 'Изменения обновлены. Используйте новые кнопки.',
           });
       }
       let last: CompanyContext | null = state.company;
@@ -324,21 +324,21 @@ export class DialogueService {
         await this.reports.notify(tx, actor.telegramId, {
           text: plan.reply || 'Не знаю такой команды. Уточните задачу или откройте /voice.',
         });
-      if (plan.actions.length > 1)
+      if (plan.actions.length > 1 && (plan.mode === 'replace' || !open.length))
         await this.reports.notify(tx, actor.telegramId, {
-          text: `Распознано действий: ${plan.actions.length}. Покажу по очереди; каждое нужно подтвердить отдельно. «Отменить задачу» отменяет только текущую задачу.`,
+          text: `Задач: ${plan.actions.length}. Подтвердим каждую по очереди.`,
         });
       if (plan.actions.length && plan.mode !== 'replace' && open.length) {
         const wait =
           open[0].status === 'ready'
-            ? 'Выполнение очереди ожидает подтверждения предыдущей команды. Подтвердите её или нажмите «Отменить задачу».'
+            ? 'Предыдущая ждёт подтверждения или отмены.'
             : open[0].status === 'selecting'
-              ? 'Предыдущая команда ожидает выбора из списка. Сделайте выбор или нажмите «Отменить задачу».'
+              ? 'Выберите вариант для предыдущей задачи или отмените её.'
               : open[0].status === 'needs_info'
-                ? 'Предыдущая команда ожидает уточнения данных. Ответьте на вопрос или нажмите «Отменить задачу».'
-                : 'Предыдущая команда выполняется. Следующая задача появится только после её завершения.';
+                ? 'Уточните данные предыдущей задачи или отмените её.'
+                : 'Предыдущая выполняется. Дождитесь завершения.';
         await this.reports.notify(tx, actor.telegramId, {
-          text: `Добавлено в очередь задач: ${plan.actions.length}. Перед ними задач: ${open.length}. Всего в очереди: ${open.length + plan.actions.length} из 5.\n${wait}`,
+          text: `Добавлено: ${plan.actions.length}. Впереди: ${open.length}. Очередь: ${open.length + plan.actions.length}/5.\n${wait}`,
         });
       }
       await this.diagnostics?.record(
@@ -370,7 +370,7 @@ export class DialogueService {
       JSON.stringify({ question: text, remedy }),
     ]);
     await this.reports.notify(tx, actor.telegramId, {
-      text: `Следующая задача: ${titles[row.payload.kind as DialogueAction['kind']]}\n${row.company ? `Компания: ${row.company.name}\n` : ''}${remedy ? 'Выполнить невозможно: ' : ''}${text}\nОтветьте текстом или голосом. Пока ничего не изменено.`,
+      text: `Следующая задача: ${titles[row.payload.kind as DialogueAction['kind']]}\n${row.company ? `Компания: ${row.company.name}\n` : ''}${remedy ? 'Выполнить невозможно: ' : ''}${text}\nУточните текстом или голосом.`,
       reply_markup: {
         inline_keyboard: [
           ...(remedy ? [[{ text: titles[remedy], callback_data: `dr:${row.id}` }]] : []),
@@ -394,7 +394,7 @@ export class DialogueService {
       [row.id, JSON.stringify(options), JSON.stringify({ choice: type })],
     );
     await this.reports.notify(tx, actor.telegramId, {
-      text: `${titles[row.payload.kind as DialogueAction['kind']]}\nВыберите ${type === 'company' ? 'компанию' : type === 'contact' ? 'контакт' : 'подпись'}. После выбора покажу отдельное подтверждение; выбор ещё ничего не изменяет.\n\n${options.map((o, i) => `${i + 1}. ${o.label.slice(0, 240)}`).join('\n')}`,
+      text: `${titles[row.payload.kind as DialogueAction['kind']]}\nВыберите ${type === 'company' ? 'компанию' : type === 'contact' ? 'контакт' : 'подпись'}. Затем — подтверждение.\n\n${options.map((o, i) => `${i + 1}. ${o.label.slice(0, 240)}`).join('\n')}`,
       reply_markup: {
         inline_keyboard: [
           ...options.map((o, i) => [
@@ -439,7 +439,7 @@ export class DialogueService {
         );
         await audit(tx, actor.id, 'dialogue.letter', row.id);
         await this.reports.notify(tx, actor.telegramId, {
-          text: 'Задача выполнена: PDF отправлен в Telegram и сохранён в CRM.',
+          text: 'PDF отправлен вам и сохранён в CRM.',
         });
         await this.next(tx, actor);
       } else if (['failed', 'cancelled'].includes(job.status)) {
@@ -453,7 +453,7 @@ export class DialogueService {
           JSON.stringify({ jobFailed: true, question: reason }),
         ]);
         await this.reports.notify(tx, actor.telegramId, {
-          text: `Задача: подготовить письмо для ${row.company.name}.\nВыполнение остановлено: ${reason}\nСледующие задачи ждут. Уже сохранённые данные остаются в CRM.`,
+          text: `Задача: подготовить письмо для ${row.company.name}.\nВыполнение остановлено: ${reason}\nОчередь ждёт. Сохранённые данные остаются.`,
           reply_markup: {
             inline_keyboard: [
               ...(job.status === 'failed'
@@ -481,7 +481,7 @@ export class DialogueService {
           tx,
           actor,
           row,
-          'Нет подписи сотрудника. Сначала создайте подпись. После подтверждения письма найду компанию и получателя и сохраню недостающие данные в CRM. Заранее создавать компанию и контакт не нужно.',
+          'Нужна подпись. Компанию и получателя найду при подготовке письма.',
           'signature_create',
         );
     }
@@ -553,7 +553,7 @@ export class DialogueService {
           tx,
           actor,
           row,
-          'Компания не найдена среди доступных активных компаний. Сначала создайте её в CRM, затем повторите запрос.',
+          'Компания не найдена. Сначала создайте её.',
           row.company.id ? undefined : 'company_create',
         );
       if (row.company.id && !matches.length)
@@ -619,7 +619,7 @@ export class DialogueService {
             tx,
             actor,
             row,
-            'В компании нет контакта для редактирования. Сначала создайте контакт.',
+            'Нет контакта для редактирования. Создайте контакт.',
             'contact_create',
           );
         const matches = contacts.filter(
@@ -698,8 +698,8 @@ export class DialogueService {
         if (a.kind === 'letter') {
           snapshot.defaultStep = options.length > 1 && !options.some((s) => s.is_default);
           notice = snapshot.defaultStep
-            ? `Сначала назначить подпись по умолчанию: ${signatureName(snapshot.signature.data)}? Письмо запросит отдельное подтверждение.`
-            : `Подпись: ${signatureName(snapshot.signature.data)}\nPDF отправлю только вам в Telegram и сохраню в CRM. Компания и подтверждённый получатель будут сохранены по сценарию письма. Клиенту ничего не отправляется.`;
+            ? `Сделать основной: ${signatureName(snapshot.signature.data)}? Письмо подтвердим отдельно.`
+            : `Подпись: ${signatureName(snapshot.signature.data)}\nPDF — вам и в CRM, не клиенту. Компанию и получателя сохраню.`;
         } else if (a.kind === 'signature_edit') {
           if (!Object.keys(supplied(a.data)).length)
             return this.ask(tx, actor, row, 'Какие поля подписи изменить?');
@@ -718,14 +718,14 @@ export class DialogueService {
         tx,
         actor,
         row,
-        `Нужно уточнить данные: ${data.error.issues.map((i: any) => fieldNames[String(i.path[0])] || i.path.join('.')).join(', ')}. Для контакта нужно имя, для подписи — фамилия и имя; email и даты должны быть корректными.`,
+        `Уточните: ${data.error.issues.map((i: any) => fieldNames[String(i.path[0])] || i.path.join('.')).join(', ')}.`,
       );
     snapshot.data = data?.data;
     const [preview] = await tx.query(
       "UPDATE dialogue_actions SET status='ready',snapshot=$2,options='[]',preview_version=preview_version+1 WHERE id=$1 RETURNING preview_version",
       [row.id, JSON.stringify(snapshot)],
     );
-    let previewText = `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${row.company ? `Компания: ${row.company.name}\nГород: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n` : ''}\n${notice}${data?.success ? (changes ?? fieldsText(data.data)) : ''}\n\nПодтвердите только это действие. Для исправления напишите или надиктуйте уточнение.`;
+    let previewText = `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${row.company ? `Компания: ${row.company.name}\nГород: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n` : ''}\n${notice}${data?.success ? (changes ?? fieldsText(data.data)) : ''}\n\nПодтвердите или уточните текстом/голосом.`;
     while (previewText.length > 3900) {
       await this.reports.notify(tx, actor.telegramId, { text: previewText.slice(0, 3900) });
       previewText = previewText.slice(3900);
@@ -771,7 +771,7 @@ export class DialogueService {
         requireCondition(
           !job || !['processing', 'sending'].includes(job.status),
           409,
-          'Письмо уже выполняется. Дождитесь результата: безопасно отменить текущую операцию сейчас нельзя.',
+          'Письмо выполняется — отмена сейчас недоступна. Дождитесь результата.',
         );
         if (job && job.status !== 'sent')
           await tx.query(
@@ -787,7 +787,7 @@ export class DialogueService {
           text:
             job?.status === 'sent'
               ? 'Письмо уже отправлено. Задача завершена; отменить отправку нельзя.'
-              : 'Задача отменена. Уже сохранённые данные не удаляются.',
+              : 'Задача отменена. Сохранённые данные остаются.',
         });
       } else if (operation === 'remedy') {
         requireCondition(
@@ -858,7 +858,7 @@ export class DialogueService {
           ],
         );
         await this.reports.notify(tx, actor.telegramId, {
-          text: `Сначала: ${titles[kind as DialogueAction['kind']]}. Исходная задача остаётся в очереди; после этого вернусь к ней. Отмена отменит всю исходную задачу.`,
+          text: `Сначала: ${titles[kind as DialogueAction['kind']]}. Затем вернусь к задаче. Отмена отменит её целиком.`,
         });
         await this.prepare(tx, actor, {
           ...row,
@@ -980,7 +980,7 @@ export class DialogueService {
       } else await this.letterBot.enqueue(actor, `dialogue:${row.id}`, query, tx);
       await tx.query("UPDATE dialogue_actions SET status='executing' WHERE id=$1", [row.id]);
       await this.reports.notify(tx, actor.telegramId, {
-        text: `Подготовка письма для ${row.company.name} запущена. Следующая задача появится после отправки PDF в Telegram.`,
+        text: `Готовлю письмо: ${row.company.name}. Очередь ждёт отправки PDF.`,
       });
       return;
     } else if (a.kind === 'signature_create') {
@@ -1059,7 +1059,7 @@ export class DialogueService {
         [row.id, JSON.stringify(row.resume.payload), JSON.stringify(row.resume.company)],
       );
       await this.reports.notify(tx, actor.telegramId, {
-        text: `Выполнено: ${titles[a.kind]}. Возвращаюсь к исходной задаче — проверьте новое подтверждение.`,
+        text: `Выполнено: ${titles[a.kind]}. Возвращаюсь к задаче. Подтвердите её.`,
       });
       return;
     }

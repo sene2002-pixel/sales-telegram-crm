@@ -9,6 +9,24 @@ import { makeConfig } from '../server/config';
 import { BotService } from '../server/services/bot';
 import { TelegramAdapter } from '../server/infra/telegram';
 import { picoGreeting } from '../server/services/pico-greeting';
+import { voiceHelp } from '../server/services/voice-help';
+
+test('bot help stays compact without dropping confirmation and privacy rules', () => {
+  const help = voiceHelp(makeConfig({}));
+  assert.ok(picoGreeting.length < 650);
+  assert.ok(help.length < 2200);
+  for (const text of [
+    'подтверждение',
+    'не клиенту',
+    'до 5 задач',
+    'до трёх',
+    'OpenAI',
+    'пароли',
+    'JPEG/PNG',
+    'Отменить задачу',
+  ])
+    assert.ok(help.includes(text), text);
+});
 
 test('Pico greeting introduces implemented features without promising autonomous reminders or client delivery', () => {
   assert.ok(picoGreeting.startsWith('Привет! Я Pico — твой AI-помощник в продажах.'));
@@ -92,7 +110,7 @@ test('/start has a distinct authorized greeting, current CRM link, and never cre
     assert.equal(sent.at(-1).reply_markup.inline_keyboard[0][0].web_app.url, menu);
     await send('/help');
     assert.notEqual(sent.at(-1).text, picoGreeting);
-    assert.ok(sent.at(-1).text.startsWith('Отправьте голосовое или текст:'));
+    assert.ok(sent.at(-1).text.startsWith('Опишите задачу голосом или текстом.'));
     assert.ok(sent.at(-1).text.includes('/myid'));
 
     const beforeGroup = sent.length;

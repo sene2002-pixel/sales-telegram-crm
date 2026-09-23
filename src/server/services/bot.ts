@@ -138,7 +138,7 @@ export class BotService {
       // Public self-identification only: no user provisioning or CRM access.
       if (!callback && command === '/myid') {
         await this.telegram.send(chatId, {
-          text: `Ваш Telegram ID: ${from.id}\nПередайте его администратору CRM для выдачи доступа. Эта команда сама по себе не предоставляет доступ к CRM.`,
+          text: `Ваш ID: ${from.id}\nПередайте администратору для доступа к CRM.`,
         });
         return { ok: true };
       }
@@ -219,7 +219,7 @@ export class BotService {
         });
       else if (command === '/help')
         await this.telegram.send(chatId, {
-          text: 'Отправьте голосовое или текст: компания, с кем общались, результат и следующий шаг со сроком. Я подготовлю черновик, вы проверите и сохраните. /voice — все голосовые возможности с примерами, /crm — база, /tasks — открытые задачи, /myid — ваш Telegram ID. Аудио передаётся сервису распознавания; не отправляйте лишние персональные данные.',
+          text: 'Опишите задачу голосом или текстом. Перед сохранением — проверка.\n/voice — примеры · /crm — CRM · /tasks — задачи · /myid — ваш ID\nАудио обрабатывает OpenAI. Не отправляйте пароли и лишние персональные данные.',
           reply_markup: this.telegram.appButton(),
         });
       else if (command === '/tasks') {
@@ -286,7 +286,7 @@ export class BotService {
       } else if (msg?.text && isContactCreateRequest(msg.text)) {
         await this.diagnostics?.record('command.routed', { route: 'contact_voice_only' });
         await this.telegram.send(chatId, {
-          text: 'Для создания контакта отправьте голосовое: «Создай контакт для ООО Рога и копыта. Иванов Иван, директор, телефон …, email …». Перед сохранением покажу данные для проверки.',
+          text: 'Отправьте голосовое: «Добавь контакт для Альфы: Иванов Иван, телефон …». Покажу данные до сохранения.',
         });
       } else if (msg?.text && looksLikeCommand(msg.text)) {
         await this.diagnostics?.record('command.routed', { route: 'unknown' });

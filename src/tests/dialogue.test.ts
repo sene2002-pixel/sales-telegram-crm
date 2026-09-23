@@ -166,7 +166,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
         assert.equal(second.payload.kind, 'letter');
         assert.equal(second.snapshot.remedy, 'signature_create');
         assert.equal(second.company.name, 'Новая Бета');
-        assert.match(second.snapshot.question, /Заранее создавать компанию и контакт не нужно/);
+        assert.match(second.snapshot.question, /Компанию и получателя найду при подготовке письма/);
         await s.dialogue.callback(a, second.id, 'remedy');
         await submit(
           a,
@@ -245,7 +245,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
           await restarted.reconcile();
           assert.equal((await actions(a))[1].status, 'queued');
         }
-        await assert.rejects(s.dialogue.callback(a, first.id, 'skip'), /безопасно отменить/);
+        await assert.rejects(s.dialogue.callback(a, first.id, 'skip'), /отмена сейчас недоступна/);
         await db.query("UPDATE letter_jobs SET status='sent' WHERE source_key=$1", [
           `dialogue:${first.id}`,
         ]);
@@ -272,7 +272,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
         );
         await s.dialogue.reconcile();
         assert.equal((await actions(a))[1].status, 'queued');
-        assert.match(await messages(a), /Следующие задачи ждут/);
+        assert.match(await messages(a), /Очередь ждёт/);
         await s.dialogue.callback(a, first.id, 'retry');
         assert.equal(
           (
@@ -407,8 +407,8 @@ test('dialogue actions, durable context and individual confirmations', async (t)
         await submit(a, plan([contact(named(c.name))]));
         const first = await current(a);
         await submit(a, plan([contact(named(c.name)), letter(named(c.name))]));
-        assert.match(await messages(a), /Перед ними задач: 1\. Всего в очереди: 3 из 5/);
-        assert.match(await messages(a), /ожидает подтверждения предыдущей команды/);
+        assert.match(await messages(a), /Впереди: 1\. Очередь: 3\/5/);
+        assert.match(await messages(a), /Предыдущая ждёт подтверждения/);
         assert.equal((await current(a)).id, first.id);
         assert.equal(await count(c.id, 'contact'), 0);
         await submit(a, plan([contact(named(c.name)), contact(named(c.name))]));
@@ -418,7 +418,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
           (await db.query('SELECT status FROM reports WHERE id=$1', [rejected.id]))[0].status,
           'failed',
         );
-        assert.match(await messages(a), /В очереди уже 5 задач/);
+        assert.match(await messages(a), /Очередь заполнена: 5\/5/);
         const b = await actor();
         await submit(b, plan([contact(none)]));
         assert.equal((await actions(b)).length, 1);
@@ -447,7 +447,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
         assert.equal((await actions(a)).length, 4);
         assert.equal((await current(a)).id, original.id);
         await submit(a, plan([contact(none)]));
-        assert.match(await messages(a), /ожидает уточнения данных/);
+        assert.match(await messages(a), /Уточните данные предыдущей задачи/);
         await submit(
           a,
           plan(
@@ -660,7 +660,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
           1,
         );
         assert.match(await messages(a), /Компания: Стройтрансгаз/);
-        assert.match(await messages(a), /только вам в Telegram/);
+        assert.match(await messages(a), /вам и в CRM, не клиенту/);
         assert.equal(request.store, false);
         assert.equal(request.text.format.strict, true);
         assert.ok(!request.tools, 'planner cannot search or execute tools');
@@ -722,7 +722,7 @@ test('dialogue actions, durable context and individual confirmations', async (t)
       await submit(a, plan([contact(named('Несуществующая'))]));
       assert.equal((await current(a)).status, 'needs_info');
       assert.equal((await s.crm.list(a)).length, 0);
-      assert.match(await messages(a), /Сначала создайте её в CRM/);
+      assert.match(await messages(a), /Сначала создайте её/);
       await s.dialogue.callback(a, (await current(a)).id, 'skip');
     });
     await t.test('duplicate companies require choice, then separate confirmation', async () => {
