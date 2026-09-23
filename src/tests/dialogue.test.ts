@@ -146,6 +146,79 @@ test('dialogue actions, durable context and individual confirmations', async (t)
     return r;
   };
   try {
+    await t.test(
+      'five actions per employee, queue notice, overflow and FIFO advancement',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Очередь' });
+        await submit(a, plan([contact(named(c.name))]));
+        const first = await current(a);
+        await submit(a, plan([contact(named(c.name)), letter(named(c.name))]));
+        assert.match(await messages(a), /Перед ними задач: 1\. Всего в очереди: 3 из 5/);
+        assert.match(await messages(a), /ожидает подтверждения предыдущей команды/);
+        assert.equal((await current(a)).id, first.id);
+        assert.equal(await count(c.id, 'contact'), 0);
+        await submit(a, plan([contact(named(c.name)), contact(named(c.name))]));
+        const rejected = await submit(a, plan([contact(named(c.name))]));
+        assert.equal((await actions(a)).length, 5);
+        assert.equal(
+          (await db.query('SELECT status FROM reports WHERE id=$1', [rejected.id]))[0].status,
+          'failed',
+        );
+        assert.match(await messages(a), /В очереди уже 5 задач/);
+        const b = await actor();
+        await submit(b, plan([contact(none)]));
+        assert.equal((await actions(b)).length, 1);
+        await s.dialogue.callback(a, first.id, 'confirm', first.preview_version);
+        const second = await current(a);
+        assert.notEqual(second.id, first.id);
+        assert.equal(second.status, 'ready');
+        await s.dialogue.callback(a, second.id, 'skip');
+        assert.notEqual((await current(a)).id, second.id);
+        await submit(a, plan([contact(named(c.name)), contact(named(c.name))]));
+        assert.equal(
+          (await actions(a)).filter((r) =>
+            ['queued', 'ready', 'selecting', 'needs_info'].includes(r.status),
+          ).length,
+          5,
+        );
+      },
+    );
+    await t.test(
+      'overflow is atomic; corrections at capacity replace rather than append',
+      async () => {
+        const a = await actor();
+        await submit(a, plan(Array.from({ length: 4 }, () => contact(none))));
+        const original = await current(a);
+        await submit(a, plan([contact(none), contact(none)]));
+        assert.equal((await actions(a)).length, 4);
+        assert.equal((await current(a)).id, original.id);
+        await submit(a, plan([contact(none)]));
+        assert.match(await messages(a), /ожидает уточнения данных/);
+        await submit(
+          a,
+          plan(
+            Array.from({ length: 5 }, () => contact(none)),
+            { mode: 'replace' },
+          ),
+        );
+        assert.equal((await actions(a)).filter((r) => r.status === 'cancelled').length, 5);
+        assert.equal((await actions(a)).filter((r) => r.status !== 'cancelled').length, 5);
+        const corrected = await current(a);
+        await submit(
+          a,
+          plan(
+            Array.from({ length: 6 }, () => contact(none)),
+            { mode: 'replace' },
+          ),
+        );
+        assert.equal((await current(a)).id, corrected.id);
+        assert.equal((await actions(a)).length, 10);
+        const b = await actor();
+        await submit(b, plan(Array.from({ length: 6 }, () => contact(none))));
+        assert.equal((await actions(b)).length, 0);
+      },
+    );
     const submitPhoto = async (a: Actor, p: unknown, caption = '') => {
       response = p;
       const r = await s.reports.enqueue(a, {

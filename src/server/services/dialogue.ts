@@ -32,6 +32,7 @@ import {
 
 type CompanyContext = { id?: string; name: string; inn: string; city: string };
 const pending = ['queued', 'ready', 'selecting', 'needs_info'];
+const queueLimit = 5;
 const normalize = (s: string) =>
   s
     .toLocaleLowerCase('ru')
@@ -214,13 +215,16 @@ export class DialogueService {
         'Контекст изменился, повторяю разбор запроса',
       );
       const open = await tx.query(
-        'SELECT id FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[])',
+        'SELECT id,status FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence',
         [actor.id, pending],
       );
       requireCondition(
-        (plan.mode === 'replace' ? 0 : open.length) + plan.actions.length <= 24,
+        !plan.actions.length ||
+          (plan.mode === 'replace' ? 0 : open.length) + plan.actions.length <= queueLimit,
         422,
-        'Сначала подтвердите или отмените ожидающие действия',
+        open.length >= queueLimit && plan.mode !== 'replace'
+          ? 'В очереди уже 5 задач. Подтвердите или отмените предыдущие, затем повторите запрос. Новые задачи не добавлены.'
+          : `В очереди максимум 5 задач. Сейчас ожидают: ${open.length}; в запросе действий: ${plan.actions.length}. Запрос целиком не добавлен. Уменьшите число действий или сначала завершите предыдущие задачи.`,
       );
       if (plan.mode === 'replace' && plan.actions.length) {
         await tx.query(
@@ -279,6 +283,19 @@ export class DialogueService {
         await this.reports.notify(tx, actor.telegramId, {
           text: `Распознано действий: ${plan.actions.length}. Покажу по очереди; каждое нужно подтвердить отдельно. «Пропустить» отменяет только текущее действие.`,
         });
+      if (plan.actions.length && plan.mode !== 'replace' && open.length) {
+        const wait =
+          open[0].status === 'ready'
+            ? 'Выполнение очереди ожидает подтверждения предыдущей команды. Подтвердите её или нажмите «Пропустить».'
+            : open[0].status === 'selecting'
+              ? 'Предыдущая команда ожидает выбора из списка. Сделайте выбор или нажмите «Пропустить».'
+              : open[0].status === 'needs_info'
+                ? 'Предыдущая команда ожидает уточнения данных. Ответьте на вопрос или нажмите «Пропустить».'
+                : 'Сначала будет обработана предыдущая команда.';
+        await this.reports.notify(tx, actor.telegramId, {
+          text: `Добавлено в очередь задач: ${plan.actions.length}. Перед ними задач: ${open.length}. Всего в очереди: ${open.length + plan.actions.length} из 5.\n${wait}`,
+        });
+      }
       await this.diagnostics?.record(
         'dialogue.planned',
         { count: plan.actions.length, kinds: plan.actions.map((a) => a.kind), mode: plan.mode },
