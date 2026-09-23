@@ -68,6 +68,7 @@ export class ReportWorker {
     await this.deliverOne();
   }
   async processOne() {
+    await this.dialogue?.reconcile();
     const token = randomUUID();
     const report = await this.db.transaction(async (tx) => {
       const [r] = await tx.query(

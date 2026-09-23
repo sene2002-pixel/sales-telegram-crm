@@ -156,6 +156,7 @@ export class Database implements Sql {
       await tx.query(
         'ALTER TABLE dialogue_actions ADD COLUMN IF NOT EXISTS preview_version integer NOT NULL DEFAULT 0',
       );
+      await tx.query('ALTER TABLE dialogue_actions ADD COLUMN IF NOT EXISTS resume jsonb');
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

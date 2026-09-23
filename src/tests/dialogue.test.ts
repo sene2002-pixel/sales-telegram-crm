@@ -147,6 +147,217 @@ test('dialogue actions, durable context and individual confirmations', async (t)
   };
   try {
     await t.test(
+      'running letter counts toward limit and cannot be replaced by a text correction',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Занято пять' });
+        await s.letters.saveSignature(a, signature);
+        await submit(
+          a,
+          plan([letter(named(c.name)), ...Array.from({ length: 4 }, () => contact(named(c.name)))]),
+        );
+        const first = await current(a);
+        await s.dialogue.callback(a, first.id, 'confirm', first.preview_version);
+        await submit(a, plan([contact(named(c.name))]));
+        assert.equal((await actions(a)).length, 5);
+        await submit(
+          a,
+          plan(
+            Array.from({ length: 4 }, () => contact(named(c.name))),
+            { mode: 'replace' },
+          ),
+        );
+        assert.equal((await actions(a))[0].status, 'executing');
+        assert.equal((await actions(a)).filter((r) => r.status === 'queued').length, 4);
+        assert.equal(
+          (
+            await db.query('SELECT status FROM letter_jobs WHERE source_key=$1', [
+              `dialogue:${first.id}`,
+            ])
+          )[0].status,
+          'queued',
+        );
+        assert.equal(
+          JSON.parse(request.input).pending.some((r: any) => r.action.kind === 'letter'),
+          false,
+        );
+      },
+    );
+    await t.test(
+      'letter blocks following action until PDF delivery, including after restart',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Строгая очередь' });
+        await s.letters.saveSignature(a, signature);
+        await submit(a, plan([letter(named(c.name)), contact(named(c.name))]));
+        const first = await current(a);
+        await s.dialogue.callback(a, first.id, 'confirm', first.preview_version);
+        assert.equal((await actions(a))[0].status, 'executing');
+        assert.equal((await actions(a))[1].status, 'queued');
+        const restarted = new DialogueService(s.crm, s.reports, s.letters, s.letterBot, config);
+        for (const status of ['processing', 'ready', 'sending']) {
+          await db.query('UPDATE letter_jobs SET status=$1 WHERE source_key=$2', [
+            status,
+            `dialogue:${first.id}`,
+          ]);
+          await restarted.reconcile();
+          assert.equal((await actions(a))[1].status, 'queued');
+        }
+        await assert.rejects(s.dialogue.callback(a, first.id, 'skip'), /безопасно отменить/);
+        await db.query("UPDATE letter_jobs SET status='sent' WHERE source_key=$1", [
+          `dialogue:${first.id}`,
+        ]);
+        await restarted.reconcile();
+        assert.equal((await actions(a))[0].status, 'done');
+        assert.equal((await actions(a))[1].status, 'ready');
+        const before = await messages(a);
+        await restarted.reconcile();
+        assert.equal(await messages(a), before);
+      },
+    );
+    await t.test(
+      'letter failure pauses queue; retry requires confirmation and cancellation advances',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Ошибка письма' });
+        await s.letters.saveSignature(a, signature);
+        await submit(a, plan([letter(named(c.name)), contact(named(c.name))]));
+        const first = await current(a);
+        await s.dialogue.callback(a, first.id, 'confirm', first.preview_version);
+        await db.query(
+          "UPDATE letter_jobs SET status='failed',error='Поиск недоступен' WHERE source_key=$1",
+          [`dialogue:${first.id}`],
+        );
+        await s.dialogue.reconcile();
+        assert.equal((await actions(a))[1].status, 'queued');
+        assert.match(await messages(a), /Следующие задачи ждут/);
+        await s.dialogue.callback(a, first.id, 'retry');
+        assert.equal(
+          (
+            await db.query('SELECT status FROM letter_jobs WHERE source_key=$1', [
+              `dialogue:${first.id}`,
+            ])
+          )[0].status,
+          'failed',
+        );
+        await s.dialogue.callback(a, first.id, 'confirm', (await current(a)).preview_version);
+        assert.equal((await actions(a))[0].status, 'executing');
+        await s.dialogue.callback(a, first.id, 'skip');
+        assert.equal((await actions(a))[1].status, 'ready');
+        assert.equal(
+          (
+            await db.query('SELECT status FROM letter_jobs WHERE source_key=$1', [
+              `dialogue:${first.id}`,
+            ])
+          )[0].status,
+          'cancelled',
+        );
+      },
+    );
+    await t.test(
+      'cancel signature creation blocks dependent letter; prerequisite restores original task',
+      async () => {
+        const a = await actor();
+        await submit(
+          a,
+          plan([
+            { kind: 'signature_create', company: none, data: signature },
+            letter(named('Альфа')),
+            contact(last),
+          ]),
+        );
+        await s.dialogue.callback(a, (await current(a)).id, 'skip');
+        const blocked = await current(a);
+        assert.equal(blocked.snapshot.remedy, 'signature_create');
+        assert.match(await messages(a), /Выполнить невозможно/);
+        await s.dialogue.callback(a, blocked.id, 'remedy');
+        let repair = await current(a);
+        assert.equal(repair.resume.payload.kind, 'letter');
+        assert.equal(repair.payload.kind, 'signature_create');
+        await submit(
+          a,
+          plan(
+            [{ kind: 'signature_create', company: none, data: signature }, contact(named('Альфа'))],
+            { mode: 'replace' },
+          ),
+          'Иванов Иван',
+          false,
+        );
+        repair = await current(a);
+        assert.equal(repair.id, blocked.id);
+        await s.dialogue.callback(a, repair.id, 'confirm', repair.preview_version);
+        const restored = await current(a);
+        assert.equal(restored.id, blocked.id);
+        assert.equal(restored.payload.kind, 'letter');
+        assert.equal(restored.resume, null);
+        assert.equal(restored.status, 'ready');
+        assert.equal((await actions(a))[2].status, 'queued');
+        assert.equal(
+          (await db.query('SELECT id FROM letter_jobs WHERE user_id=$1', [a.id])).length,
+          0,
+        );
+        await s.dialogue.callback(a, repair.id, 'confirm', repair.preview_version);
+        assert.equal(
+          (await db.query('SELECT id FROM letter_jobs WHERE user_id=$1', [a.id])).length,
+          0,
+          'old prerequisite button cannot confirm letter',
+        );
+      },
+    );
+    await t.test(
+      'cancel company creation offers creation for dependent contact; existing dependency is reused',
+      async () => {
+        const a = await actor();
+        await submit(
+          a,
+          plan([
+            { kind: 'company_create', company: named('Зависимая'), data: companyFields },
+            contact(named('Зависимая')),
+          ]),
+        );
+        await s.dialogue.callback(a, (await current(a)).id, 'skip');
+        const blocked = await current(a);
+        assert.equal(blocked.snapshot.remedy, 'company_create');
+        await s.dialogue.callback(a, blocked.id, 'remedy');
+        let row = await current(a);
+        assert.equal(row.payload.kind, 'company_create');
+        await s.dialogue.callback(a, row.id, 'confirm', row.preview_version);
+        row = await current(a);
+        assert.equal(row.payload.kind, 'contact_create');
+        assert.equal(row.status, 'ready');
+        const c = (await s.crm.list(a))[0]!;
+        assert.equal(await count(c.id, 'contact'), 0);
+        await s.dialogue.callback(a, row.id, 'confirm', row.preview_version);
+        assert.equal(await count(c.id, 'contact'), 1);
+        const b = await actor();
+        await s.letters.saveSignature(b, signature);
+        await submit(
+          b,
+          plan([
+            { kind: 'signature_create', company: none, data: { ...signature, firstName: 'Пётр' } },
+            letter(named('Альфа')),
+          ]),
+        );
+        await s.dialogue.callback(b, (await current(b)).id, 'skip');
+        assert.equal((await current(b)).status, 'ready');
+        assert.equal((await current(b)).snapshot.remedy, undefined);
+      },
+    );
+    await t.test(
+      'prerequisite stays within five queue slots and cancellation preserves later actions',
+      async () => {
+        const a = await actor();
+        await submit(a, plan(Array.from({ length: 5 }, () => letter(named('Альфа')))));
+        const row = await current(a);
+        await s.dialogue.callback(a, row.id, 'remedy');
+        assert.equal((await actions(a)).length, 5);
+        await s.dialogue.callback(a, row.id, 'skip');
+        assert.equal((await actions(a))[0].status, 'cancelled');
+        assert.equal((await current(a)).id, (await actions(a))[1].id);
+        assert.equal((await current(a)).snapshot.remedy, 'signature_create');
+      },
+    );
+    await t.test(
       'five actions per employee, queue notice, overflow and FIFO advancement',
       async () => {
         const a = await actor();
