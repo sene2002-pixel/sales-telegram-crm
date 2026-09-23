@@ -27,8 +27,10 @@ jobs:
         with:
           python-version: '3.13'
       - run: python -m venv .venv
+      - run: .venv/bin/python -m pip install reportlab
       - run: npm ci
       - run: npm run check
+      - run: .venv/bin/python -m unittest discover -s scripts/pdf_tests -p 'test_*.py'
       - run: npm test
         env:
           TEST_DATABASE_URL: postgresql://crm:test-password@localhost:5432/crm_test

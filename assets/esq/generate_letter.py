@@ -31,6 +31,8 @@ W, H = A4                       # 595.3 x 841.9 pt
 LEFT, RIGHT = 49.8, 567.0       # поля текста
 FS, LEAD = 11, 13.2             # кегль и интерлиньяж основного текста
 GAP_PARA = 4.2                  # доп. отбивка между абзацами
+HEADER_TOP, HEADER_LEAD = 182.1, 13.15
+RECIPIENT_LEFT, HEADER_GAP = 294.1, 18.0
 MONTHS = ["января","февраля","марта","апреля","мая","июня","июля",
           "августа","сентября","октября","ноября","декабря"]
 
@@ -77,17 +79,55 @@ def para(c, x, top, width, html, style=BODY):
     lines = len(p.blPara.lines)
     return top + lines * LEAD              # top следующей строки
 
+def wrap_text(value, width, font="Serif-Bold", size=FS):
+    """Fit plain text to a column using actual font widths, without shrinking it."""
+    if width <= 0:
+        raise ValueError("Text column width must be positive")
+    lines, current = [], ""
+    for word in value.split():
+        candidate = current + " " + word if current else word
+        if pdfmetrics.stringWidth(candidate, font, size) <= width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        # Even a long name/code without spaces must remain inside its column.
+        for char in word:
+            if pdfmetrics.stringWidth(char, font, size) > width:
+                raise ValueError("Text column is narrower than a character")
+            if pdfmetrics.stringWidth(current + char, font, size) > width:
+                lines.append(current)
+                current = char
+            else:
+                current += char
+    if current:
+        lines.append(current)
+    return lines
+
+def draw_header(c, data):
+    d = datetime.date.fromisoformat(data["date"])
+    outgoing = f"Исх. №{data['outgoing_number']} от «{d.day:02d}» {MONTHS[d.month-1]} {d.year} г."
+    outgoing_lines = wrap_text(outgoing, RECIPIENT_LEFT - HEADER_GAP - 49.9)
+    recipient_lines = [
+        wrapped
+        for line in data["recipient_lines"]
+        for wrapped in wrap_text(line, RIGHT - RECIPIENT_LEFT)
+    ]
+    for i, line in enumerate(outgoing_lines):
+        text(c, 49.9, HEADER_TOP + i * HEADER_LEAD, line, bold=True)
+    for i, line in enumerate(recipient_lines):
+        text(c, RIGHT, HEADER_TOP + i * HEADER_LEAD, line, bold=True, anchor="r")
+    # Reserve the actual height of both columns before placing the title/body.
+    return HEADER_TOP + max(len(outgoing_lines), len(recipient_lines)) * HEADER_LEAD + 15.0
+
 def build(data, out):
     c = canvas.Canvas(out, pagesize=A4)
     c.setTitle("Информационное письмо")
     c.drawImage(asset("header.jpg"), 0.1, H - 0.2 - 158.2, 593.4, 158.2)
     c.drawImage(asset("footer.png"), 0.1, H - 779.7 - 60.1, 593.6, 60.1, mask="auto")
 
-    d = datetime.date.fromisoformat(data["date"])
-    text(c, 49.9, 182.1, f"Исх. №{data['outgoing_number']} от «{d.day:02d}» {MONTHS[d.month-1]} {d.year} г.", bold=True)
-    for i, line in enumerate(data["recipient_lines"]):
-        text(c, RIGHT, 182.1 + i * 13.15, line, bold=True, anchor="r")
-    top = 182.1 + len(data["recipient_lines"]) * 13.15 + 15.0
+    top = draw_header(c, data)
     text(c, (LEFT + RIGHT) / 2, top, "Информационное письмо", bold=True, size=15, anchor="c")
     top += 27.3
 
