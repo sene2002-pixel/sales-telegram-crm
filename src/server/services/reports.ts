@@ -45,19 +45,22 @@ export class ReportService {
       sourceKey: string;
       chatId?: string;
       audioFileId?: string;
+      imageFileId?: string;
       text?: string;
       sentAt?: string;
       purpose?: 'dialogue';
     },
   ) {
     requireCondition(
-      input.audioFileId || (input.text?.trim() && input.text.length <= 20_000),
+      input.audioFileId ||
+        (input.imageFileId && input.purpose === 'dialogue') ||
+        (input.text?.trim() && input.text.length <= 20_000),
       400,
       'Нужен текст или голосовое сообщение',
     );
     return this.db.transaction(async (tx) => {
       const [created] = await tx.query(
-        `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at,purpose) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
+        `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at,purpose,image_file_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
         [
           randomUUID(),
           actor.id,
@@ -67,6 +70,7 @@ export class ReportService {
           input.text || null,
           input.sentAt || new Date().toISOString(),
           input.purpose || 'report',
+          input.imageFileId || null,
         ],
       );
       if (created) {
@@ -75,7 +79,7 @@ export class ReportService {
           {
             reportId: created.id,
             sourceKey: input.sourceKey,
-            kind: input.audioFileId ? 'voice' : 'text',
+            kind: input.imageFileId ? 'photo' : input.audioFileId ? 'voice' : 'text',
           },
           tx,
         );
@@ -85,7 +89,11 @@ export class ReportService {
             tx,
             input.sourceKey,
             input.chatId,
-            input.audioFileId ? 'Распознаю голосовой запрос…' : 'Анализирую информацию…',
+            input.imageFileId
+              ? 'Распознаю данные изображения…'
+              : input.audioFileId
+                ? 'Распознаю голосовой запрос…'
+                : 'Анализирую информацию…',
           );
         return mapReport(created);
       }

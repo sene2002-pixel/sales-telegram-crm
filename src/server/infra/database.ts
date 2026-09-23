@@ -138,6 +138,7 @@ export class Database implements Sql {
       );
       // Telegram dates have only second precision; UUID order must not reorder a dialogue.
       await tx.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS received_seq bigserial');
+      await tx.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS image_file_id text');
       await tx.query(`CREATE TABLE IF NOT EXISTS dialogue_state (
         user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         company jsonb, revision integer NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now()

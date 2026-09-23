@@ -39,7 +39,7 @@ const companyData = z
     segment: z.enum(segments).nullable(),
     stage: z.enum(stages).nullable(),
     potential: z.number().min(0).max(1e12).nullable(),
-    notes: z.string().max(3000).nullable(),
+    notes: z.string().max(5000).nullable(),
   })
   .strict();
 // Plain union emits anyOf, supported by Structured Outputs (not oneOf).
@@ -66,6 +66,7 @@ export const dialogueActionSchema = z.union([
     })
     .strict(),
   z.object({ ...common, kind: z.literal('company_create'), data: companyData }).strict(),
+  z.object({ ...common, kind: z.literal('company_import'), data: companyData }).strict(),
   z.object({ ...common, kind: z.literal('company_update'), data: companyData }).strict(),
   z.object({ ...common, kind: z.literal('signature_create'), data: signature }).strict(),
   z

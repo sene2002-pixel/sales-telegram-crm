@@ -21,6 +21,7 @@ import { CrmService } from './crm';
 import { LetterBot } from './letter-bot';
 import { LetterService } from './letters';
 import { ReportService } from './reports';
+import { photoInstructions } from './photo-input';
 import { assignDefault, checkedSignature, signatureName } from './signature-choice';
 import {
   DialogueAction,
@@ -47,6 +48,7 @@ const titles: Record<DialogueAction['kind'], string> = {
   activity_create: 'Сохранить результат разговора',
   task_create: 'Создать задачу',
   company_create: 'Создать компанию',
+  company_import: 'Распознать карточку компании',
   company_update: 'Обновить компанию',
   signature_create: 'Создать подпись',
   signature_edit: 'Изменить подпись',
@@ -125,7 +127,7 @@ export class DialogueService {
     return { id: row.id, name: row.data.name, inn: row.data.inn, city: row.data.city };
   }
 
-  async process(report: any, token: string, text: string) {
+  async process(report: any, token: string, text: string, image?: string) {
     // Snapshot under an actor lock; never hold a database transaction across an AI request.
     const input = await this.crm.db.transaction(async (tx) => {
       const actor = await this.actor(tx, report.author_id);
@@ -148,26 +150,40 @@ export class DialogueService {
       );
       return { revision: state.revision, company: state.company, actions };
     });
+    const messageInput = (context: string) =>
+      image
+        ? [
+            {
+              role: 'user',
+              content: [
+                { type: 'input_text', text: context },
+                { type: 'input_image', image_url: image, detail: 'high' },
+              ],
+            },
+          ]
+        : context;
     const plan = dialoguePlanSchema.parse(
       await this.letters.structured(
         dialoguePlanSchema,
-        dialogueInstructions,
-        JSON.stringify({
-          message: text,
-          sentAt: report.created_at,
-          timezone: this.config.timezone,
-          lastCompany: input.company
-            ? { name: input.company.name, inn: input.company.inn, city: input.company.city }
-            : null,
-          pending: input.actions.map((a) => ({
-            action: a.payload,
-            company: a.company
-              ? { name: a.company.name, inn: a.company.inn, city: a.company.city }
+        dialogueInstructions + (image ? photoInstructions : ''),
+        messageInput(
+          JSON.stringify({
+            message: text,
+            sentAt: report.created_at,
+            timezone: this.config.timezone,
+            lastCompany: input.company
+              ? { name: input.company.name, inn: input.company.inn, city: input.company.city }
               : null,
-            status: a.status,
-            question: a.snapshot?.question || null,
-          })),
-        }),
+            pending: input.actions.map((a) => ({
+              action: a.payload,
+              company: a.company
+                ? { name: a.company.name, inn: a.company.inn, city: a.company.city }
+                : null,
+              status: a.status,
+              question: a.snapshot?.question || null,
+            })),
+          }),
+        ),
         false,
         false,
         {
@@ -177,6 +193,13 @@ export class DialogueService {
         },
       ),
     );
+    // Photo company data is always a reviewed import, never a blind notes replacement.
+    if (image)
+      plan.actions = plan.actions.map((action) =>
+        action.kind === 'company_create' || action.kind === 'company_update'
+          ? { ...action, kind: 'company_import' }
+          : action,
+      );
     await this.crm.db.transaction(async (tx) => {
       const actor = await this.actor(tx, report.author_id);
       const state = await this.state(tx, actor.id);
@@ -245,7 +268,7 @@ export class DialogueService {
       }
       await this.remember(tx, actor.id, last);
       await tx.query(
-        "UPDATE reports SET status='cancelled',transcript=NULL,audio_file_id=NULL,draft=NULL,error=NULL,lease_token=NULL,lease_until=NULL,version=version+1 WHERE id=$1",
+        "UPDATE reports SET status='cancelled',transcript=NULL,audio_file_id=NULL,image_file_id=NULL,draft=NULL,error=NULL,lease_token=NULL,lease_until=NULL,version=version+1 WHERE id=$1",
         [report.id],
       );
       if (plan.reply || !plan.actions.length)
@@ -320,10 +343,10 @@ export class DialogueService {
     await this.prepare(tx, actor, row);
   }
   private async prepare(tx: Sql, actor: Actor, row: any) {
-    const a = dialogueActionSchema.parse(row.payload);
+    let a = dialogueActionSchema.parse(row.payload);
     let snapshot: any = row.snapshot || {};
     if (!a.kind.startsWith('signature_')) {
-      if (a.kind === 'company_create' && row.company) {
+      if ((a.kind === 'company_create' || a.kind === 'company_import') && row.company) {
         row.company = {
           ...row.company,
           inn: a.data.inn ?? row.company.inn,
@@ -340,7 +363,10 @@ export class DialogueService {
         return this.ask(tx, actor, row, 'Уточните ИНН: распознан некорректный номер.');
       const matches = row.company.id
         ? (await this.accessible(tx, actor)).filter((c) => c.id === row.company.id)
-        : this.matches(await this.accessible(tx, actor), row.company);
+        : this.matches(
+            await this.accessible(tx, actor),
+            a.kind === 'company_import' ? { ...row.company, city: '' } : row.company,
+          );
       if (matches.length > 1)
         return this.choices(
           tx,
@@ -352,6 +378,29 @@ export class DialogueService {
           })),
           'company',
         );
+      if (a.kind === 'company_import') {
+        const oldNotes = matches[0]?.data.notes;
+        if (oldNotes && a.data.notes && `${oldNotes}\n${a.data.notes}`.length > 5000)
+          return this.ask(
+            tx,
+            actor,
+            row,
+            'Примечания вместе с существующими превышают 5000 символов. Уточните, какие новые реквизиты сохранить.',
+          );
+        a = {
+          ...a,
+          kind: matches.length ? 'company_update' : 'company_create',
+          data: {
+            ...a.data,
+            notes: a.data.notes ? (oldNotes ? `${oldNotes}\n${a.data.notes}` : a.data.notes) : null,
+          },
+        };
+        row.payload = a;
+        await tx.query('UPDATE dialogue_actions SET payload=$2 WHERE id=$1', [
+          row.id,
+          JSON.stringify(a),
+        ]);
+      }
       if (a.kind === 'company_create' && matches.length)
         return this.ask(
           tx,
@@ -383,6 +432,7 @@ export class DialogueService {
     }
     let data: any;
     let notice = '';
+    let changes: string | undefined;
     if (a.kind === 'contact_create')
       data = contactSchema.safeParse({
         name: a.data.name || '',
@@ -409,6 +459,12 @@ export class DialogueService {
       );
       requireCondition(parsed.success, 409, 'Карточка компании некорректна');
       data = companySchema.safeParse({ ...parsed.data, ...supplied(a.data) });
+      changes = Object.entries(supplied(a.data))
+        .map(
+          ([key, value]) =>
+            `${fieldNames[key] || key}:\nБыло: ${(parsed.data as any)[key] ?? '—'}\nБудет: ${value ?? '—'}`,
+        )
+        .join('\n\n');
     }
     if (a.kind === 'contact_edit') {
       if (!snapshot.contact) {
@@ -514,8 +570,13 @@ export class DialogueService {
       "UPDATE dialogue_actions SET status='ready',snapshot=$2,options='[]',preview_version=preview_version+1 WHERE id=$1 RETURNING preview_version",
       [row.id, JSON.stringify(snapshot)],
     );
+    let previewText = `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${row.company ? `Компания: ${row.company.name}\nГород: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n` : ''}\n${notice}${data?.success ? (changes ?? fieldsText(data.data)) : ''}\n\nПодтвердите только это действие. Для исправления напишите или надиктуйте уточнение.`;
+    while (previewText.length > 3900) {
+      await this.reports.notify(tx, actor.telegramId, { text: previewText.slice(0, 3900) });
+      previewText = previewText.slice(3900);
+    }
     await this.reports.notify(tx, actor.telegramId, {
-      text: `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${row.company ? `Компания: ${row.company.name}\nГород: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n` : ''}\n${notice}${data?.success ? fieldsText(a.kind === 'company_update' ? supplied(a.data) : data.data) : ''}\n\nПодтвердите только это действие. Для исправления напишите или надиктуйте уточнение.`,
+      text: previewText,
       reply_markup: {
         inline_keyboard: [
           [

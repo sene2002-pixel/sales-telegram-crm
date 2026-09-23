@@ -17,6 +17,7 @@ import { isContactCreateRequest, looksLikeContactCommand } from './contact-inten
 import { securityIntent, securityReply } from './pico-security';
 import { picoGreeting } from './pico-greeting';
 import { DialogueService } from './dialogue';
+import { maxPhotoBytes } from './photo-input';
 const sender = z.object({
   id: z.number().int().positive().safe(),
   first_name: z.string().optional(),
@@ -30,6 +31,24 @@ const updateSchema = z.object({
       from: sender,
       chat: z.object({ id: z.number().int().safe(), type: z.string() }),
       text: z.string().max(20_000).optional(),
+      caption: z.string().max(20_000).optional(),
+      photo: z
+        .array(
+          z.object({
+            file_id: z.string(),
+            width: z.number(),
+            height: z.number(),
+            file_size: z.number().optional(),
+          }),
+        )
+        .optional(),
+      document: z
+        .object({
+          file_id: z.string(),
+          mime_type: z.string().optional(),
+          file_size: z.number().optional(),
+        })
+        .optional(),
       voice: z
         .object({ file_id: z.string(), duration: z.number(), file_size: z.number().optional() })
         .optional(),
@@ -87,13 +106,20 @@ export class BotService {
       });
       return { ok: true };
     }
-    const blocked = msg?.text ? securityIntent(msg.text) : null;
+    const blocked =
+      msg?.text || msg?.caption ? securityIntent(msg?.text || msg?.caption || '') : null;
     await this.diagnostics?.record('telegram.received', {
       updateId: update.update_id,
       telegramUserId: from.id,
       messageId: msg?.message_id,
       sentAt: msg?.date,
-      kind: callback ? 'callback' : msg?.voice ? 'voice' : 'text',
+      kind: callback
+        ? 'callback'
+        : msg?.photo || msg?.document
+          ? 'photo'
+          : msg?.voice
+            ? 'voice'
+            : 'text',
       text: blocked
         ? '[SECURITY_REQUEST]'
         : this.dialogue && msg?.text
@@ -209,6 +235,28 @@ export class BotService {
                 .slice(0, 3900)
             : 'Открытых задач нет.',
           reply_markup: this.telegram.appButton(),
+        });
+      } else if (this.dialogue && msg && (msg.photo?.length || msg.document)) {
+        const file = msg.photo?.length
+          ? [...msg.photo].sort((a, b) => b.width * b.height - a.width * a.height)[0]!
+          : msg.document!;
+        requireCondition(
+          !msg.document || ['image/jpeg', 'image/png'].includes(msg.document.mime_type || ''),
+          400,
+          'Пришлите фото или файл JPEG/PNG. Другие файлы пока не поддерживаются.',
+        );
+        requireCondition(
+          (file.file_size || 0) <= maxPhotoBytes,
+          413,
+          'Фото должно быть не больше 10 МБ',
+        );
+        await this.reports.enqueue(actor, {
+          sourceKey: `telegram:${update.update_id}`,
+          chatId,
+          imageFileId: file.file_id,
+          text: msg.caption,
+          sentAt: new Date(msg.date * 1000).toISOString(),
+          purpose: 'dialogue',
         });
       } else if (
         this.dialogue &&

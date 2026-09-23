@@ -15,6 +15,7 @@ import { VoiceContacts } from './voice-contacts';
 import { isContactCreateRequest, looksLikeContactCommand } from './contact-intent';
 import { securityIntent, securityReply } from './pico-security';
 import { DialogueService } from './dialogue';
+import { maxPhotoBytes, photoDataUrl } from './photo-input';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
@@ -119,7 +120,11 @@ export class ReportWorker {
           tx,
           r.source_key,
           r.chat_id,
-          r.transcript ? 'Анализирую информацию…' : 'Распознаю голосовой запрос…',
+          r.image_file_id
+            ? 'Распознаю данные изображения…'
+            : r.transcript
+              ? 'Анализирую информацию…'
+              : 'Распознаю голосовой запрос…',
         );
       return { ...r, attempts: r.attempts + 1 };
     });
@@ -127,7 +132,7 @@ export class ReportWorker {
     const process = async () => {
       let contact = report.purpose === 'contact';
       await this.diagnostics?.record('report.claimed', {
-        kind: report.audio_file_id ? 'voice' : 'text',
+        kind: report.image_file_id ? 'photo' : report.audio_file_id ? 'voice' : 'text',
         resumed: !!report.transcript,
       });
       try {
@@ -135,8 +140,15 @@ export class ReportWorker {
           report.author_id,
         ]);
         if (!author?.active) throw new DomainError(403, 'Автор отчёта заблокирован');
-        let transcript: string = report.transcript;
-        if (!transcript) {
+        let transcript: string = report.transcript || '';
+        let image: string | undefined;
+        if (report.image_file_id) {
+          await this.reports.processing.stage(report.source_key, 'Распознаю данные изображения…');
+          const bytes = await this.telegram.download(report.image_file_id, maxPhotoBytes);
+          image = photoDataUrl(bytes);
+          await this.diagnostics?.record('photo.downloaded', { bytes: bytes.length });
+        }
+        if (!transcript && !image) {
           const download = () => this.telegram.download(report.audio_file_id);
           const audio = await (this.diagnostics
             ? this.diagnostics.span('voice.download', {}, download)
@@ -150,7 +162,7 @@ export class ReportWorker {
         if (restricted) {
           await this.db.transaction(async (tx) => {
             const rows = await tx.query(
-              `UPDATE reports SET purpose='command',status='cancelled',transcript=NULL,audio_file_id=NULL,
+              `UPDATE reports SET purpose='command',status='cancelled',transcript=NULL,audio_file_id=NULL,image_file_id=NULL,
                draft=NULL,error=NULL,lease_until=NULL,lease_token=NULL,version=version+1
                WHERE id=$1 AND lease_token=$2 RETURNING id`,
               [report.id, token],
@@ -184,7 +196,7 @@ export class ReportWorker {
             token,
           ]);
           await this.reports.processing.stage(report.source_key, 'Разбираю запрос и контекст…');
-          await this.dialogue.process(report, token, transcript);
+          await this.dialogue.process(report, token, transcript, image);
           return true;
         }
         const signature = signatureOperation(transcript);
@@ -299,7 +311,7 @@ export class ReportWorker {
             : 'Ошибка обработки. Повторите позже или исправьте текст отчёта';
         const failed =
           report.attempts >= 3 ||
-          (error instanceof DomainError && [403, 413, 422, 503].includes(error.status));
+          (error instanceof DomainError && [400, 403, 413, 422, 503].includes(error.status));
         await this.diagnostics?.record('report.processing_failed', {
           errorType: error instanceof Error ? error.constructor.name : 'Unknown',
           status: error instanceof DomainError ? error.status : undefined,
@@ -307,7 +319,7 @@ export class ReportWorker {
         });
         await this.db.transaction(async (tx) => {
           const rows = await tx.query(
-            `UPDATE reports SET status=$1,error=$2,lease_until=NULL,lease_token=NULL,available_at=now()+interval '30 seconds',version=version+1 WHERE id=$3 AND lease_token=$4 RETURNING id`,
+            `UPDATE reports SET status=$1,error=$2,image_file_id=CASE WHEN $1='failed' THEN NULL ELSE image_file_id END,lease_until=NULL,lease_token=NULL,available_at=now()+interval '30 seconds',version=version+1 WHERE id=$3 AND lease_token=$4 RETURNING id`,
             [failed ? 'failed' : 'queued', message, report.id, token],
           );
           if (rows.length && failed && report.chat_id)

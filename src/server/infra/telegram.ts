@@ -3,7 +3,7 @@ import { ErrorLog } from './error-log';
 import { DomainError, requireCondition } from '../domain/errors';
 export interface Messenger {
   send(chatId: string, payload: any): Promise<void>;
-  download(fileId: string): Promise<Uint8Array>;
+  download(fileId: string, maxBytes?: number): Promise<Uint8Array>;
   sendProcessing?(chatId: string, text: string): Promise<number>;
   editProcessing?(chatId: string, messageId: string, text: string): Promise<boolean>;
   deleteProcessing?(chatId: string, messageId: string): Promise<void>;
@@ -179,27 +179,25 @@ export class TelegramAdapter implements Messenger {
     const result = (await response.json()) as any;
     requireCondition(result.ok, 502, 'Telegram отклонил отправку PDF');
   }
-  async download(fileId: string) {
+  async download(fileId: string, maxBytes = this.config.maxVoiceBytes) {
     const file = await this.call('getFile', { file_id: fileId });
     requireCondition(
-      file.file_size <= this.config.maxVoiceBytes &&
+      file.file_size <= maxBytes &&
         typeof file.file_path === 'string' &&
         !file.file_path.includes('..'),
       413,
-      'Слишком большой аудиофайл',
+      'Слишком большой файл',
     );
     const response = await fetch(
       `https://api.telegram.org/file/bot${this.config.botToken}/${file.file_path}`,
       { signal: AbortSignal.timeout(30_000) },
     );
-    requireCondition(response.ok && response.body, 502, 'Не удалось скачать аудио');
+    requireCondition(response.ok && response.body, 502, 'Не удалось скачать файл');
     const chunks: Uint8Array[] = [];
     let size = 0;
     for await (const chunk of response.body as any) {
       size += chunk.length;
-      if (size > this.config.maxVoiceBytes) {
-        throw new Error('Audio size limit exceeded');
-      }
+      requireCondition(size <= maxBytes, 413, 'Слишком большой файл');
       chunks.push(chunk);
     }
     return Buffer.concat(chunks);

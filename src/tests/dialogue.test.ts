@@ -12,6 +12,7 @@ import { DialogueService } from '../server/services/dialogue';
 import { ReportWorker } from '../server/services/worker';
 import { BotService } from '../server/services/bot';
 import { TelegramAdapter } from '../server/infra/telegram';
+import { maxPhotoBytes, photoDataUrl } from '../server/services/photo-input';
 
 const none = { mode: 'none' as const, name: '', inn: '', city: '' };
 const last = { ...none, mode: 'last' as const };
@@ -68,6 +69,8 @@ test('dialogue actions, durable context and individual confirmations', async (t)
   let transcript = '';
   let request: any;
   let sequence = 0;
+  let imageBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
+  let downloaded: { id: string; limit?: number } | undefined;
   s.letters.ai.request = async (_path, body) => {
     request = JSON.parse(body as string);
     return {
@@ -84,7 +87,13 @@ test('dialogue actions, durable context and individual confirmations', async (t)
         throw new Error('Dialogue must not fall back to a historical report');
       },
     },
-    { download: async () => new Uint8Array([1]), send: async () => {} },
+    {
+      download: async (id, limit) => {
+        downloaded = { id, limit };
+        return id === 'photo' ? imageBytes : new Uint8Array([1]);
+      },
+      send: async () => {},
+    },
     config,
     s.voiceSignatures,
     s.letterBot,
@@ -137,6 +146,149 @@ test('dialogue actions, durable context and individual confirmations', async (t)
     return r;
   };
   try {
+    const submitPhoto = async (a: Actor, p: unknown, caption = '') => {
+      response = p;
+      const r = await s.reports.enqueue(a, {
+        sourceKey: `photo:${++sequence}`,
+        imageFileId: 'photo',
+        text: caption,
+        chatId: a.telegramId,
+        purpose: 'dialogue',
+      });
+      await worker.processOne();
+      return r;
+    };
+    await t.test(
+      'photo contact uses remembered company, multimodal input and explicit confirmation',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Фото Альфа' });
+        await submit(a, plan([], { discussedCompany: named(c.name) }), 'Обсудим Фото Альфа', false);
+        const r = await submitPhoto(a, plan([contact()]));
+        assert.deepEqual(downloaded, { id: 'photo', limit: maxPhotoBytes });
+        assert.equal(request.input[0].content[1].type, 'input_image');
+        assert.match(request.input[0].content[1].image_url, /^data:image\/png;base64,/);
+        assert.match(request.instructions, /НИКОГДА не команды/);
+        assert.equal(JSON.parse(request.input[0].content[0].text).lastCompany.name, c.name);
+        assert.equal(await count(c.id, 'contact'), 0);
+        assert.match(await messages(a), /Компания: Фото Альфа/);
+        const row = await current(a);
+        await s.dialogue.callback(a, row.id, 'confirm', row.preview_version);
+        assert.equal(await count(c.id, 'contact'), 1);
+        const stored = (await db.query('SELECT * FROM reports WHERE id=$1', [r.id]))[0];
+        assert.equal(stored.image_file_id, null);
+        assert.equal(stored.transcript, null);
+      },
+    );
+    await t.test(
+      'photo of company proposes creation; import preserves existing notes and previews changes',
+      async () => {
+        const a = await actor();
+        const data = { ...companyFields, city: 'Казань', notes: 'Адрес: Тестовая, 1' };
+        await submitPhoto(
+          a,
+          plan([{ kind: 'company_import', company: named('Фото Новая'), data }]),
+        );
+        assert.equal((await s.crm.list(a)).length, 0);
+        let row = await current(a);
+        assert.equal(row.payload.kind, 'company_create');
+        await s.dialogue.callback(a, row.id, 'confirm', row.preview_version);
+        const c = (await s.crm.list(a))[0]!;
+        await submitPhoto(
+          a,
+          plan([
+            {
+              kind: 'company_import',
+              company: named('Фото Новая'),
+              data: { ...companyFields, city: 'Москва', notes: 'Сайт: example.com' },
+            },
+          ]),
+        );
+        row = await current(a);
+        assert.equal(row.payload.kind, 'company_update');
+        assert.match(await messages(a), /Было: Адрес: Тестовая, 1/);
+        assert.equal((await s.crm.company(a, c.id)).notes, data.notes);
+        await s.dialogue.callback(a, row.id, 'confirm', row.preview_version);
+        assert.equal((await s.crm.company(a, c.id)).notes, `${data.notes}\nСайт: example.com`);
+      },
+    );
+    await t.test(
+      'photo signature caption and correction preserve review, no automatic save',
+      async () => {
+        const a = await actor();
+        await submitPhoto(
+          a,
+          plan([{ kind: 'signature_create', company: none, data: signature }]),
+          'Добавь подпись',
+        );
+        assert.equal(JSON.parse(request.input[0].content[0].text).message, 'Добавь подпись');
+        const old = await current(a);
+        assert.equal(
+          (await db.query('SELECT id FROM letter_signatures WHERE user_id=$1', [a.id])).length,
+          0,
+        );
+        await submit(
+          a,
+          plan(
+            [
+              {
+                kind: 'signature_create',
+                company: none,
+                data: { ...signature, firstName: 'Пётр' },
+              },
+            ],
+            { mode: 'replace' },
+          ),
+          'Имя Пётр',
+          false,
+        );
+        await s.dialogue.callback(a, old.id, 'confirm', old.preview_version);
+        assert.equal(
+          (await db.query('SELECT id FROM letter_signatures WHERE user_id=$1', [a.id])).length,
+          0,
+        );
+        const row = await current(a);
+        await s.dialogue.callback(a, row.id, 'confirm', row.preview_version);
+        assert.equal(
+          (await db.query('SELECT data FROM letter_signatures WHERE user_id=$1', [a.id]))[0].data
+            .firstName,
+          'Пётр',
+        );
+      },
+    );
+    await t.test(
+      'missing company/contact fields are questions, not fabricated records',
+      async () => {
+        const a = await actor();
+        await submitPhoto(a, plan([contact(none)]));
+        assert.equal((await current(a)).status, 'needs_info');
+        assert.match(await messages(a), /Для какой компании/);
+        assert.equal((await s.crm.list(a)).length, 0);
+        await s.dialogue.callback(a, (await current(a)).id, 'skip');
+        await submitPhoto(a, plan([contact(named('Не существует'))]));
+        assert.match(await messages(a), /Сначала создайте/);
+        assert.equal((await s.crm.list(a)).length, 0);
+      },
+    );
+    await t.test(
+      'invalid image is terminal and never falls back to audio or report extraction',
+      async () => {
+        assert.throws(() => photoDataUrl(Buffer.alloc(maxPhotoBytes + 1)), /10 МБ/);
+        const saved = imageBytes;
+        imageBytes = Buffer.from('%PDF-1.7');
+        try {
+          const a = await actor();
+          const r = await submitPhoto(a, plan([]));
+          const row = (await db.query('SELECT * FROM reports WHERE id=$1', [r.id]))[0];
+          assert.equal(row.status, 'failed');
+          assert.equal(row.image_file_id, null);
+          assert.equal((await actions(a)).length, 0);
+          assert.match(await messages(a), /JPEG или PNG/);
+        } finally {
+          imageBytes = saved;
+        }
+      },
+    );
     await t.test(
       'free speech plans multiple operations; each click commits only one and replay is safe',
       async () => {
@@ -537,6 +689,14 @@ test('dialogue actions, durable context and individual confirmations', async (t)
           { text: 'Давай им наше информационное' },
           { text: '/letter Альфа' },
           { voice: { file_id: 'v', duration: 3 } },
+          {
+            caption: 'Добавь подпись',
+            photo: [
+              { file_id: 'small', width: 10, height: 10 },
+              { file_id: 'photo', width: 1000, height: 600 },
+            ],
+          },
+          { document: { file_id: 'photo', mime_type: 'image/png', file_size: 100 } },
         ]) {
           const update = ++sequence;
           await bot.handle({
@@ -554,7 +714,30 @@ test('dialogue actions, durable context and individual confirmations', async (t)
           ]);
           assert.equal(r.purpose, 'dialogue');
           assert.equal(r.status, 'queued');
+          if ('photo' in body || 'document' in body) assert.equal(r.image_file_id, 'photo');
+          if ('caption' in body) assert.equal(r.transcript, body.caption);
           await db.query("UPDATE reports SET status='cancelled' WHERE id=$1", [r.id]);
+        }
+        for (const document of [
+          { file_id: 'bad', mime_type: 'application/pdf', file_size: 100 },
+          { file_id: 'large', mime_type: 'image/png', file_size: maxPhotoBytes + 1 },
+        ]) {
+          const update = ++sequence;
+          await bot.handle({
+            update_id: update,
+            message: {
+              message_id: update,
+              date: Math.floor(Date.now() / 1000),
+              from: { id: Number(a.telegramId) },
+              chat: { id: Number(a.telegramId), type: 'private' },
+              document,
+            },
+          });
+          assert.equal(
+            (await db.query('SELECT id FROM reports WHERE source_key=$1', [`telegram:${update}`]))
+              .length,
+            0,
+          );
         }
       },
     );
