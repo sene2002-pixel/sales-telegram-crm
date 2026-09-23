@@ -20,11 +20,20 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     extractionModel: env.EXTRACTION_MODEL || 'gpt-4o-mini',
     letterModel: env.LETTER_MODEL || 'gpt-4.1-mini',
     worker: env.WORKER_ENABLED !== 'false',
+    diagnosticUntil: env.DIAGNOSTIC_LOG_UNTIL ? Date.parse(env.DIAGNOSTIC_LOG_UNTIL) : 0,
     timezone: env.REPORT_TIMEZONE || 'Europe/Moscow',
     maxVoiceBytes: Number(env.MAX_VOICE_BYTES || 20_000_000),
     maxVoiceSeconds: Number(env.MAX_VOICE_SECONDS || 600),
   };
   new Intl.DateTimeFormat('ru', { timeZone: config.timezone }).format();
+  if (
+    !Number.isFinite(config.diagnosticUntil) ||
+    (env.DIAGNOSTIC_LOG_UNTIL &&
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+        env.DIAGNOSTIC_LOG_UNTIL,
+      ))
+  )
+    throw new Error('Invalid DIAGNOSTIC_LOG_UNTIL: use an ISO date with timezone');
   if (
     production &&
     (config.devAuth ||

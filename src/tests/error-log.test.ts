@@ -81,22 +81,38 @@ test('error log migration, HTTP errors, privacy and three-month retention', asyn
 
 test('cleanup starts immediately and runs hourly without overlapping', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
-  let calls = 0;
+  const queries: string[] = [];
+  let release!: () => void;
+  let blocked = true;
+  const firstCleanup = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const logs = new ErrorLog({
-    query: async () => {
-      calls++;
+    query: async (sql) => {
+      queries.push(sql);
+      if (blocked) await firstCleanup;
       return [];
     },
   });
   logs.start();
   logs.start();
-  assert.equal(calls, 1);
-  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(queries.length, 1);
   t.mock.timers.tick(60 * 60 * 1000);
-  assert.equal(calls, 2);
+  assert.equal(queries.length, 1, 'an in-flight cleanup must not overlap the next interval');
+  blocked = false;
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  const expectedCleanup = [
+    "DELETE FROM error_logs WHERE created_at < now() - interval '3 months'",
+    "DELETE FROM diagnostic_logs WHERE created_at < now() - interval '3 months'",
+  ];
+  assert.deepEqual(queries, expectedCleanup);
+  t.mock.timers.tick(60 * 60 * 1000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(queries, [...expectedCleanup, ...expectedCleanup]);
   await logs.stop();
   t.mock.timers.tick(60 * 60 * 1000);
-  assert.equal(calls, 2);
+  assert.equal(queries.length, 4);
 });
 
 test('database logging failure falls back safely without recursion', async (t) => {

@@ -32,6 +32,7 @@ import { z, ZodError } from 'zod';
 import { Config } from '../config';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
+import { DiagnosticLog } from '../infra/diagnostic-log';
 import { FileDownloads } from '../services/file-downloads';
 import { LetterBot } from '../services/letter-bot';
 import { VoiceSignatures } from '../services/voice-signatures';
@@ -49,6 +50,7 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shared/contracts';
 
 export class Services {
+  diagnostics: DiagnosticLog;
   voiceSignatures: VoiceSignatures;
   letterBot: LetterBot;
   fileDownloads: FileDownloads;
@@ -66,15 +68,23 @@ export class Services {
     public config: Config,
   ) {
     this.errors = new ErrorLog(db);
+    this.diagnostics = new DiagnosticLog(db, config);
     this.auth = new AuthService(db, config);
     this.crm = new CrmService(db);
     this.fileDownloads = new FileDownloads(this.crm, config);
-    this.letters = new LetterService(this.crm, config);
-    this.reports = new ReportService(db, this.crm);
-    const telegram = new TelegramAdapter(config, this.errors),
-      ai = new OpenAiAdapter(config);
+    const ai = new OpenAiAdapter(config, this.diagnostics);
+    this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
+    this.reports = new ReportService(db, this.crm, this.diagnostics);
+    const telegram = new TelegramAdapter(config, this.errors);
     this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
-    this.letterBot = new LetterBot(this.crm, this.letters, this.reports, telegram, config);
+    this.letterBot = new LetterBot(
+      this.crm,
+      this.letters,
+      this.reports,
+      telegram,
+      config,
+      this.diagnostics,
+    );
     this.worker = new ReportWorker(
       db,
       this.reports,
@@ -84,6 +94,7 @@ export class Services {
       config,
       this.voiceSignatures,
       this.letterBot,
+      this.diagnostics,
     );
     this.bot = new BotService(
       config,
@@ -93,6 +104,7 @@ export class Services {
       telegram,
       this.letterBot,
       this.voiceSignatures,
+      this.diagnostics,
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.exports = new ExportService(db, this.dashboard, telegram, config);
@@ -106,12 +118,16 @@ class AuthGuard implements CanActivate {
     req.actor = await this.s.auth.authenticate(
       (req.headers.authorization || '').replace(/^Bearer /, ''),
     );
+    if (this.s.diagnostics.context) this.s.diagnostics.context.actorId = req.actor.id;
     return true;
   }
 }
 @Catch()
 class Errors implements ExceptionFilter {
-  constructor(private logs: ErrorLog) {}
+  constructor(
+    private logs: ErrorLog,
+    private diagnostics: DiagnosticLog,
+  ) {}
   async catch(error: any, host: any) {
     const res: Response = host.switchToHttp().getResponse();
     let status = 500,
@@ -143,6 +159,11 @@ class Errors implements ExceptionFilter {
       requestId: res.locals.requestId,
       actorId: req.actor?.id,
       // Route template only: actual URLs may contain download tokens or user data.
+      route: typeof req.route?.path === 'string' ? `${req.method} ${req.route.path}` : undefined,
+    });
+    await this.diagnostics.record('http.failed', {
+      status,
+      errorType: error instanceof Error ? error.constructor.name : 'Unknown',
       route: typeof req.route?.path === 'string' ? `${req.method} ${req.route.path}` : undefined,
     });
     res.status(status).json({ message });
@@ -472,10 +493,26 @@ export async function createApp(config: Config, existingDb?: Database) {
   })
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: ['warn', 'error'], bodyParser: false });
-  app.use((_req: Request, res: Response, next: () => void) => {
+  app.use((req: Request, res: Response, next: () => void) => {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-ID', res.locals.requestId);
-    next();
+    if (!req.path.startsWith('/api') || !services.diagnostics.enabled) return next();
+    const traceId = `http:${res.locals.requestId}`,
+      started = Date.now();
+    res.once('finish', () => {
+      void services.diagnostics.run({ traceId, actorId: (req as AuthedRequest).actor?.id }, () =>
+        services.diagnostics.record('http.completed', {
+          method: req.method,
+          route: typeof req.route?.path === 'string' ? req.route.path : undefined,
+          status: res.statusCode,
+          durationMs: Date.now() - started,
+        }),
+      );
+    });
+    void services.diagnostics.run({ traceId }, async () => {
+      await services.diagnostics.record('http.started', { method: req.method });
+      next();
+    });
   });
   app.use(
     helmet({
@@ -513,7 +550,7 @@ export async function createApp(config: Config, existingDb?: Database) {
     }
     next();
   });
-  app.useGlobalFilters(new Errors(services.errors));
+  app.useGlobalFilters(new Errors(services.errors, services.diagnostics));
   app.use(serveStatic(resolve('dist/web'), { index: 'index.html' }));
   await app.init();
   return { app, services, db };

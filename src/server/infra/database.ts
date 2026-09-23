@@ -66,6 +66,19 @@ export class Database implements Sql {
         message text NOT NULL, details jsonb NOT NULL DEFAULT '{}'
       )`);
       await tx.query('CREATE INDEX IF NOT EXISTS error_logs_created_at ON error_logs(created_at)');
+      await tx.query(`CREATE TABLE IF NOT EXISTS diagnostic_logs (
+        seq bigserial PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+        trace_id text NOT NULL, actor_id uuid, entity_id text, attempt integer,
+        event text NOT NULL, details jsonb NOT NULL DEFAULT '{}'
+      )`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS diagnostic_logs_trace ON diagnostic_logs(trace_id,seq)',
+      );
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS diagnostic_logs_created ON diagnostic_logs(created_at)',
+      );
+      await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS trace_id text');
+      await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS actor_id uuid');
       await tx.query(`CREATE TABLE IF NOT EXISTS file_downloads (
         token_hash text PRIMARY KEY, owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         file_id uuid NOT NULL REFERENCES records(id) ON DELETE CASCADE, expires_at timestamptz NOT NULL

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DiagnosticLog } from '../infra/diagnostic-log';
 import {
   Actor,
   Report,
@@ -32,6 +33,7 @@ export class ReportService {
   constructor(
     public db: Database,
     private crm: CrmService,
+    private diagnostics?: DiagnosticLog,
   ) {}
   async enqueue(
     actor: Actor,
@@ -62,6 +64,15 @@ export class ReportService {
         ],
       );
       if (created) {
+        await this.diagnostics?.record(
+          'report.queued',
+          {
+            reportId: created.id,
+            sourceKey: input.sourceKey,
+            kind: input.audioFileId ? 'voice' : 'text',
+          },
+          tx,
+        );
         await audit(tx, actor.id, 'report.received', created.id);
         if (input.chatId)
           await this.notify(tx, input.chatId, {
@@ -76,15 +87,27 @@ export class ReportService {
         [input.sourceKey, actor.id],
       );
       requireCondition(existing, 409, 'Сообщение уже зарегистрировано');
+      await this.diagnostics?.record(
+        'report.duplicate',
+        { reportId: existing.id, sourceKey: input.sourceKey },
+        tx,
+      );
       return mapReport(existing);
     });
   }
   async notify(tx: Sql, chatId: string, payload: unknown) {
-    await tx.query('INSERT INTO outbox(id,chat_id,payload) VALUES($1,$2,$3)', [
-      randomUUID(),
-      chatId,
-      JSON.stringify(payload),
-    ]);
+    const id = randomUUID();
+    await tx.query(
+      'INSERT INTO outbox(id,chat_id,payload,trace_id,actor_id) VALUES($1,$2,$3,$4,$5)',
+      [
+        id,
+        chatId,
+        JSON.stringify(payload),
+        this.diagnostics?.context?.traceId || null,
+        this.diagnostics?.context?.actorId || null,
+      ],
+    );
+    await this.diagnostics?.record('notification.queued', { outboxId: id }, tx);
   }
   async list(actor: Actor) {
     return (

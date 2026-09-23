@@ -9,7 +9,8 @@ import { ErrorLog } from '../infra/error-log';
 import { LetterBot, letterQuery } from './letter-bot';
 import { voiceHelp } from './voice-help';
 import { looksLikeCommand, unknownCommand } from './command-intent';
-import { VoiceSignatures } from './voice-signatures';
+import { VoiceSignatures, signatureOperation } from './voice-signatures';
+import { DiagnosticLog } from '../infra/diagnostic-log';
 import { z } from 'zod';
 const sender = z.object({
   id: z.number().int().positive().safe(),
@@ -49,6 +50,7 @@ export class BotService {
     private telegram: TelegramAdapter,
     private letters?: LetterBot,
     private voiceSignatures?: VoiceSignatures,
+    private diagnostics?: DiagnosticLog,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -61,11 +63,33 @@ export class BotService {
   }
   async handle(raw: unknown) {
     const update = updateSchema.parse(raw);
+    return this.diagnostics
+      ? this.diagnostics.run({ traceId: `telegram:${update.update_id}` }, () =>
+          this.handleUpdate(update),
+        )
+      : this.handleUpdate(update);
+  }
+  private async handleUpdate(update: z.infer<typeof updateSchema>) {
     const callback = update.callback_query;
     const msg = update.message;
     const chat = callback?.message?.chat || msg?.chat;
     const from = callback?.from || msg?.from;
-    if (!chat || !from || chat.type !== 'private' || chat.id !== from.id) return { ok: true };
+    if (!chat || !from || chat.type !== 'private' || chat.id !== from.id) {
+      await this.diagnostics?.record('telegram.update_ignored', {
+        reason: 'not_private_or_mismatched_sender',
+      });
+      return { ok: true };
+    }
+    await this.diagnostics?.record('telegram.received', {
+      updateId: update.update_id,
+      telegramUserId: from.id,
+      messageId: msg?.message_id,
+      sentAt: msg?.date,
+      kind: callback ? 'callback' : msg?.voice ? 'voice' : 'text',
+      text: msg?.text && signatureOperation(msg.text) ? '[SIGNATURE]' : msg?.text,
+      duration: msg?.voice?.duration,
+      size: msg?.voice?.file_size,
+    });
     const chatId = String(chat.id);
     try {
       const command = msg?.text?.split(/\s/)[0]?.split('@')[0];
@@ -77,8 +101,18 @@ export class BotService {
         return { ok: true };
       }
       const actor = await this.auth.byTelegram(String(from.id), from.first_name);
+      if (this.diagnostics?.context) this.diagnostics.context.actorId = actor.id;
+      await this.diagnostics?.record('telegram.authorized', {
+        actorName: actor.name,
+        role: actor.role,
+      });
       if (callback) {
         const [action, id, version] = (callback.data || '').split(':');
+        await this.diagnostics?.record('telegram.callback.started', {
+          action,
+          entityId: id,
+          version,
+        });
         if (action === 'save' && id) await this.reports.confirmCurrent(actor, id, Number(version));
         if (action === 'cancel' && id) await this.reports.transition(actor, id, 'cancel');
         if (action === 'sc' && id) await this.voiceSignatures?.confirm(actor, id);
@@ -90,10 +124,12 @@ export class BotService {
           callback_query_id: callback.id,
           text: action === 'cancel' ? 'Отчёт отменён' : 'Готово',
         });
+        await this.diagnostics?.record('telegram.callback.completed', { action, entityId: id });
         return { ok: true };
       }
       const query = msg?.text ? letterQuery(msg.text) : null;
       if (query !== null && this.letters) {
+        await this.diagnostics?.record('command.routed', { route: 'letter', query });
         await this.letters.enqueue(actor, `telegram:${update.update_id}`, query);
         return { ok: true };
       }
@@ -129,6 +165,7 @@ export class BotService {
           reply_markup: this.telegram.appButton(),
         });
       } else if (msg?.text && looksLikeCommand(msg.text)) {
+        await this.diagnostics?.record('command.routed', { route: 'unknown' });
         await this.telegram.send(chatId, { text: unknownCommand });
       } else if (msg?.voice || msg?.text) {
         requireCondition(
@@ -150,6 +187,11 @@ export class BotService {
           text: 'Отправьте голосовое сообщение или текстовый отчёт.',
         });
     } catch (error) {
+      await this.diagnostics?.record('telegram.handle_failed', {
+        errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+        status: error instanceof DomainError ? error.status : undefined,
+        message: error instanceof DomainError ? error.message : undefined,
+      });
       if (error instanceof DomainError && error.status < 500) {
         await new ErrorLog(this.crm.db).record(error, { event: 'telegram.command_failed' });
         if (callback)

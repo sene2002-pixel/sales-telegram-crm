@@ -5,6 +5,10 @@ async function main() {
   const { app, services, db } = await createApp(config);
   await app.listen(config.port, config.host);
   services.errors.start();
+  await services.diagnostics.record('server.diagnostics_started', {
+    until: new Date(config.diagnosticUntil).toISOString(),
+    workerEnabled: config.worker,
+  });
   if (config.worker) services.worker.start();
   if (config.worker) services.letterBot.start();
   console.log(

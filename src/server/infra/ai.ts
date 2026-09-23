@@ -2,6 +2,7 @@ import { Extraction, extractionSchema } from '../../shared/contracts';
 import { Config } from '../config';
 import { requireCondition } from '../domain/errors';
 import { z } from 'zod';
+import { DiagnosticLog } from './diagnostic-log';
 
 export interface SpeechToText {
   transcribe(audio: Uint8Array): Promise<string>;
@@ -10,8 +11,17 @@ export interface ReportExtractor {
   extract(text: string, sentAt: string): Promise<Extraction>;
 }
 export class OpenAiAdapter implements SpeechToText, ReportExtractor {
-  constructor(private config: Config) {}
+  constructor(
+    private config: Config,
+    private diagnostics?: DiagnosticLog,
+  ) {}
   async request(path: string, body: BodyInit, multipart = false) {
+    const send = () => this.sendRequest(path, body, multipart);
+    return this.diagnostics
+      ? this.diagnostics.span('openai.http', { operation: path, multipart }, send)
+      : send();
+  }
+  private async sendRequest(path: string, body: BodyInit, multipart: boolean) {
     requireCondition(
       this.config.apiKey,
       503,
@@ -26,11 +36,22 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
       body,
       signal: AbortSignal.timeout(90_000),
     });
+    await this.diagnostics?.record('openai.http_response', {
+      operation: path,
+      status: response.status,
+      requestId: response.headers.get('x-request-id'),
+    });
     if (!response.ok) {
       const failure = (await response.json().catch(() => null)) as any;
       // Never expose the provider's raw message: it may contain request data.
       const code = failure?.error?.code;
       const param = failure?.error?.param;
+      await this.diagnostics?.record('openai.rejected', {
+        operation: path,
+        status: response.status,
+        code,
+        param,
+      });
       const reason =
         code === 'invalid_json_schema' ||
         (typeof param === 'string' && param.startsWith('text.format'))
@@ -44,7 +65,13 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
                 : 'Сервис ИИ недоступен';
       requireCondition(false, 502, `${reason} (HTTP ${response.status})`);
     }
-    return response.json() as Promise<any>;
+    const result: any = await response.json();
+    await this.diagnostics?.record('openai.result', {
+      operation: path,
+      responseId: result?.id,
+      status: result?.status,
+    });
+    return result;
   }
   async transcribe(audio: Uint8Array) {
     const body = new FormData();

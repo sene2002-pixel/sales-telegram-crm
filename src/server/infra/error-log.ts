@@ -54,6 +54,9 @@ export class ErrorLog {
   async cleanup() {
     try {
       await this.db.query("DELETE FROM error_logs WHERE created_at < now() - interval '3 months'");
+      await this.db.query(
+        "DELETE FROM diagnostic_logs WHERE created_at < now() - interval '3 months'",
+      );
     } catch (error) {
       await this.record(error, { event: 'error_log.cleanup_failed' });
     }
