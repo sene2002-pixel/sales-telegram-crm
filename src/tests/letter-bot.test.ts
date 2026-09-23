@@ -22,6 +22,57 @@ test('letter intent recognizes requests, not historical reports', () => {
     assert.equal(letterQuery(text), null);
 });
 
+test('letter requests accept optional prepositions, infinitives and dictation punctuation', () => {
+  for (const prefix of [
+    'Подготовь письмо',
+    'Подготовьте письмо',
+    'Подготовить письмо',
+    'Нужно подготовить письмо',
+    'Хочу подготовить письмо',
+    'Можешь подготовить письмо',
+    'Создай письмо',
+    'Создать письмо',
+    'Сделай письмо',
+    'Сделать письмо',
+    'Составь письмо',
+    'Составить письмо',
+    'Сформируй письмо',
+    'Сформировать письмо',
+    'Сгенерируй письмо',
+    'Сгенерировать письмо',
+    'Напиши письмо',
+    'Написать письмо',
+    'Отправь письмо',
+    'Отправить письмо',
+    'Подготовь мне информационное письмо',
+    'Пожалуйста, подготовь письмо',
+    'Подготовь, пожалуйста, письмо',
+  ]) {
+    for (const connector of ['', 'для ', 'для компании ', 'компании ', 'в компанию ', 'на '])
+      assert.equal(letterQuery(`${prefix} ${connector}АО «Стройтрансгаз»`), 'АО «Стройтрансгаз»');
+    assert.equal(letterQuery(prefix), '', prefix);
+    assert.equal(letterQuery(`${prefix} для`), '', prefix);
+  }
+  for (const text of [
+    'Подготовь письмо. АО «Стройтрансгаз».',
+    ' Подготовь, письмо: АО «Стройтрансгаз»! ',
+    'Подготовь письмо для АО «Стройтрансгаз», пожалуйста.',
+    'Подготовь письмо, пожалуйста, для компании АО «Стройтрансгаз»',
+  ])
+    assert.equal(letterQuery(text), 'АО «Стройтрансгаз»', text);
+  for (const text of ['Подготовь письмо для компании.', 'Подготовь письмо, пожалуйста.', '/letter'])
+    assert.equal(letterQuery(text), '', text);
+  for (const text of [
+    'Вчера подготовил письмо для Ромашки',
+    'Отправил письмо клиенту',
+    'Компания Альфа попросила подготовить письмо',
+    'Не отправь письмо клиенту',
+    'Подготовь отчёт',
+    'Подготовь письмоносцу задачу',
+  ])
+    assert.equal(letterQuery(text), null, text);
+});
+
 test('default signatures, durable letter queue, sources and PDF delivery', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'crm-letter-bot-'));
   const config = makeConfig({ DATA_DIR: dir, BOT_TOKEN: 'test', OPENAI_API_KEY: 'test' });

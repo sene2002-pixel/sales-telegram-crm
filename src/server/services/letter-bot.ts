@@ -36,12 +36,23 @@ export const recipientResearchSchema = z.object({
 });
 
 export function letterQuery(text: string): string | null {
+  text = text.trim();
   const command = text.match(/^\/letter(?:@\w+)?(?:\s+([\s\S]+))?$/i);
   if (command) return (command[1] || '').trim();
+  // Recognize an explicit request at the start, not a report mentioning a letter.
+  // Dictation can insert punctuation between the verb, "письмо" and the company.
   const natural = text.match(
-    /^(?:пожалуйста[, ]+)?(?:подготовь|составь|создай|сформируй|напиши|отправь|отправить)(?:те)?\s+(?:мне\s+)?(?:информационное\s+)?письмо\s+(?:(?:для|компании|в|на)\s+)?([\s\S]+)$/i,
+    /^(?:пожалуйста[\s,.:;!?—–-]+)?(?:(?:нужно|надо|хочу|можешь|можете)[\s,.:;!?—–-]+)?(?:пожалуйста[\s,.:;!?—–-]+)?(?:подготов(?:ь(?:те)?|ить)|состав(?:ь(?:те)?|ить)|созда(?:й(?:те)?|ть)|сформир(?:уй(?:те)?|овать)|нап(?:иши(?:те)?|исать)|отправ(?:ь(?:те)?|ить)|сдела(?:й(?:те)?|ть)|сгенерир(?:уй(?:те)?|овать))[\s,.:;!?—–-]+(?:пожалуйста[\s,.:;!?—–-]+)?(?:мне[\s,.:;!?—–-]+)?(?:информационное[\s,.:;!?—–-]+)?письмо(?=$|[\s,.:;!?—–-])([\s\S]*)$/iu,
   );
-  return natural ? natural[1]!.trim() : null;
+  if (!natural) return null;
+  const trimSeparators = (value: string) => value.replace(/^[\s,.:;!?—–-]+|[\s,.:;!?—–-]+$/gu, '');
+  let query = trimSeparators(natural[1]!);
+  query = query.replace(/^пожалуйста(?=$|[\s,.:;!?—–-])[\s,.:;!?—–-]*/iu, '');
+  query = query.replace(/^(?:для|в|на)(?=$|[\s,.:;!?—–-])[\s,.:;!?—–-]*/iu, '');
+  query = query.replace(/^компани[яию](?=$|[\s,.:;!?—–-])[\s,.:;!?—–-]*/iu, '');
+  query = query.replace(/(?:^|[\s,.:;!?—–-]+)пожалуйста[\s,.:;!?—–-]*$/iu, '');
+  // Empty is a recognized command needing clarification; null means another intent.
+  return trimSeparators(query);
 }
 
 export class LetterBot {
@@ -58,10 +69,11 @@ export class LetterBot {
 
   async enqueue(actor: Actor, sourceKey: string, query: string, transaction?: Sql) {
     requireCondition(
-      query.length > 0 && query.length <= 1000,
+      query.length > 0,
       400,
-      'Напишите: «Подготовь письмо для ООО …», желательно с ИНН и городом',
+      'Укажите компанию: «Подготовь письмо АО Стройтрансгаз». Слово «для» необязательно.',
     );
+    requireCondition(query.length <= 1000, 400, 'Сократите запрос письма до 1000 символов');
     const enqueue = async (tx: Sql) => {
       const [user] = await tx.query('SELECT active FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
       requireCondition(user?.active, 403, 'Доступ отозван');

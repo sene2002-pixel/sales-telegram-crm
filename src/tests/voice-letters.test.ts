@@ -27,10 +27,11 @@ test('voice letters route atomically, require signature, deduplicate and guard s
     actor.name,
     actor.role,
   ]);
+  let transcript = 'Подготовь письмо для ООО Ромашка, ИНН 1234567890';
   const worker = new ReportWorker(
     db,
     s.reports,
-    { transcribe: async () => 'Подготовь письмо для ООО Ромашка, ИНН 1234567890' },
+    { transcribe: async () => transcript },
     {
       extract: async () => {
         throw new Error('Letter must not become report');
@@ -105,6 +106,48 @@ test('voice letters route atomically, require signature, deduplicate and guard s
       ),
       false,
     );
+    await db.query("UPDATE letter_jobs SET status='cancelled'");
+    for (const [index, text] of [
+      'Подготовь письмо АО «Стройтрансгаз»',
+      'Подготовь письмо для АО «Стройтрансгаз»',
+      'Подготовить письмо АО «Стройтрансгаз»',
+      'Подготовь письмо. АО «Стройтрансгаз».',
+      'Нужно подготовить письмо для компании АО «Стройтрансгаз»',
+    ].entries()) {
+      transcript = text;
+      const sourceKey = `voice:variant:${index}`;
+      await enqueue(sourceKey);
+      await worker.processOne();
+      const [report] = await db.query('SELECT * FROM reports WHERE source_key=$1', [sourceKey]);
+      assert.equal(report.purpose, 'letter', text);
+      assert.equal(report.status, 'cancelled', text);
+      assert.equal(report.draft, null, text);
+      const [job] = await db.query('SELECT * FROM letter_jobs WHERE source_key=$1', [sourceKey]);
+      assert.ok(job, text);
+      assert.equal(job.query, 'АО «Стройтрансгаз»', text);
+      assert.equal(job.status, 'queued', text);
+      await db.query("UPDATE letter_jobs SET status='cancelled' WHERE id=$1", [job.id]);
+    }
+    for (const [index, text] of ['Подготовь письмо', 'Подготовить письмо для'].entries()) {
+      transcript = text;
+      const sourceKey = `voice:missing-company:${index}`;
+      await enqueue(sourceKey);
+      await worker.processOne();
+      const [report] = await db.query('SELECT * FROM reports WHERE source_key=$1', [sourceKey]);
+      assert.equal(report.purpose, 'letter');
+      assert.equal(report.status, 'failed');
+      assert.equal(report.draft, null);
+      assert.match(report.error, /Укажите компанию/);
+      assert.equal(
+        (await db.query('SELECT * FROM letter_jobs WHERE source_key=$1', [sourceKey])).length,
+        0,
+      );
+      assert.ok(
+        (await db.query('SELECT payload FROM outbox')).some(
+          (row) => row.payload.text === report.error,
+        ),
+      );
+    }
     assert.match(voiceHelp(config), /3\. Генерация информационного письма/);
     assert.ok(voiceHelp(config).length < 4096);
   } finally {
