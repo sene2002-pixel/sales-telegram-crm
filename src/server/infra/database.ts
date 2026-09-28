@@ -161,6 +161,30 @@ export class Database implements Sql {
         'ALTER TABLE dialogue_actions ADD COLUMN IF NOT EXISTS preview_version integer NOT NULL DEFAULT 0',
       );
       await tx.query('ALTER TABLE dialogue_actions ADD COLUMN IF NOT EXISTS resume jsonb');
+      await tx.query(
+        "ALTER TABLE dialogue_actions ADD COLUMN IF NOT EXISTS depends_on uuid[] NOT NULL DEFAULT '{}'",
+      );
+      const migratedQueue = await tx.query('SELECT version FROM schema_migrations WHERE version=3');
+      if (!migratedQueue.length) {
+        // Preserve ordering of requests accepted before dependency scheduling existed.
+        await tx.query(
+          `UPDATE dialogue_actions d SET depends_on=ARRAY(SELECT p.id FROM dialogue_actions p WHERE p.user_id=d.user_id AND p.sequence<d.sequence AND p.status NOT IN ('done','cancelled')) WHERE d.status NOT IN ('done','cancelled')`,
+        );
+        await tx.query('INSERT INTO schema_migrations(version) VALUES(3)');
+      }
+      await tx.query(`CREATE TABLE IF NOT EXISTS request_history (
+        report_id uuid PRIMARY KEY REFERENCES reports(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users(id), source_key text NOT NULL,
+        edit_action_id uuid, original_text text, transcript text, audio_file_id text, image_file_id text,
+        created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL
+      )`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS request_history_expiry ON request_history(expires_at)',
+      );
+      await tx.query(`CREATE TABLE IF NOT EXISTS request_events (
+        id bigserial PRIMARY KEY, report_id uuid NOT NULL REFERENCES request_history(report_id) ON DELETE CASCADE,
+        action_id uuid, event text NOT NULL, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now()
+      )`);
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

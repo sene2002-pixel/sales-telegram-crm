@@ -57,7 +57,7 @@ export function letterQuery(text: string): string | null {
 
 export class LetterBot {
   private timer?: NodeJS.Timeout;
-  private running?: Promise<void>;
+  private running = new Set<Promise<void>>();
   constructor(
     private crm: CrmService,
     private letters: LetterService,
@@ -308,20 +308,22 @@ export class LetterBot {
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => {
-      if (!this.running)
-        this.running = this.tick()
+      while (this.running.size < this.config.workerConcurrency) {
+        const work = this.tick()
           .catch((error) =>
             new ErrorLog(this.crm.db).record(error, { event: 'letter.worker_failed' }),
           )
           .finally(() => {
-            this.running = undefined;
+            this.running.delete(work);
           });
+        this.running.add(work);
+      }
     }, 1500);
   }
   async stop() {
     clearInterval(this.timer);
     this.timer = undefined;
-    await this.running;
+    await Promise.all(this.running);
   }
 
   async tick() {

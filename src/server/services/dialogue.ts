@@ -23,6 +23,7 @@ import { LetterService } from './letters';
 import { ReportService } from './reports';
 import { photoInstructions } from './photo-input';
 import { assignDefault, checkedSignature, signatureName } from './signature-choice';
+import { requestEvent, requestsConflict } from './request-history';
 import {
   DialogueAction,
   dialogueActionSchema,
@@ -135,6 +136,10 @@ export class DialogueService {
     // Snapshot under an actor lock; never hold a database transaction across an AI request.
     const input = await this.crm.db.transaction(async (tx) => {
       const actor = await this.actor(tx, report.author_id);
+      await tx.query(
+        'UPDATE request_history SET transcript=$2 WHERE report_id=$1 AND expires_at>now()',
+        [report.id, text],
+      );
       const state = await this.state(tx, actor.id);
       const available = await this.accessible(tx, actor);
       if (state.company?.id && !available.some((c) => c.id === state.company.id)) {
@@ -233,7 +238,7 @@ export class DialogueService {
         [actor.id, pending],
       );
       if (report.edit_action_id) {
-        const row = open[0];
+        const row = open.find((r) => r.id === report.edit_action_id);
         const valid = row?.id === report.edit_action_id && editable.includes(row.status);
         await tx.query(
           "UPDATE reports SET status='cancelled',transcript=NULL,audio_file_id=NULL,image_file_id=NULL,draft=NULL,error=NULL,lease_token=NULL,lease_until=NULL WHERE id=$1",
@@ -270,6 +275,19 @@ export class DialogueService {
         }
         row.payload = action;
         row.snapshot = null;
+        const laterRunning = open.filter(
+          (other) =>
+            other.id !== row.id && other.status === 'executing' && requestsConflict(other, row),
+        );
+        requireCondition(
+          !laterRunning.length,
+          409,
+          'По этой компании уже выполняется запрос. Дождитесь завершения перед правкой',
+        );
+        await requestEvent(tx, report.id, row.id, 'clarified', {
+          payload: action,
+          company: row.company,
+        });
         await tx.query(
           "UPDATE dialogue_actions SET payload=$2,company=$3,snapshot=NULL,options='[]',status='queued',preview_version=preview_version+1 WHERE id=$1",
           [row.id, JSON.stringify(action), JSON.stringify(row.company)],
@@ -343,6 +361,8 @@ export class DialogueService {
           });
       }
       let last: CompanyContext | null = state.company;
+      const predecessors =
+        plan.mode === 'replace' ? open.filter((r) => r.status === 'executing') : [...open];
       for (const [position, action] of plan.actions.entries()) {
         const ref = action.company;
         const bound = action.kind.startsWith('signature_')
@@ -353,17 +373,27 @@ export class DialogueService {
               ? last
               : null;
         if (bound && !action.kind.startsWith('signature_')) last = bound;
+        const id = randomUUID();
+        const task = { id, report_id: report.id, payload: action, company: bound };
+        const dependencies = predecessors.filter((p) => requestsConflict(p, task)).map((p) => p.id);
         await tx.query(
-          'INSERT INTO dialogue_actions(id,user_id,report_id,position,payload,company) VALUES($1,$2,$3,$4,$5,$6)',
+          'INSERT INTO dialogue_actions(id,user_id,report_id,position,payload,company,depends_on) VALUES($1,$2,$3,$4,$5,$6,$7)',
           [
-            randomUUID(),
+            id,
             actor.id,
             report.id,
             position,
             JSON.stringify(action),
             bound ? JSON.stringify(bound) : null,
+            dependencies,
           ],
         );
+        predecessors.push(task);
+        await requestEvent(tx, report.id, id, 'planned', {
+          payload: action,
+          company: bound,
+          dependsOn: dependencies,
+        });
       }
       if (plan.discussedCompany?.mode === 'named' && plan.discussedCompany.name)
         last = {
@@ -390,6 +420,8 @@ export class DialogueService {
           text: `Задач: ${plan.actions.length}. Подтвердим каждую по очереди.`,
         });
       if (plan.actions.length && plan.mode !== 'replace' && open.length) {
+        const added = predecessors.filter((p) => p.report_id === report.id);
+        const hasBlocker = added.some((task) => open.some((p) => requestsConflict(p, task)));
         const wait =
           open[0].status === 'ready'
             ? 'Предыдущая ждёт подтверждения или отмены.'
@@ -399,7 +431,9 @@ export class DialogueService {
                 ? 'Уточните данные предыдущей задачи или отмените её.'
                 : 'Предыдущая выполняется. Дождитесь завершения.';
         await this.reports.notify(tx, actor.telegramId, {
-          text: `Добавлено: ${plan.actions.length}. Впереди: ${open.length}. Очередь: ${open.length + plan.actions.length}/5.\n${wait}`,
+          text: hasBlocker
+            ? `Добавлено: ${plan.actions.length}. Впереди: ${open.length}. Очередь: ${open.length + plan.actions.length}/5.\n${wait}`
+            : `Ожидают подтверждения: ${open.filter((task) => task.status === 'ready').length}. Всего незавершённых: ${open.length}. Новый запрос обрабатываю отдельно. Очередь: ${open.length + plan.actions.length}/5.`,
         });
       }
       await this.diagnostics?.record(
@@ -490,12 +524,19 @@ export class DialogueService {
     });
   }
   private async next(tx: Sql, actor: Actor) {
-    const [row] = await tx.query(
-      'SELECT * FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence LIMIT 1 FOR UPDATE',
+    const rows = await tx.query(
+      'SELECT * FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence FOR UPDATE',
       [actor.id, pending],
     );
-    if (!row || row.status !== 'queued') return;
-    await this.prepare(tx, actor, row);
+    for (const [index, row] of rows.entries()) {
+      if (row.status !== 'queued') continue;
+      if (
+        rows.some((p) => row.depends_on.includes(p.id)) ||
+        rows.slice(0, index).some((p) => requestsConflict(p, row))
+      )
+        continue;
+      await this.prepare(tx, actor, row);
+    }
   }
   /** Durable completion check: generation alone is not completion; Telegram must accept the PDF. */
   async reconcile() {
@@ -517,6 +558,7 @@ export class DialogueService {
         `dialogue:${row.id}`,
       ]);
       if (job.status === 'sent') {
+        await requestEvent(tx, row.report_id, row.id, 'completed', { fileId: job.file_id });
         await tx.query(
           "UPDATE dialogue_actions SET status='done',payload='{}',snapshot=NULL,resume=NULL WHERE id=$1",
           [row.id],
@@ -527,6 +569,7 @@ export class DialogueService {
         });
         await this.next(tx, actor);
       } else if (['failed', 'cancelled'].includes(job.status)) {
+        await requestEvent(tx, row.report_id, row.id, 'failed', { jobId: job.id });
         const reason =
           job.error ||
           (job.file_id
@@ -867,12 +910,26 @@ export class DialogueService {
       );
       requireCondition(row, 404, 'Действие не найдено');
       if (row.status === 'done' || row.status === 'cancelled') return;
-      const [first] = await tx.query(
-        'SELECT id FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence LIMIT 1',
-        [actor.id, pending],
+      const blockers = await tx.query(
+        "SELECT id FROM dialogue_actions WHERE id=ANY($1::uuid[]) AND status NOT IN ('done','cancelled')",
+        [row.depends_on],
       );
-      requireCondition(first?.id === id, 409, 'Сначала завершите предыдущее действие');
+      requireCondition(!blockers.length, 409, 'Сначала завершите предыдущее действие');
+      const earlier = await tx.query(
+        'SELECT * FROM dialogue_actions WHERE user_id=$1 AND sequence<$2 AND status=ANY($3::text[])',
+        [actor.id, row.sequence, pending],
+      );
+      requireCondition(
+        !earlier.some((p) => requestsConflict(p, row)),
+        409,
+        'Сначала завершите связанное действие',
+      );
       if (operation === 'edit') {
+        const editing = await tx.query(
+          "SELECT id FROM dialogue_actions WHERE user_id=$1 AND id<>$2 AND snapshot->>'editing'='true' AND status='needs_info'",
+          [actor.id, id],
+        );
+        requireCondition(!editing.length, 409, 'Сначала завершите редактирование другого запроса');
         requireCondition(
           ['ready', 'selecting', 'needs_info'].includes(row.status),
           409,
@@ -902,6 +959,7 @@ export class DialogueService {
         requireCondition(!waiting.length, 409, 'Дополнение ещё обрабатывается');
       }
       if (operation === 'skip') {
+        await requestEvent(tx, row.report_id, row.id, 'cancelled', { payload: row.payload });
         const [job] = await tx.query('SELECT * FROM letter_jobs WHERE source_key=$1 FOR UPDATE', [
           `dialogue:${row.id}`,
         ]);
@@ -1074,6 +1132,10 @@ export class DialogueService {
   private async execute(tx: Sql, actor: Actor, row: any) {
     const a = dialogueActionSchema.parse(row.payload);
     const s = row.snapshot;
+    await requestEvent(tx, row.report_id, row.id, 'confirmed', {
+      payload: row.payload,
+      data: s.data,
+    });
     if (s.company) {
       const c = await this.crm.company(actor, s.company.id, tx, true);
       requireCondition(
@@ -1204,6 +1266,10 @@ export class DialogueService {
         await this.crm.createRecord(actor, row.company.id, kind, s.data, null, tx);
     }
     await audit(tx, actor.id, `dialogue.${a.kind}`, row.id, s.company?.id || null);
+    await requestEvent(tx, row.report_id, row.id, 'completed', {
+      kind: a.kind,
+      companyId: s.company?.id,
+    });
     if (row.resume) {
       await tx.query(
         "UPDATE dialogue_actions SET payload=$2,company=$3,resume=NULL,snapshot=NULL,status='queued',options='[]',preview_version=preview_version+1 WHERE id=$1",

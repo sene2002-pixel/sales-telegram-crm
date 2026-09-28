@@ -78,7 +78,7 @@ export class Services {
     this.fileDownloads = new FileDownloads(this.crm, config);
     const ai = new OpenAiAdapter(config, this.diagnostics);
     this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
-    this.reports = new ReportService(db, this.crm, this.diagnostics);
+    this.reports = new ReportService(db, this.crm, this.diagnostics, config.requestRetentionDays);
     const telegram = new TelegramAdapter(config, this.errors);
     this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
     this.voiceContacts = new VoiceContacts(db, this.crm, this.letters, this.reports, config);

@@ -16,10 +16,11 @@ import { isContactCreateRequest, looksLikeContactCommand } from './contact-inten
 import { securityIntent, securityReply } from './pico-security';
 import { DialogueService } from './dialogue';
 import { maxPhotoBytes, photoDataUrl } from './photo-input';
+import { requestEvent } from './request-history';
 
 export class ReportWorker {
   private timer?: NodeJS.Timeout;
-  private running?: Promise<void>;
+  private running = new Set<Promise<void>>();
   private deliveryTimer?: NodeJS.Timeout;
   private delivering?: Promise<void>;
   constructor(
@@ -38,13 +39,15 @@ export class ReportWorker {
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => {
-      if (!this.running)
-        this.running = this.processOne()
+      while (this.running.size < this.config.workerConcurrency) {
+        const work = this.processOne()
           .then(() => {})
           .catch((error) => new ErrorLog(this.db).record(error, { event: 'worker.error' }))
           .finally(() => {
-            this.running = undefined;
+            this.running.delete(work);
           });
+        this.running.add(work);
+      }
     }, 1500);
     // Delivery must continue while transcription/search/AI is awaiting a response.
     this.deliveryTimer = setInterval(() => {
@@ -61,13 +64,19 @@ export class ReportWorker {
     clearInterval(this.deliveryTimer);
     this.timer = undefined;
     this.deliveryTimer = undefined;
-    await Promise.all([this.running, this.delivering]);
+    await Promise.all([...this.running, this.delivering]);
   }
   async tick() {
     await this.processOne();
     await this.deliverOne();
   }
   async processOne() {
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `UPDATE reports SET transcript=NULL,audio_file_id=NULL,image_file_id=NULL,draft=NULL WHERE purpose='dialogue' AND status IN ('cancelled','failed','saved') AND id IN (SELECT report_id FROM request_history WHERE expires_at<=now())`,
+      );
+      await tx.query('DELETE FROM request_history WHERE expires_at<=now()');
+    });
     await this.dialogue?.reconcile();
     const token = randomUUID();
     const report = await this.db.transaction(async (tx) => {
@@ -323,6 +332,14 @@ export class ReportWorker {
             `UPDATE reports SET status=$1,error=$2,image_file_id=CASE WHEN $1='failed' THEN NULL ELSE image_file_id END,lease_until=NULL,lease_token=NULL,available_at=now()+interval '30 seconds',version=version+1 WHERE id=$3 AND lease_token=$4 RETURNING id`,
             [failed ? 'failed' : 'queued', message, report.id, token],
           );
+          if (rows.length)
+            await requestEvent(
+              tx,
+              report.id,
+              report.edit_action_id || null,
+              failed ? 'processing_failed' : 'retry_scheduled',
+              { attempt: report.attempts },
+            );
           if (rows.length && failed && report.chat_id)
             await this.reports.notify(tx, report.chat_id, {
               text: contact

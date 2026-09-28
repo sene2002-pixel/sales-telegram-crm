@@ -417,11 +417,11 @@ test('background status delivery runs independently while processing is busy and
   w.start();
   t.mock.timers.tick(1500);
   for (let i = 0; i < 5; i++) await Promise.resolve();
-  assert.equal(processCalls, 1);
+  assert.equal(processCalls, 3);
   assert.equal(deliveryCalls, 1);
   t.mock.timers.tick(1500);
   for (let i = 0; i < 5; i++) await Promise.resolve();
-  assert.equal(processCalls, 1);
+  assert.equal(processCalls, 3);
   assert.equal(deliveryCalls, 2);
   release();
   await w.stop();

@@ -147,6 +147,82 @@ test('dialogue actions, durable context and individual confirmations', async (t)
   };
   try {
     await t.test(
+      'independent requests proceed while dependent steps wait; request history persists for 30 days',
+      async () => {
+        const a = await actor();
+        const ca = await s.crm.create(a, { name: 'Параллель Альфа' });
+        const cb = await s.crm.create(a, { name: 'Параллель Бета' });
+        const firstReport = await submit(
+          a,
+          plan([
+            contact(named(ca.name)),
+            { kind: 'task_create', company: named(ca.name), text: 'Перезвонить', due: null },
+          ]),
+          'Добавь контакт и задачу Альфе',
+          false,
+        );
+        await submit(a, plan([contact(named(cb.name))]), 'Добавь контакт Бете', false);
+        let rows = await actions(a);
+        assert.equal(rows[0].status, 'ready');
+        assert.equal(rows[1].status, 'queued');
+        assert.equal(rows[2].status, 'ready');
+        assert.deepEqual(rows[1].depends_on, [rows[0].id]);
+        assert.deepEqual(rows[2].depends_on, []);
+        await assert.rejects(s.dialogue.callback(a, rows[1].id, 'confirm', 1), { status: 409 });
+        await s.dialogue.callback(a, rows[2].id, 'edit');
+        await submit(
+          a,
+          plan([{ ...contact(last), data: { ...person, phone: '999' } }]),
+          'Телефон 999',
+          false,
+        );
+        rows = await actions(a);
+        const restarted = new DialogueService(s.crm, s.reports, s.letters, s.letterBot, config);
+        await restarted.callback(a, rows[2].id, 'confirm', rows[2].preview_version);
+        assert.equal(await count(cb.id, 'contact'), 1);
+        assert.equal(await count(ca.id, 'contact'), 0);
+        await restarted.callback(a, rows[0].id, 'confirm', rows[0].preview_version);
+        rows = await actions(a);
+        assert.equal(rows[1].status, 'ready');
+        const [history] = await db.query('SELECT * FROM request_history WHERE report_id=$1', [
+          firstReport.id,
+        ]);
+        assert.equal(history.original_text, 'Добавь контакт и задачу Альфе');
+        assert.equal(history.transcript, history.original_text);
+        assert.ok(
+          Math.abs(
+            (new Date(history.expires_at).getTime() - new Date(history.created_at).getTime()) /
+              86400000 -
+              30,
+          ) < 0.01,
+        );
+        assert.ok(
+          (
+            await db.query('SELECT * FROM request_events WHERE report_id=$1 AND event=$2', [
+              firstReport.id,
+              'completed',
+            ])
+          ).length,
+        );
+        await db.query(
+          "UPDATE request_history SET expires_at=now()-interval '1 second' WHERE report_id=$1",
+          [firstReport.id],
+        );
+        await worker.processOne();
+        assert.equal(
+          (await db.query('SELECT * FROM request_history WHERE report_id=$1', [firstReport.id]))
+            .length,
+          0,
+        );
+        assert.equal(
+          (await db.query('SELECT * FROM request_events WHERE report_id=$1', [firstReport.id]))
+            .length,
+          0,
+        );
+        assert.equal(await count(ca.id, 'contact'), 1);
+      },
+    );
+    await t.test(
       'explicit text and voice edits stay in the same slot at 5/5 and preserve the tail',
       async () => {
         const a = await actor();

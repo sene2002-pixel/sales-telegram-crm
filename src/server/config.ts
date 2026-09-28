@@ -20,12 +20,26 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     extractionModel: env.EXTRACTION_MODEL || 'gpt-4o-mini',
     letterModel: env.LETTER_MODEL || 'gpt-4.1-mini',
     worker: env.WORKER_ENABLED !== 'false',
+    workerConcurrency: Number(env.WORKER_CONCURRENCY || 3),
+    requestRetentionDays: Number(env.REQUEST_RETENTION_DAYS || 30),
     diagnosticUntil: env.DIAGNOSTIC_LOG_UNTIL ? Date.parse(env.DIAGNOSTIC_LOG_UNTIL) : 0,
     timezone: env.REPORT_TIMEZONE || 'Europe/Moscow',
     maxVoiceBytes: Number(env.MAX_VOICE_BYTES || 20_000_000),
     maxVoiceSeconds: Number(env.MAX_VOICE_SECONDS || 600),
   };
   new Intl.DateTimeFormat('ru', { timeZone: config.timezone }).format();
+  if (
+    !Number.isInteger(config.workerConcurrency) ||
+    config.workerConcurrency < 1 ||
+    config.workerConcurrency > 10
+  )
+    throw new Error('WORKER_CONCURRENCY must be between 1 and 10');
+  if (
+    !Number.isInteger(config.requestRetentionDays) ||
+    config.requestRetentionDays < 1 ||
+    config.requestRetentionDays > 365
+  )
+    throw new Error('REQUEST_RETENTION_DAYS must be between 1 and 365');
   if (
     !Number.isFinite(config.diagnosticUntil) ||
     (env.DIAGNOSTIC_LOG_UNTIL &&

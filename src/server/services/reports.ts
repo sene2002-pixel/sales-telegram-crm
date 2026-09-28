@@ -36,6 +36,7 @@ export class ReportService {
     public db: Database,
     private crm: CrmService,
     private diagnostics?: DiagnosticLog,
+    private retentionDays = 30,
   ) {
     this.processing = new ProcessingStatus(db);
   }
@@ -85,6 +86,21 @@ export class ReportService {
         ],
       );
       if (created) {
+        if (input.purpose === 'dialogue')
+          await tx.query(
+            `INSERT INTO request_history(report_id,user_id,source_key,edit_action_id,original_text,audio_file_id,image_file_id,expires_at)
+            VALUES($1,$2,$3,$4,$5,$6,$7,now()+$8*interval '1 day')`,
+            [
+              created.id,
+              actor.id,
+              input.sourceKey,
+              editActionId,
+              input.text || null,
+              input.audioFileId || null,
+              input.imageFileId || null,
+              this.retentionDays,
+            ],
+          );
         await this.diagnostics?.record(
           'report.queued',
           {

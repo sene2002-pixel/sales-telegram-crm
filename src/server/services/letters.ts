@@ -382,8 +382,13 @@ export class LetterService {
     requireCondition(savedSignature, 400, 'Проверьте и сохраните свою подпись');
     const { id: selectedSignatureId, isDefault: _isDefault, ...signatureData } = savedSignature;
     const signature = signatureSchema.parse(signatureData);
-    requireCondition(!this.active.has(actor.id), 409, 'Письмо уже создаётся. Дождитесь завершения');
-    this.active.add(actor.id);
+    const activeKey = `${actor.id}:${companyId}`;
+    requireCondition(
+      !this.active.has(activeKey),
+      409,
+      'Письмо уже создаётся. Дождитесь завершения',
+    );
+    this.active.add(activeKey);
     let temp = '';
     try {
       await this.diagnostics?.record('letter.create.validated', {
@@ -404,7 +409,12 @@ export class LetterService {
             inn: detail.company.inn,
             city: detail.company.city,
             industry: detail.company.industry,
+            notes: detail.company.notes,
           },
+          recentContext: detail.records
+            .filter((r) => r.kind === 'activity')
+            .slice(0, 5)
+            .map((r) => ({ text: r.data.text, occurredOn: r.data.occurredOn })),
           contact: { name: contact.data.name, role: contact.data.role },
         }),
         true,
@@ -626,7 +636,7 @@ export class LetterService {
       });
       throw error;
     } finally {
-      this.active.delete(actor.id);
+      this.active.delete(activeKey);
       if (temp) await rm(temp, { recursive: true, force: true });
     }
   }
