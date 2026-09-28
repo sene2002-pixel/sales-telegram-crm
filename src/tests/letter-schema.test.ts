@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
-import { letterSchema } from '../server/services/letters';
+import { letterSchema, recipientSchema, recipientLines } from '../server/services/letters';
 import { OpenAiAdapter } from '../server/infra/ai';
 import { makeConfig } from '../server/config';
 test('letter source schema omits unsupported uri format but validates URLs locally', () => {
@@ -10,7 +10,11 @@ test('letter source schema omits unsupported uri format but validates URLs local
   assert.equal(schema.properties.sources.items.format, undefined);
   assert.equal(schema.properties.sources.items.pattern, '^https?:\\/\\/[^\\s]+$');
   const data = {
-    recipient_lines: ['Директору', 'ООО Тест'],
+    recipient: {
+      position_dative: 'Директору',
+      company_name: 'ООО Тест',
+      full_name_dative: 'Иванову Ивану',
+    },
     references_paragraph: 'а'.repeat(330),
     sources: ['https://example.com'],
   };
@@ -23,6 +27,42 @@ test('letter source schema omits unsupported uri format but validates URLs local
     'turn0search0',
   ])
     assert.equal(letterSchema.safeParse({ ...data, sources: [source] }).success, false);
+});
+test('recipient header has a single dedicated name field, rejects legacy duplicate lines', () => {
+  const recipient = {
+    position_dative: 'Генеральному директору',
+    company_name: 'ПАО «Интер РАО ЕЭС»',
+    full_name_dative: 'Дрегвалю Сергею Георгиевичу',
+  };
+  assert.deepEqual(recipientLines(recipientSchema.parse(recipient)), [
+    recipient.position_dative,
+    recipient.company_name,
+    recipient.full_name_dative,
+  ]);
+  assert.equal(
+    recipientSchema.safeParse({ ...recipient, full_name_nominative: 'Дрегваль Сергей Георгиевич' })
+      .success,
+    false,
+  );
+  assert.equal(
+    recipientSchema.safeParse({
+      ...recipient,
+      full_name_dative: recipient.full_name_dative + '\nДрегваль Сергей Георгиевич',
+    }).success,
+    false,
+  );
+  assert.equal(
+    letterSchema.safeParse({
+      recipient_lines: [
+        recipient.position_dative,
+        recipient.full_name_dative,
+        'Дрегваль Сергей Георгиевич',
+      ],
+      references_paragraph: 'а'.repeat(330),
+      sources: ['https://example.com'],
+    }).success,
+    false,
+  );
 });
 test('AI invalid schema errors are actionable and do not disclose provider messages', async (t) => {
   t.mock.method(

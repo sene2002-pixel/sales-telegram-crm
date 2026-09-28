@@ -182,6 +182,7 @@ export class BotService {
         if (action === 'dx' && id) await this.dialogue?.callback(actor, id, 'skip');
         if (action === 'dr' && id) await this.dialogue?.callback(actor, id, 'remedy');
         if (action === 'dt' && id) await this.dialogue?.callback(actor, id, 'retry');
+        if (action === 'de' && id) await this.dialogue?.callback(actor, id, 'edit');
         if (action === 'dp' && id)
           await this.dialogue?.callback(actor, id, 'choose', Number(version));
         await this.telegram.call('answerCallbackQuery', {

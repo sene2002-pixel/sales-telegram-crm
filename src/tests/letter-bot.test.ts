@@ -314,7 +314,11 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
           if (body.include) return response(research);
           assert.equal((await db.query("SELECT * FROM records WHERE kind='contact'")).length, 0);
           return response({
-            recipient_lines: fixture.recipient_lines,
+            recipient: {
+              position_dative: fixture.recipient_lines[0],
+              company_name: fixture.recipient_lines[1],
+              full_name_dative: fixture.recipient_lines[2],
+            },
             references_paragraph: fixture.references_paragraph,
             sources,
           });
@@ -380,7 +384,11 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
           JSON.parse(raw as string).include
             ? response(research)
             : response({
-                recipient_lines: fixture.recipient_lines,
+                recipient: {
+                  position_dative: fixture.recipient_lines[0],
+                  company_name: fixture.recipient_lines[1],
+                  full_name_dative: fixture.recipient_lines[2],
+                },
                 references_paragraph: fixture.references_paragraph,
                 sources,
               });

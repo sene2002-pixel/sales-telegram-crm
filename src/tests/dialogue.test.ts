@@ -147,6 +147,109 @@ test('dialogue actions, durable context and individual confirmations', async (t)
   };
   try {
     await t.test(
+      'explicit text and voice edits stay in the same slot at 5/5 and preserve the tail',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Правка Альфа' });
+        await submit(a, plan(Array.from({ length: 5 }, () => contact(named(c.name)))));
+        const before = await actions(a);
+        const first = before[0];
+        const restarted = new DialogueService(s.crm, s.reports, s.letters, s.letterBot, config);
+        await restarted.callback(a, first.id, 'edit');
+        await assert.rejects(restarted.callback(a, before[1].id, 'edit'), { status: 409 });
+        const stranger = await actor();
+        await assert.rejects(restarted.callback(stranger, first.id, 'edit'), { status: 404 });
+        await assert.rejects(s.dialogue.callback(a, first.id, 'confirm', first.preview_version), {
+          status: 409,
+        });
+        assert.equal((await current(a)).snapshot.editing, true);
+        for (const voice of [false, true]) {
+          if (voice) await s.dialogue.callback(a, first.id, 'edit');
+          await submit(
+            a,
+            plan([
+              {
+                ...contact(last),
+                data: { name: null, role: null, phone: voice ? '222' : '111', email: null },
+              },
+            ]),
+            'Уточняю телефон',
+            voice,
+          );
+          const after = await actions(a);
+          assert.equal(after.length, 5);
+          assert.deepEqual(after.slice(1), before.slice(1));
+          assert.equal(after[0].id, first.id);
+          assert.equal(after[0].sequence, first.sequence);
+          assert.equal(after[0].status, 'ready');
+          assert.equal(after[0].payload.data.name, person.name);
+          assert.equal(after[0].payload.data.phone, voice ? '222' : '111');
+          assert.equal(await count(c.id, 'contact'), 0);
+        }
+        const updated = await current(a);
+        await s.dialogue.callback(a, updated.id, 'confirm', updated.preview_version);
+        assert.equal(await count(c.id, 'contact'), 1);
+        assert.equal((await current(a)).id, before[1].id);
+      },
+    );
+    await t.test('edit cannot change an executing letter', async () => {
+      const a = await actor();
+      await submit(a, plan([letter(named('Тест'))]));
+      const row = await current(a);
+      await db.query("UPDATE dialogue_actions SET status='executing' WHERE id=$1", [row.id]);
+      await assert.rejects(s.dialogue.callback(a, row.id, 'edit'), { status: 409 });
+    });
+    await t.test(
+      'photo clarification edits only its bound task and cancelled targets never become new actions',
+      async () => {
+        const a = await actor();
+        const c = await s.crm.create(a, { name: 'Фото Правка' });
+        await submit(a, plan([contact(named(c.name)), contact(named(c.name))]));
+        const first = await current(a);
+        await s.dialogue.callback(a, first.id, 'edit');
+        response = plan([{ ...contact(last), data: { ...person, email: 'photo@example.com' } }]);
+        await s.reports.enqueue(a, {
+          sourceKey: `edit-photo:${++sequence}`,
+          purpose: 'dialogue',
+          imageFileId: 'photo',
+          text: 'Вот правильные данные',
+        });
+        await worker.processOne();
+        assert.equal((await current(a)).id, first.id);
+        assert.equal((await current(a)).payload.data.email, 'photo@example.com');
+        assert.equal((await actions(a)).length, 2);
+        assert.ok(request.input[0].content.some((part: any) => part.type === 'input_image'));
+        await s.dialogue.callback(a, first.id, 'edit');
+        response = plan([contact(named(c.name))]);
+        await s.reports.enqueue(a, {
+          sourceKey: `late-edit:${++sequence}`,
+          purpose: 'dialogue',
+          text: 'Уточнение',
+        });
+        await s.dialogue.callback(a, first.id, 'skip');
+        await worker.processOne();
+        assert.equal((await actions(a)).length, 2);
+        assert.match(await messages(a), /Дополнение не применено/);
+      },
+    );
+    await t.test(
+      'ambiguous or multi-action clarification holds the queue without adding tasks',
+      async () => {
+        const a = await actor();
+        await submit(a, plan([contact(named('Неизвестная'))]));
+        const row = await current(a);
+        await s.dialogue.callback(a, row.id, 'edit');
+        await submit(a, plan([contact(last), letter(last)]));
+        assert.equal((await actions(a)).length, 1);
+        assert.equal((await current(a)).snapshot.editing, true);
+        await submit(a, plan([], { reply: 'Какой телефон?' }));
+        assert.equal((await current(a)).snapshot.editing, true);
+        await submit(a, plan([contact(named('Другая компания'))]));
+        assert.equal((await current(a)).company.name, 'Другая компания');
+        assert.equal((await current(a)).snapshot.remedy, 'company_create');
+      },
+    );
+    await t.test(
       'voice archive and restore require confirmation, preserve records and recheck team membership',
       async () => {
         const leader = await actor(),

@@ -149,10 +149,17 @@ export class DialogueService {
         state.revision++;
       }
       const actions = await tx.query(
-        'SELECT payload,company,status,snapshot FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence',
+        'SELECT id,payload,company,status,snapshot FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence',
         [actor.id, editable],
       );
-      return { revision: state.revision, company: state.company, actions };
+      const target = report.edit_action_id
+        ? actions.find((a) => a.id === report.edit_action_id)
+        : null;
+      return {
+        revision: state.revision,
+        company: state.company,
+        actions: report.edit_action_id ? (target ? [target] : []) : actions,
+      };
     });
     const messageInput = (context: string) =>
       image
@@ -169,7 +176,11 @@ export class DialogueService {
     const plan = dialoguePlanSchema.parse(
       await this.letters.structured(
         dialoguePlanSchema,
-        dialogueInstructions + (image ? photoInstructions : ''),
+        dialogueInstructions +
+          (image ? photoInstructions : '') +
+          (report.edit_action_id
+            ? '\nРежим РЕДАКТИРОВАНИЯ: сообщение и фото — дополнение к единственной задаче в pending. Верни ровно одно обновлённое действие того же kind, сохрани все ранее заданные данные, которые явно не исправлены. Не создавай новые задачи и не применяй обычное назначение фото как контакта. При неясности верни actions=[] и короткий вопрос. mode=replace. Если pending пуст — actions=[], задача недоступна.'
+            : ''),
         messageInput(
           JSON.stringify({
             message: text,
@@ -198,7 +209,7 @@ export class DialogueService {
       ),
     );
     // Photo company data is always a reviewed import, never a blind notes replacement.
-    if (image)
+    if (image && !report.edit_action_id)
       plan.actions = plan.actions.map((action) =>
         action.kind === 'company_create' || action.kind === 'company_update'
           ? { ...action, kind: 'company_import' }
@@ -221,6 +232,54 @@ export class DialogueService {
         'SELECT * FROM dialogue_actions WHERE user_id=$1 AND status=ANY($2::text[]) ORDER BY sequence',
         [actor.id, pending],
       );
+      if (report.edit_action_id) {
+        const row = open[0];
+        const valid = row?.id === report.edit_action_id && editable.includes(row.status);
+        await tx.query(
+          "UPDATE reports SET status='cancelled',transcript=NULL,audio_file_id=NULL,image_file_id=NULL,draft=NULL,error=NULL,lease_token=NULL,lease_until=NULL WHERE id=$1",
+          [report.id],
+        );
+        if (!valid) {
+          await this.reports.notify(tx, actor.telegramId, {
+            text: 'Задача уже недоступна для правки. Дополнение не применено.',
+          });
+          return;
+        }
+        if (plan.actions.length !== 1 || plan.actions[0]!.kind !== row.payload.kind) {
+          await this.waitForEdit(
+            tx,
+            actor,
+            row,
+            plan.actions.length === 0 && plan.reply
+              ? plan.reply
+              : 'Уточните только текущую задачу. Новые действия не добавлены.',
+          );
+          return;
+        }
+        const action = plan.actions[0]!;
+        if ('data' in action && row.payload.data)
+          action.data = { ...row.payload.data, ...supplied(action.data) } as any;
+        const ref = action.company;
+        if (ref.mode === 'named' && ref.name) {
+          const same =
+            row.company &&
+            companyName(ref.name) === companyName(row.company.name) &&
+            (!ref.inn || ref.inn === row.company.inn) &&
+            (!ref.city || normalize(ref.city) === normalize(row.company.city));
+          if (!same) row.company = { name: ref.name, inn: ref.inn, city: ref.city };
+        }
+        row.payload = action;
+        row.snapshot = null;
+        await tx.query(
+          "UPDATE dialogue_actions SET payload=$2,company=$3,snapshot=NULL,options='[]',status='queued',preview_version=preview_version+1 WHERE id=$1",
+          [row.id, JSON.stringify(action), JSON.stringify(row.company)],
+        );
+        await this.remember(tx, actor.id, state.company);
+        await this.prepare(tx, actor, row);
+        return;
+      }
+      // A previously queued message must not replace the task now awaiting explicit editing.
+      if (open[0]?.snapshot?.editing) plan.mode = 'append';
       requireCondition(
         !plan.actions.length ||
           (plan.mode === 'replace'
@@ -360,6 +419,27 @@ export class DialogueService {
       )
       .filter((c) => !target.city || normalize(c.data.city) === normalize(target.city));
   }
+  private async waitForEdit(
+    tx: Sql,
+    actor: Actor,
+    row: any,
+    question = 'Пришлите дополнение: текст, голос или фото. Задача сохраняет место, очередь ждёт.',
+  ) {
+    await tx.query(
+      "UPDATE dialogue_actions SET status='needs_info',snapshot=$2,options='[]',preview_version=preview_version+1 WHERE id=$1",
+      [row.id, JSON.stringify({ editing: true, question })],
+    );
+    await tx.query(
+      'UPDATE dialogue_state SET revision=revision+1,updated_at=now() WHERE user_id=$1',
+      [actor.id],
+    );
+    await this.reports.notify(tx, actor.telegramId, {
+      text: `Редактирование: ${titles[row.payload.kind as DialogueAction['kind']]}${row.company ? ` · ${row.company.name}` : ''}\n${question}`,
+      reply_markup: {
+        inline_keyboard: [[{ text: 'Отменить задачу', callback_data: `dx:${row.id}` }]],
+      },
+    });
+  }
   private async ask(
     tx: Sql,
     actor: Actor,
@@ -376,6 +456,7 @@ export class DialogueService {
       reply_markup: {
         inline_keyboard: [
           ...(remedy ? [[{ text: titles[remedy], callback_data: `dr:${row.id}` }]] : []),
+          [{ text: 'Редактировать запрос', callback_data: `de:${row.id}` }],
           [{ text: 'Отменить задачу', callback_data: `dx:${row.id}` }],
         ],
       },
@@ -402,6 +483,7 @@ export class DialogueService {
           ...options.map((o, i) => [
             { text: `${i + 1}. ${o.label}`.slice(0, 100), callback_data: `dp:${row.id}:${i}` },
           ]),
+          [{ text: 'Редактировать запрос', callback_data: `de:${row.id}` }],
           [{ text: 'Отменить задачу', callback_data: `dx:${row.id}` }],
         ],
       },
@@ -763,6 +845,7 @@ export class DialogueService {
             { text: 'Подтвердить', callback_data: `da:${row.id}:${preview.preview_version}` },
             { text: 'Отменить задачу', callback_data: `dx:${row.id}` },
           ],
+          [{ text: 'Редактировать запрос', callback_data: `de:${row.id}` }],
         ],
       },
     });
@@ -771,7 +854,7 @@ export class DialogueService {
   async callback(
     actorInput: Actor,
     id: string,
-    operation: 'confirm' | 'skip' | 'choose' | 'remedy' | 'retry',
+    operation: 'confirm' | 'skip' | 'choose' | 'remedy' | 'retry' | 'edit',
     index?: number,
   ) {
     idSchema.parse(id);
@@ -789,6 +872,35 @@ export class DialogueService {
         [actor.id, pending],
       );
       requireCondition(first?.id === id, 409, 'Сначала завершите предыдущее действие');
+      if (operation === 'edit') {
+        requireCondition(
+          ['ready', 'selecting', 'needs_info'].includes(row.status),
+          409,
+          'Выполняющуюся задачу редактировать нельзя',
+        );
+        const [job] = await tx.query('SELECT id FROM letter_jobs WHERE source_key=$1', [
+          `dialogue:${row.id}`,
+        ]);
+        requireCondition(
+          !job,
+          409,
+          'Письмо уже запускалось. Отмените задачу и создайте новый запрос',
+        );
+        await this.waitForEdit(tx, actor, row);
+        return;
+      }
+      requireCondition(
+        !row.snapshot?.editing || operation === 'skip',
+        409,
+        'Жду дополнение текстом, голосом или фото',
+      );
+      if (operation === 'confirm') {
+        const waiting = await tx.query(
+          "SELECT id FROM reports WHERE author_id=$1 AND edit_action_id=$2 AND status IN ('queued','processing')",
+          [actor.id, id],
+        );
+        requireCondition(!waiting.length, 409, 'Дополнение ещё обрабатывается');
+      }
       if (operation === 'skip') {
         const [job] = await tx.query('SELECT * FROM letter_jobs WHERE source_key=$1 FOR UPDATE', [
           `dialogue:${row.id}`,

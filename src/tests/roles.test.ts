@@ -43,7 +43,11 @@ test(
             {
               type: 'output_text',
               text: JSON.stringify({
-                recipient_lines: fixture.recipient_lines,
+                recipient: {
+                  position_dative: fixture.recipient_lines[0],
+                  company_name: fixture.recipient_lines[1],
+                  full_name_dative: fixture.recipient_lines[2],
+                },
                 references_paragraph: fixture.references_paragraph,
                 sources: ['https://example.com'],
               }),

@@ -59,8 +59,18 @@ export class ReportService {
       'Нужен текст или голосовое сообщение',
     );
     return this.db.transaction(async (tx) => {
+      // Serialize arrival with dialogue callbacks; bind clarification before transcription/AI.
+      let editActionId: string | null = null;
+      if (input.purpose === 'dialogue') {
+        await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+        const [editing] = await tx.query(
+          "SELECT id FROM dialogue_actions WHERE user_id=$1 AND status='needs_info' AND snapshot->>'editing'='true' ORDER BY sequence LIMIT 1",
+          [actor.id],
+        );
+        editActionId = editing?.id ?? null;
+      }
       const [created] = await tx.query(
-        `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at,purpose,image_file_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
+        `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at,purpose,image_file_id,edit_action_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
         [
           randomUUID(),
           actor.id,
@@ -71,6 +81,7 @@ export class ReportService {
           input.sentAt || new Date().toISOString(),
           input.purpose || 'report',
           input.imageFileId || null,
+          editActionId,
         ],
       );
       if (created) {
