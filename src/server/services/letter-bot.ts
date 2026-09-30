@@ -621,11 +621,15 @@ export class LetterBot {
               reply_markup: {
                 inline_keyboard: [
                   [
+                    { text: 'Отменить', callback_data: `lz:${job.id}:${rows[0].research_version}` },
                     {
                       text: 'Подтвердить',
                       callback_data: `ly:${job.id}:${rows[0].research_version}`,
                     },
-                    { text: 'Отмена', callback_data: `ln:${job.id}:${rows[0].research_version}` },
+                    {
+                      text: 'Редактировать',
+                      callback_data: `ln:${job.id}:${rows[0].research_version}`,
+                    },
                   ],
                 ],
               },

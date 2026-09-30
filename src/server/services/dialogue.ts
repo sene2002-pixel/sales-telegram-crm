@@ -883,13 +883,22 @@ export class DialogueService {
     await this.reports.notify(tx, actor.telegramId, {
       text: previewText,
       reply_markup: {
-        inline_keyboard: [
-          [
-            { text: 'Подтвердить', callback_data: `da:${row.id}:${preview.preview_version}` },
-            { text: 'Отменить задачу', callback_data: `dx:${row.id}` },
-          ],
-          [{ text: 'Редактировать запрос', callback_data: `de:${row.id}` }],
-        ],
+        inline_keyboard:
+          row.payload.kind === 'letter'
+            ? [
+                [
+                  { text: 'Отменить', callback_data: `dx:${row.id}` },
+                  { text: 'Подтвердить', callback_data: `da:${row.id}:${preview.preview_version}` },
+                  { text: 'Редактировать', callback_data: `de:${row.id}` },
+                ],
+              ]
+            : [
+                [
+                  { text: 'Подтвердить', callback_data: `da:${row.id}:${preview.preview_version}` },
+                  { text: 'Отменить задачу', callback_data: `dx:${row.id}` },
+                ],
+                [{ text: 'Редактировать запрос', callback_data: `de:${row.id}` }],
+              ],
       },
     });
   }
