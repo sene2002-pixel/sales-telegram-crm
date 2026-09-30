@@ -208,11 +208,15 @@ export class BotService {
           },
         );
       }
-      if (msg?.text && (await this.letters?.acceptInn(actor, msg.text))) return { ok: true };
+      if (msg?.text && (await this.letters?.acceptInn(actor, msg.text, msg.message_id)))
+        return { ok: true };
       const query = msg?.text ? letterQuery(msg.text) : null;
       if (query !== null && this.letters && !this.dialogue) {
         await this.diagnostics?.record('command.routed', { route: 'letter', query });
         await this.letters.enqueue(actor, `telegram:${update.update_id}`, query);
+        await this.reports.messages.remember(this.crm.db, chatId, msg?.message_id, [
+          `source:telegram:${update.update_id}`,
+        ]);
         return { ok: true };
       }
       if (command === '/crm')
@@ -269,6 +273,7 @@ export class BotService {
           sourceKey: `telegram:${update.update_id}`,
           chatId,
           imageFileId: file.file_id,
+          messageId: msg.message_id,
           text: msg.caption,
           sentAt: new Date(msg.date * 1000).toISOString(),
           purpose: 'dialogue',
@@ -289,6 +294,7 @@ export class BotService {
           sourceKey: `telegram:${update.update_id}`,
           chatId,
           audioFileId: msg.voice?.file_id,
+          messageId: msg.message_id,
           text:
             command === '/letter'
               ? msg.text?.replace(/^\/letter(?:@\w+)?/, 'Подготовь письмо')
@@ -316,6 +322,7 @@ export class BotService {
           sourceKey: `telegram:${update.update_id}`,
           chatId,
           audioFileId: msg.voice?.file_id,
+          messageId: msg.message_id,
           text: msg.text,
           sentAt: new Date(msg.date * 1000).toISOString(),
         });

@@ -128,7 +128,7 @@ export class LetterBot {
     });
   }
 
-  async acceptInn(actor: Actor, text: string) {
+  async acceptInn(actor: Actor, text: string, messageId?: number) {
     if (!/^(?:ИНН\s*)?\d[\d\s]*$/iu.test(text.trim())) return false;
     return this.crm.db.transaction(async (tx) => {
       const [user] = await tx.query('SELECT active FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
@@ -138,6 +138,7 @@ export class LetterBot {
         [actor.id],
       );
       if (!job) return false;
+      await this.reports.messages.remember(tx, actor.telegramId, messageId, [`letter:${job.id}`]);
       const inn = text.replace(/\D/g, '');
       if (inn.length !== 10) {
         await this.reports.notify(

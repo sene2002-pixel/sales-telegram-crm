@@ -34,6 +34,7 @@ test('task cleanup preserves unfinished and shared messages, survives restart an
     const report = await s.reports.enqueue(actor, {
       sourceKey: 'test-cleanup',
       chatId: '123',
+      messageId: 3,
       purpose: 'dialogue',
       text: 'Две задачи',
     });
@@ -48,7 +49,10 @@ test('task cleanup preserves unfinished and shared messages, survives restart an
     assert.equal(callbackTask(`da:${a}:1`), `dialogue:${a}`);
     await messages.remember(db, '123', 1, [`dialogue:${a}`]);
     await messages.remember(db, '123', 2, [`dialogue:${b}`]);
-    await messages.remember(db, '123', 3, ['source:test-cleanup']);
+    assert.deepEqual(
+      (await db.query("SELECT task_keys FROM task_messages WHERE message_id='3'"))[0].task_keys,
+      ['source:test-cleanup'],
+    );
     const deleted: string[] = [];
     let failure = true;
     const messenger: Messenger = {

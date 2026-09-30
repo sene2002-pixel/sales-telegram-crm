@@ -48,6 +48,7 @@ export class ReportService {
     input: {
       sourceKey: string;
       chatId?: string;
+      messageId?: number;
       audioFileId?: string;
       imageFileId?: string;
       text?: string;
@@ -89,6 +90,10 @@ export class ReportService {
         ],
       );
       if (created) {
+        if (input.chatId && input.messageId)
+          await this.messages.remember(tx, input.chatId, input.messageId, [
+            `source:${input.sourceKey}`,
+          ]);
         if (input.purpose === 'dialogue')
           await tx.query(
             `INSERT INTO request_history(report_id,user_id,source_key,edit_action_id,original_text,audio_file_id,image_file_id,expires_at)
