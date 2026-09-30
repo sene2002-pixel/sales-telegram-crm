@@ -41,6 +41,17 @@ export const recipientSchema = z
 export function recipientLines(recipient: z.infer<typeof recipientSchema>) {
   return [recipient.position_dative, recipient.company_name, recipient.full_name_dative];
 }
+export function letterFilename(companyName: string, date: string) {
+  const company =
+    companyName
+      .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+      .trim() || 'Компания';
+  const [year, month, day] = date.split('-');
+  return `Информационное письмо — ${company} — ${day}.${month}.${year}.pdf`;
+}
 export const letterSchema = z.object({
   recipient: recipientSchema,
   references_paragraph: z
@@ -596,7 +607,7 @@ export class LetterService {
             companyId,
             'file',
             {
-              name: `Информационное_письмо_${reserved.number}.pdf`,
+              name: letterFilename(detail.company.name, date),
               category: 'docs',
               size: content.length,
               key,
