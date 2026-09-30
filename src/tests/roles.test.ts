@@ -66,7 +66,9 @@ test(
       const second = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
         contactId: contact.id,
       }).expect(201);
-      assert.notEqual(second.body.record.data.name, result.body.record.data.name);
+      assert.equal(second.body.record.data.name, result.body.record.data.name);
+      assert.notEqual(second.body.record.id, result.body.record.id);
+      assert.notEqual(second.body.record.data.key, result.body.record.data.key);
     } finally {
       s.letters.ai.request = original;
     }

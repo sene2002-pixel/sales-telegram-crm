@@ -177,6 +177,8 @@ export class BotService {
         if (action === 'cp' && id) await this.voiceContacts?.choose(actor, id, Number(version));
         if (action === 'lp' && id) await this.letters?.chooseSignature(actor, id, Number(version));
         if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
+        if (action && ['ly', 'ln', 'li', 'lz'].includes(action) && id)
+          await this.letters?.reviewCompany(actor, id, action, Number(version));
         if (action === 'da' && id)
           await this.dialogue?.callback(actor, id, 'confirm', Number(version));
         if (action === 'dx' && id) await this.dialogue?.callback(actor, id, 'skip');
@@ -197,6 +199,7 @@ export class BotService {
         await this.diagnostics?.record('telegram.callback.completed', { action, entityId: id });
         return { ok: true };
       }
+      if (msg?.text && (await this.letters?.acceptInn(actor, msg.text))) return { ok: true };
       const query = msg?.text ? letterQuery(msg.text) : null;
       if (query !== null && this.letters && !this.dialogue) {
         await this.diagnostics?.record('command.routed', { route: 'letter', query });

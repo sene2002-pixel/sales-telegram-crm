@@ -56,6 +56,103 @@ export function letterQuery(text: string): string | null {
 }
 
 export class LetterBot {
+  async reviewCompany(actor: Actor, id: string, operation: string, version: number) {
+    idSchema.parse(id);
+    await this.crm.db.transaction(async (tx) => {
+      const [user] = await tx.query('SELECT active FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      requireCondition(user?.active, 403, 'Доступ отозван');
+      const [job] = await tx.query(
+        'SELECT * FROM letter_jobs WHERE id=$1 AND user_id=$2 FOR UPDATE',
+        [id, actor.id],
+      );
+      requireCondition(job, 404, 'Задача не найдена');
+      requireCondition(job.research_version === version, 409, 'Используйте последнее сообщение');
+      requireCondition(
+        ['waiting_company', 'company_rejected', 'waiting_inn'].includes(job.status),
+        409,
+        'Используйте последнее сообщение',
+      );
+      if (operation === 'ly') {
+        requireCondition(
+          job.status === 'waiting_company' && job.research,
+          409,
+          'Сначала уточните компанию',
+        );
+        await tx.query(
+          "UPDATE letter_jobs SET status='queued',research_confirmed=true,attempts=0,available_at=now() WHERE id=$1",
+          [id],
+        );
+        await this.reports.notify(tx, actor.telegramId, {
+          text: 'Компания подтверждена. Готовлю письмо.',
+        });
+      } else if (operation === 'ln') {
+        requireCondition(job.status === 'waiting_company', 409, 'Используйте последнее сообщение');
+        await tx.query(
+          "UPDATE letter_jobs SET status='company_rejected',research_confirmed=false WHERE id=$1",
+          [id],
+        );
+        await this.reports.notify(tx, actor.telegramId, {
+          text: 'У компаний бывают одинаковые названия. ИНН поможет найти нужную.',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Ввести ИНН', callback_data: `li:${id}:${version}` }],
+              [{ text: 'Отменить задачу', callback_data: `lz:${id}:${version}` }],
+            ],
+          },
+        });
+      } else if (operation === 'li') {
+        requireCondition(job.status === 'company_rejected', 409, 'Используйте последнее сообщение');
+        const other = await tx.query(
+          "SELECT id FROM letter_jobs WHERE user_id=$1 AND status='waiting_inn' AND id<>$2",
+          [actor.id, id],
+        );
+        requireCondition(
+          !other.length,
+          409,
+          'Сначала введите ИНН для предыдущего письма или отмените его',
+        );
+        await tx.query("UPDATE letter_jobs SET status='waiting_inn' WHERE id=$1", [id]);
+        await this.reports.notify(tx, actor.telegramId, {
+          text: 'Пришлите ИНН компании: 10 цифр.',
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Отменить задачу', callback_data: `lz:${id}:${version}` }]],
+          },
+        });
+      } else {
+        await tx.query(
+          "UPDATE letter_jobs SET status='cancelled',research=NULL,research_confirmed=false WHERE id=$1",
+          [id],
+        );
+        await this.reports.notify(tx, actor.telegramId, { text: 'Письмо отменено.' });
+      }
+    });
+  }
+
+  async acceptInn(actor: Actor, text: string) {
+    if (!/^(?:ИНН\s*)?\d[\d\s]*$/iu.test(text.trim())) return false;
+    return this.crm.db.transaction(async (tx) => {
+      const [user] = await tx.query('SELECT active FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      requireCondition(user?.active, 403, 'Доступ отозван');
+      const [job] = await tx.query(
+        "SELECT * FROM letter_jobs WHERE user_id=$1 AND status='waiting_inn' ORDER BY created_at LIMIT 1 FOR UPDATE",
+        [actor.id],
+      );
+      if (!job) return false;
+      const inn = text.replace(/\D/g, '');
+      if (inn.length !== 10) {
+        await this.reports.notify(tx, actor.telegramId, { text: 'Нужен ИНН компании из 10 цифр.' });
+        return true;
+      }
+      await tx.query(
+        "UPDATE letter_jobs SET query=$2,status='queued',research=NULL,research_confirmed=false,attempts=0,error=NULL,available_at=now() WHERE id=$1",
+        [job.id, `ИНН ${inn}`],
+      );
+      await this.reports.notify(tx, actor.telegramId, {
+        text: 'Ищу компанию по ИНН. Затем попрошу подтверждение.',
+      });
+      return true;
+    });
+  }
   private timer?: NodeJS.Timeout;
   private running = new Set<Promise<void>>();
   constructor(
@@ -107,7 +204,7 @@ export class LetterBot {
         'Сначала создайте подпись голосовым «Добавь подпись…» или в «Мой профиль → Подписи для писем»',
       );
       const active = await tx.query(
-        "SELECT id FROM letter_jobs WHERE user_id=$1 AND status IN ('waiting_signature','queued','processing','ready','sending')",
+        "SELECT id FROM letter_jobs WHERE user_id=$1 AND status IN ('waiting_signature','waiting_company','company_rejected','waiting_inn','queued','processing','ready','sending')",
         [actor.id],
       );
       if (active.length)
@@ -483,13 +580,15 @@ export class LetterBot {
             true,
             true,
           );
-        const research = this.diagnostics
-          ? await this.diagnostics.span(
-              'letter.company_research',
-              { query: job.query },
-              researchCall,
-            )
-          : await researchCall();
+        const research = job.research_confirmed
+          ? recipientResearchSchema.parse(job.research)
+          : this.diagnostics
+            ? await this.diagnostics.span(
+                'letter.company_research',
+                { query: job.query },
+                researchCall,
+              )
+            : await researchCall();
         await this.diagnostics?.record('letter.research_result', {
           status: research.status,
           company: research.company,
@@ -509,6 +608,31 @@ export class LetterBot {
           422,
           'Не удалось достоверно найти компанию или ЛПР. Пришлите новый запрос с ИНН и ссылкой на карточку компании',
         );
+        if (!job.research_confirmed) {
+          await this.crm.db.transaction(async (tx) => {
+            const rows = await tx.query(
+              "UPDATE letter_jobs SET status='waiting_company',research=$3,research_confirmed=false,research_version=research_version+1,lease_token=NULL,lease_until=NULL,attempts=0 WHERE id=$1 AND lease_token=$2 RETURNING id,research_version",
+              [job.id, token, JSON.stringify(research)],
+            );
+            if (!rows.length) return;
+            await this.reports.processing.finish(tx, job.source_key);
+            await this.reports.notify(tx, actor.telegramId, {
+              text: `Проверьте компанию:\n${research.company!.name}\nИНН: ${research.company!.inn}\nГород: ${research.company!.city || 'не указан'}\nОтрасль: ${research.company!.industry}\nПолучатель: ${research.recipient!.role}, ${research.recipient!.name}`,
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: 'Подтвердить',
+                      callback_data: `ly:${job.id}:${rows[0].research_version}`,
+                    },
+                    { text: 'Отмена', callback_data: `ln:${job.id}:${rows[0].research_version}` },
+                  ],
+                ],
+              },
+            });
+          });
+          return;
+        }
         const data = companySchema.parse({
           ...research.company,
           notes: 'Источники проверки:\n' + research.sources.join('\n'),
@@ -557,7 +681,13 @@ export class LetterBot {
             actor,
             company.id,
             { contactId: randomUUID(), signatureId: job.signature_id },
-            { ...recipient, sources: research.sources, jobId: job.id, leaseToken: token },
+            {
+              ...recipient,
+              sources: research.sources,
+              jobId: job.id,
+              leaseToken: token,
+              confirmedCompany: research.company!,
+            },
           );
         const created = this.diagnostics
           ? await this.diagnostics.span(

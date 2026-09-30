@@ -125,6 +125,13 @@ export class Database implements Sql {
         signature_id uuid, created_at timestamptz NOT NULL DEFAULT now()
       )`);
       await tx.query('ALTER TABLE letter_jobs ALTER COLUMN signature_id DROP NOT NULL');
+      await tx.query('ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research jsonb');
+      await tx.query(
+        'ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research_version integer NOT NULL DEFAULT 0',
+      );
+      await tx.query(
+        'ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research_confirmed boolean NOT NULL DEFAULT false',
+      );
       await tx.query(
         "ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS signature_options jsonb NOT NULL DEFAULT '[]'",
       );

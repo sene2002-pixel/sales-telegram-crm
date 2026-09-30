@@ -358,6 +358,7 @@ export class LetterService {
       sources: string[];
       jobId: string;
       leaseToken: string;
+      confirmedCompany?: { name: string; inn: string; city: string; industry: string };
     },
   ) {
     const startedAt = Date.now();
@@ -421,6 +422,7 @@ export class LetterService {
             city: detail.company.city,
             industry: detail.company.industry,
             notes: detail.company.notes,
+            ...discovered?.confirmedCompany,
           },
           recentContext: detail.records
             .filter((r) => r.kind === 'activity')

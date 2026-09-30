@@ -303,6 +303,29 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
       );
     });
     await t.test(
+      'company review persists across restart and cancellation creates no CRM records',
+      async () => {
+        s.letters.ai.request = async () => response(research);
+        await bot.enqueue(actor, 'cancel-review', 'Ромашка');
+        await bot.tick();
+        const [job] = await db.query("SELECT * FROM letter_jobs WHERE source_key='cancel-review'");
+        assert.equal(job.status, 'waiting_company');
+        const restarted = new LetterBot(s.crm, s.letters, s.reports, telegram, config);
+        await restarted.reviewCompany(actor, job.id, 'ln', 1);
+        await restarted.reviewCompany(actor, job.id, 'lz', 1);
+        await restarted.tick();
+        assert.equal(
+          (await db.query('SELECT status FROM letter_jobs WHERE id=$1', [job.id]))[0].status,
+          'cancelled',
+        );
+        assert.equal((await db.query('SELECT * FROM companies')).length, 0);
+        assert.equal(
+          (await db.query("SELECT * FROM records WHERE kind IN ('contact','file')")).length,
+          0,
+        );
+      },
+    );
+    await t.test(
       'PDF is generated before contact save, delivery retries reuse the same file',
       { skip: !process.env.LETTER_PYTHON },
       async () => {
@@ -337,6 +360,20 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         };
         await s.reports.processing.deliverOne(telegram);
         await bot.tick();
+        const [preview] = await db.query("SELECT * FROM letter_jobs WHERE source_key='success'");
+        assert.equal(preview.status, 'waiting_company');
+        assert.equal((await db.query('SELECT * FROM companies')).length, 0);
+        await assert.rejects(bot.reviewCompany(other, preview.id, 'ly', 1), /не найдена/);
+        await bot.reviewCompany(actor, preview.id, 'ln', 1);
+        await assert.rejects(bot.reviewCompany(actor, preview.id, 'ly', 1), /Сначала уточните/);
+        await bot.reviewCompany(actor, preview.id, 'li', 1);
+        assert.equal(await bot.acceptInn(actor, '123'), true);
+        assert.equal(await bot.acceptInn(actor, '7707083893'), true);
+        await bot.tick();
+        await assert.rejects(bot.reviewCompany(actor, preview.id, 'ly', 1), /последнее сообщение/);
+        await bot.reviewCompany(actor, preview.id, 'ly', 2);
+        await assert.rejects(bot.reviewCompany(actor, preview.id, 'ly', 2), /последнее сообщение/);
+        await bot.tick();
         const [job] = await db.query("SELECT * FROM letter_jobs WHERE source_key='success'");
         assert.equal(job.status, 'ready');
         assert.equal((await db.query("SELECT * FROM records WHERE kind='contact'")).length, 1);
@@ -365,7 +402,7 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
           assert.equal(deferred.file_id, job.file_id);
         }
         assert.equal(sends, 0, 'cleanup retries must not attempt PDF delivery');
-        assert.equal(requests, 2, 'cleanup retries must not regenerate the PDF');
+        assert.equal(requests, 3, 'cleanup retries must not regenerate the PDF');
         telegram.deleteProcessing = removeStatus;
         await db.query('UPDATE letter_jobs SET available_at=now() WHERE id=$1', [job.id]);
         await bot.tick();
@@ -373,7 +410,7 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         await db.query('UPDATE letter_jobs SET available_at=now() WHERE id=$1', [job.id]);
         await bot.tick();
         assert.deepEqual(deliveryOrder, ['status', 'delete', 'pdf', 'pdf']);
-        assert.equal(requests, 2);
+        assert.equal(requests, 3);
         assert.equal(
           (await db.query('SELECT status FROM letter_jobs WHERE id=$1', [job.id]))[0].status,
           'sent',
@@ -393,6 +430,11 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
                 sources,
               });
         await bot.enqueue(actor, 'repeat-company', 'ООО Ромашка');
+        await bot.tick();
+        const [repeatPreview] = await db.query(
+          "SELECT * FROM letter_jobs WHERE source_key='repeat-company'",
+        );
+        await bot.reviewCompany(actor, repeatPreview.id, 'ly', 1);
         await bot.tick();
         assert.equal((await db.query('SELECT * FROM companies')).length, 1);
         assert.equal((await db.query("SELECT * FROM records WHERE kind='contact'")).length, 1);
