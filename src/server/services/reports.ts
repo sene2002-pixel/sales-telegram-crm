@@ -15,6 +15,7 @@ import { requireCondition } from '../domain/errors';
 import { isLeader } from './auth';
 import { audit } from '../infra/audit';
 import { ProcessingStatus } from '../infra/processing-status';
+import { TaskMessages } from './task-messages';
 
 export function mapReport(r: any): Report {
   return {
@@ -32,6 +33,7 @@ export function mapReport(r: any): Report {
 }
 export class ReportService {
   readonly processing: ProcessingStatus;
+  readonly messages: TaskMessages;
   constructor(
     public db: Database,
     private crm: CrmService,
@@ -39,6 +41,7 @@ export class ReportService {
     private retentionDays = 30,
   ) {
     this.processing = new ProcessingStatus(db);
+    this.messages = new TaskMessages(db);
   }
   async enqueue(
     actor: Actor,
@@ -137,7 +140,7 @@ export class ReportService {
       return mapReport(existing);
     });
   }
-  async notify(tx: Sql, chatId: string, payload: unknown) {
+  async notify(tx: Sql, chatId: string, payload: unknown, taskKey?: string) {
     const id = randomUUID();
     const processingKey = this.processing.key;
     const generation = processingKey ? await this.processing.finish(tx, processingKey) : null;
@@ -154,6 +157,10 @@ export class ReportService {
       ],
     );
     await this.diagnostics?.record('notification.queued', { outboxId: id }, tx);
+    await tx.query('UPDATE outbox SET task_keys=$2 WHERE id=$1', [
+      id,
+      JSON.stringify(taskKey ? [taskKey] : this.messages.keys(payload, processingKey)),
+    ]);
   }
   async list(actor: Actor) {
     return (

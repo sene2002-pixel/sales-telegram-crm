@@ -140,16 +140,26 @@ export class LetterBot {
       if (!job) return false;
       const inn = text.replace(/\D/g, '');
       if (inn.length !== 10) {
-        await this.reports.notify(tx, actor.telegramId, { text: 'Нужен ИНН компании из 10 цифр.' });
+        await this.reports.notify(
+          tx,
+          actor.telegramId,
+          { text: 'Нужен ИНН компании из 10 цифр.' },
+          `letter:${job.id}`,
+        );
         return true;
       }
       await tx.query(
         "UPDATE letter_jobs SET query=$2,status='queued',research=NULL,research_confirmed=false,attempts=0,error=NULL,available_at=now() WHERE id=$1",
         [job.id, `ИНН ${inn}`],
       );
-      await this.reports.notify(tx, actor.telegramId, {
-        text: 'Ищу компанию по ИНН. Затем попрошу подтверждение.',
-      });
+      await this.reports.notify(
+        tx,
+        actor.telegramId,
+        {
+          text: 'Ищу компанию по ИНН. Затем попрошу подтверждение.',
+        },
+        `letter:${job.id}`,
+      );
       return true;
     });
   }
@@ -541,7 +551,12 @@ export class LetterBot {
             });
             return;
           }
-          const sendPdf = () => this.telegram.sendPdf(actor.telegramId, content, file.data.name);
+          const sendPdf = async () => {
+            const id = await this.telegram.sendPdf(actor.telegramId, content, file.data.name);
+            await this.reports.messages.remember(this.crm.db, actor.telegramId, id, [
+              `letter:${job.id}`,
+            ]);
+          };
           if (this.diagnostics)
             await this.diagnostics.span(
               'letter.pdf_delivery',

@@ -535,7 +535,7 @@ export class DialogueService {
         rows.slice(0, index).some((p) => requestsConflict(p, row))
       )
         continue;
-      await this.prepare(tx, actor, row);
+      await this.reports.messages.run(`dialogue:${row.id}`, () => this.prepare(tx, actor, row));
     }
   }
   /** Durable completion check: generation alone is not completion; Telegram must accept the PDF. */
@@ -564,11 +564,23 @@ export class DialogueService {
           [row.id],
         );
         await audit(tx, actor.id, 'dialogue.letter', row.id);
-        await this.reports.notify(tx, actor.telegramId, {
-          text: 'PDF отправлен вам и сохранён в CRM.',
-        });
+        await this.reports.notify(
+          tx,
+          actor.telegramId,
+          {
+            text: 'PDF отправлен вам и сохранён в CRM.',
+          },
+          `dialogue:${row.id}`,
+        );
         await this.next(tx, actor);
-      } else if (['failed', 'cancelled'].includes(job.status)) {
+      } else if (job.status === 'cancelled') {
+        await requestEvent(tx, row.report_id, row.id, 'cancelled', { jobId: job.id });
+        await tx.query(
+          "UPDATE dialogue_actions SET status='cancelled',payload='{}',snapshot=NULL,resume=NULL WHERE id=$1",
+          [row.id],
+        );
+        await this.next(tx, actor);
+      } else if (job.status === 'failed') {
         await requestEvent(tx, row.report_id, row.id, 'failed', { jobId: job.id });
         const reason =
           job.error ||

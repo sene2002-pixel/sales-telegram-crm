@@ -2,7 +2,7 @@ import { Config } from '../config';
 import { ErrorLog } from './error-log';
 import { DomainError, requireCondition } from '../domain/errors';
 export interface Messenger {
-  send(chatId: string, payload: any): Promise<void>;
+  send(chatId: string, payload: any): Promise<number | void>;
   download(fileId: string, maxBytes?: number): Promise<Uint8Array>;
   sendProcessing?(chatId: string, text: string): Promise<number>;
   editProcessing?(chatId: string, messageId: string, text: string): Promise<boolean>;
@@ -84,7 +84,7 @@ export class TelegramAdapter implements Messenger {
       throw error;
     }
   }
-  async send(chatId: string, payload: any) {
+  async send(chatId: string, payload: any): Promise<number | void> {
     // The menu can be updated independently (e.g. by a dynamic tunnel sync).
     // Resolve the plain CRM button when sending, not from a stale PUBLIC_URL.
     const keyboard = payload.reply_markup?.inline_keyboard;
@@ -126,7 +126,8 @@ export class TelegramAdapter implements Messenger {
         },
       };
     }
-    await this.call('sendMessage', { chat_id: chatId, ...payload });
+    const result = await this.call('sendMessage', { chat_id: chatId, ...payload });
+    return result?.message_id as number | undefined;
   }
   async sendDocument(chatId: string, content: string, filename: string) {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
@@ -149,7 +150,7 @@ export class TelegramAdapter implements Messenger {
     const result = (await response.json()) as any;
     requireCondition(result.ok, 502, 'Telegram отклонил отправку файла');
   }
-  async sendPdf(chatId: string, content: Uint8Array, filename: string) {
+  async sendPdf(chatId: string, content: Uint8Array, filename: string): Promise<number | void> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     requireCondition(
       Buffer.from(content).subarray(0, 5).toString() === '%PDF-',
@@ -178,6 +179,7 @@ export class TelegramAdapter implements Messenger {
     requireCondition(response.ok, 502, 'Не удалось отправить PDF в Telegram');
     const result = (await response.json()) as any;
     requireCondition(result.ok, 502, 'Telegram отклонил отправку PDF');
+    return result.result?.message_id as number | undefined;
   }
   async download(fileId: string, maxBytes = this.config.maxVoiceBytes) {
     const file = await this.call('getFile', { file_id: fileId });

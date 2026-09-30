@@ -125,6 +125,17 @@ export class Database implements Sql {
         signature_id uuid, created_at timestamptz NOT NULL DEFAULT now()
       )`);
       await tx.query('ALTER TABLE letter_jobs ALTER COLUMN signature_id DROP NOT NULL');
+      await tx.query(
+        "ALTER TABLE outbox ADD COLUMN IF NOT EXISTS task_keys jsonb NOT NULL DEFAULT '[]'",
+      );
+      await tx.query(`CREATE TABLE IF NOT EXISTS task_messages (
+        chat_id text NOT NULL,message_id text NOT NULL,task_keys jsonb NOT NULL,
+        state text NOT NULL DEFAULT 'pending',attempts integer NOT NULL DEFAULT 0,
+        available_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(chat_id,message_id)
+      )`);
+      await tx.query(
+        "CREATE INDEX IF NOT EXISTS task_messages_cleanup ON task_messages(available_at) WHERE state='pending'",
+      );
       await tx.query('ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research jsonb');
       await tx.query(
         'ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research_version integer NOT NULL DEFAULT 0',

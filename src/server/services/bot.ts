@@ -7,6 +7,7 @@ import { TelegramAdapter } from '../infra/telegram';
 import { DomainError, requireCondition } from '../domain/errors';
 import { ErrorLog } from '../infra/error-log';
 import { LetterBot, letterQuery } from './letter-bot';
+import { callbackTask } from './task-messages';
 import { voiceHelp } from './voice-help';
 import { looksLikeCommand, unknownCommand } from './command-intent';
 import { VoiceSignatures, signatureOperation } from './voice-signatures';
@@ -161,43 +162,51 @@ export class BotService {
         return { ok: true };
       }
       if (callback) {
-        const [action, id, version] = (callback.data || '').split(':');
-        await this.diagnostics?.record('telegram.callback.started', {
-          action,
-          entityId: id,
-          version,
-        });
-        if (action === 'save' && id) await this.reports.confirmCurrent(actor, id, Number(version));
-        if (action === 'cancel' && id) await this.reports.transition(actor, id, 'cancel');
-        if (action === 'sc' && id) await this.voiceSignatures?.confirm(actor, id);
-        if (action === 'sx' && id) await this.voiceSignatures?.discard(actor, id);
-        if (action === 'sp' && id) await this.voiceSignatures?.choose(actor, id, Number(version));
-        if (action === 'cc' && id) await this.voiceContacts?.confirm(actor, id);
-        if (action === 'cx' && id) await this.voiceContacts?.discard(actor, id);
-        if (action === 'cp' && id) await this.voiceContacts?.choose(actor, id, Number(version));
-        if (action === 'lp' && id) await this.letters?.chooseSignature(actor, id, Number(version));
-        if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
-        if (action && ['ly', 'ln', 'li', 'lz'].includes(action) && id)
-          await this.letters?.reviewCompany(actor, id, action, Number(version));
-        if (action === 'da' && id)
-          await this.dialogue?.callback(actor, id, 'confirm', Number(version));
-        if (action === 'dx' && id) await this.dialogue?.callback(actor, id, 'skip');
-        if (action === 'dr' && id) await this.dialogue?.callback(actor, id, 'remedy');
-        if (action === 'dt' && id) await this.dialogue?.callback(actor, id, 'retry');
-        if (action === 'de' && id) await this.dialogue?.callback(actor, id, 'edit');
-        if (action === 'dp' && id)
-          await this.dialogue?.callback(actor, id, 'choose', Number(version));
-        await this.telegram.call('answerCallbackQuery', {
-          callback_query_id: callback.id,
-          text:
-            action === 'cancel'
-              ? 'Отчёт отменён'
-              : action === 'cx'
-                ? 'Создание контакта отменено'
-                : 'Готово',
-        });
-        await this.diagnostics?.record('telegram.callback.completed', { action, entityId: id });
-        return { ok: true };
+        return await this.reports.messages.run(
+          callbackTask(callback.data || '') || '',
+          async () => {
+            const [action, id, version] = (callback.data || '').split(':');
+            await this.diagnostics?.record('telegram.callback.started', {
+              action,
+              entityId: id,
+              version,
+            });
+            if (action === 'save' && id)
+              await this.reports.confirmCurrent(actor, id, Number(version));
+            if (action === 'cancel' && id) await this.reports.transition(actor, id, 'cancel');
+            if (action === 'sc' && id) await this.voiceSignatures?.confirm(actor, id);
+            if (action === 'sx' && id) await this.voiceSignatures?.discard(actor, id);
+            if (action === 'sp' && id)
+              await this.voiceSignatures?.choose(actor, id, Number(version));
+            if (action === 'cc' && id) await this.voiceContacts?.confirm(actor, id);
+            if (action === 'cx' && id) await this.voiceContacts?.discard(actor, id);
+            if (action === 'cp' && id) await this.voiceContacts?.choose(actor, id, Number(version));
+            if (action === 'lp' && id)
+              await this.letters?.chooseSignature(actor, id, Number(version));
+            if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
+            if (action && ['ly', 'ln', 'li', 'lz'].includes(action) && id)
+              await this.letters?.reviewCompany(actor, id, action, Number(version));
+            if (action === 'da' && id)
+              await this.dialogue?.callback(actor, id, 'confirm', Number(version));
+            if (action === 'dx' && id) await this.dialogue?.callback(actor, id, 'skip');
+            if (action === 'dr' && id) await this.dialogue?.callback(actor, id, 'remedy');
+            if (action === 'dt' && id) await this.dialogue?.callback(actor, id, 'retry');
+            if (action === 'de' && id) await this.dialogue?.callback(actor, id, 'edit');
+            if (action === 'dp' && id)
+              await this.dialogue?.callback(actor, id, 'choose', Number(version));
+            await this.telegram.call('answerCallbackQuery', {
+              callback_query_id: callback.id,
+              text:
+                action === 'cancel'
+                  ? 'Отчёт отменён'
+                  : action === 'cx'
+                    ? 'Создание контакта отменено'
+                    : 'Готово',
+            });
+            await this.diagnostics?.record('telegram.callback.completed', { action, entityId: id });
+            return { ok: true };
+          },
+        );
       }
       if (msg?.text && (await this.letters?.acceptInn(actor, msg.text))) return { ok: true };
       const query = msg?.text ? letterQuery(msg.text) : null;

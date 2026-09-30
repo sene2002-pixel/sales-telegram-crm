@@ -409,7 +409,10 @@ export class ReportWorker {
             ));
           cleaning = false;
           // A manual retry supersedes a queued failure notification from the prior attempt.
-          if (current) await this.telegram.send(message.chat_id, message.payload);
+          if (current) {
+            const id = await this.telegram.send(message.chat_id, message.payload);
+            await this.reports.messages.remember(tx, message.chat_id, id, message.task_keys);
+          }
           await tx.query('UPDATE outbox SET sent=true WHERE id=$1', [message.id]);
           await this.diagnostics?.record(
             current ? 'notification.delivery.completed' : 'notification.delivery.superseded',
@@ -454,6 +457,7 @@ export class ReportWorker {
         attempt: failure.attempt,
       });
     const statusFailure = await this.reports.processing.deliverOne(this.telegram);
+    await this.reports.messages.cleanup(this.telegram);
     if (statusFailure)
       await new ErrorLog(this.db).record(statusFailure.error, {
         event: 'telegram.processing_status_failed',
