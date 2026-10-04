@@ -20,6 +20,10 @@
 
 Крупная функция хранится в `docs/features/<feature>/` и содержит `requirements.md`, `design.md`, `tasks.md` и `test-plan.md`.
 
+## Skills
+
+Проектные Skills находятся в `agent-rules/skills/<role>/SKILL.md`. Если среда поддерживает локальные skills, подключи каталог `agent-rules/skills`; иначе вызывай skill по имени явно в запросе.
+
 ## Границы ролей
 
 - Analyst, PM, UX, Architect и Security сначала готовят документы и не меняют production-код.
