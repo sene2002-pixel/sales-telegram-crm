@@ -61,10 +61,9 @@ export class TaskMessages {
         id,
       ]);
       if (actions.length) return actions.some((a) => !['done', 'cancelled'].includes(a.status));
-      const [report] = await tx.query('SELECT status,edit_action_id FROM reports WHERE id=$1', [
-        id,
-      ]);
+      const [report] = await tx.query('SELECT * FROM reports WHERE id=$1', [id]);
       if (report?.edit_action_id) return this.unfinished(tx, `dialogue:${report.edit_action_id}`);
+      if (report?.status === 'failed') return !(await this.replacedBySuccess(tx, report));
       return !report || !['saved', 'cancelled'].includes(report.status);
     }
     const tables: Record<string, string> = {
@@ -77,6 +76,31 @@ export class TaskMessages {
     return (
       !row || !['done', 'cancelled', 'sent', 'saved', 'confirmed', 'discarded'].includes(row.status)
     );
+  }
+  /** A later successful original request retires all earlier terminal failures. */
+  private async replacedBySuccess(tx: Sql, failed: any): Promise<boolean> {
+    const candidates = await tx.query(
+      `SELECT * FROM reports WHERE author_id=$1 AND chat_id=$2 AND received_seq>$3
+       AND edit_action_id IS NULL AND status IN ('saved','cancelled') ORDER BY received_seq`,
+      [failed.author_id, failed.chat_id, failed.received_seq],
+    );
+    for (const next of candidates) if (await this.successfulRequest(tx, next)) return true;
+    return false;
+  }
+  private async successfulRequest(tx: Sql, next: any): Promise<boolean> {
+    const actions = await tx.query('SELECT status FROM dialogue_actions WHERE report_id=$1', [
+      next.id,
+    ]);
+    if (actions.length) return actions.every((a) => a.status === 'done');
+    const signatures = await tx.query('SELECT status FROM signature_drafts WHERE report_id=$1', [
+      next.id,
+    ]);
+    if (signatures.length) return signatures.every((s) => s.status === 'saved');
+    const jobs = await tx.query('SELECT status FROM letter_jobs WHERE source_key=$1', [
+      next.source_key,
+    ]);
+    if (jobs.length) return jobs.every((j) => j.status === 'sent');
+    return next.status === 'saved';
   }
   async cleanup(messenger: Messenger) {
     if (!messenger.deleteProcessing) return;
