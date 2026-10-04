@@ -23,6 +23,10 @@ export default defineConfig({
       SESSION_SECRET: 'e2e-local-secret-not-a-production-secret',
       BOT_TOKEN: '',
       OPENAI_API_KEY: '',
+      DATABASE_URL: '',
+      BOOTSTRAP_ADMIN_TELEGRAM_ID: '',
+      DIAGNOSTIC_LOG_UNTIL: '',
+      PUBLIC_URL: 'http://127.0.0.1:3107',
     },
   },
 });
