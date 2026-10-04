@@ -518,6 +518,39 @@ test('dialogue actions, durable context and individual confirmations', async (t)
       },
     );
     await t.test(
+      'failed letter without PDF can be edited and requires a fresh confirmation',
+      async () => {
+        const a = await actor();
+        await s.letters.saveSignature(a, signature);
+        await submit(a, plan([letter(named('Старая компания'))]));
+        const first = await current(a);
+        await s.dialogue.callback(a, first.id, 'confirm', first.preview_version);
+        await assert.rejects(s.dialogue.callback(a, first.id, 'edit'), { status: 409 });
+        await db.query(
+          "UPDATE letter_jobs SET status='failed',research=$2,research_confirmed=true WHERE source_key=$1",
+          [`dialogue:${first.id}`, JSON.stringify({ old: true })],
+        );
+        await s.dialogue.reconcile();
+        await s.dialogue.callback(a, first.id, 'retry');
+        const oldVersion = (await current(a)).preview_version;
+        await s.dialogue.callback(a, first.id, 'edit');
+        await submit(a, plan([letter(named('Новая компания'))]), 'Для Новой компании', false);
+        const [job] = await db.query('SELECT * FROM letter_jobs WHERE source_key=$1', [
+          `dialogue:${first.id}`,
+        ]);
+        assert.equal(job.status, 'failed');
+        assert.equal(job.research, null);
+        assert.equal(job.research_confirmed, false);
+        await s.dialogue.callback(a, first.id, 'confirm', oldVersion);
+        assert.equal((await current(a)).status, 'ready');
+        await s.dialogue.callback(a, first.id, 'confirm', (await current(a)).preview_version);
+        const [updated] = await db.query('SELECT * FROM letter_jobs WHERE id=$1', [job.id]);
+        assert.equal(updated.query, 'Новая компания');
+        assert.equal(updated.status, 'queued');
+        assert.equal((await actions(a)).length, 1);
+      },
+    );
+    await t.test(
       'letter failure pauses queue; retry requires confirmation and cancellation advances',
       async () => {
         const a = await actor();

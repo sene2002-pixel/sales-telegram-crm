@@ -262,6 +262,20 @@ export class DialogueService {
           return;
         }
         const action = plan.actions[0]!;
+        const [previousJob] = await tx.query(
+          'SELECT * FROM letter_jobs WHERE source_key=$1 FOR UPDATE',
+          [`dialogue:${row.id}`],
+        );
+        requireCondition(
+          !previousJob || (previousJob.status === 'failed' && !previousJob.file_id),
+          409,
+          'Письмо выполняется или PDF уже создан. Правка недоступна',
+        );
+        if (previousJob)
+          await tx.query(
+            'UPDATE letter_jobs SET research=NULL,research_confirmed=false,research_version=research_version+1,error=NULL,attempts=0,lease_token=NULL,lease_until=NULL WHERE id=$1',
+            [previousJob.id],
+          );
         if ('data' in action && row.payload.data)
           action.data = { ...row.payload.data, ...supplied(action.data) } as any;
         const ref = action.company;
@@ -956,13 +970,13 @@ export class DialogueService {
           409,
           'Выполняющуюся задачу редактировать нельзя',
         );
-        const [job] = await tx.query('SELECT id FROM letter_jobs WHERE source_key=$1', [
+        const [job] = await tx.query('SELECT * FROM letter_jobs WHERE source_key=$1 FOR UPDATE', [
           `dialogue:${row.id}`,
         ]);
         requireCondition(
-          !job,
+          !job || (job.status === 'failed' && !job.file_id),
           409,
-          'Письмо уже запускалось. Отмените задачу и создайте новый запрос',
+          'Письмо выполняется или PDF уже создан. Правка недоступна',
         );
         await this.waitForEdit(tx, actor, row);
         return;
@@ -1200,8 +1214,8 @@ export class DialogueService {
       if (job) {
         requireCondition(job.status === 'failed', 409, 'Письмо уже запущено или завершено.');
         await tx.query(
-          'UPDATE letter_jobs SET status=$2,attempts=0,error=NULL,signature_id=$3,available_at=now(),lease_token=NULL,lease_until=NULL WHERE id=$1',
-          [job.id, job.file_id ? 'ready' : 'queued', s.signature.id],
+          'UPDATE letter_jobs SET status=$2,attempts=0,error=NULL,signature_id=$3,query=CASE WHEN file_id IS NULL THEN $4 ELSE query END,available_at=now(),lease_token=NULL,lease_until=NULL WHERE id=$1',
+          [job.id, job.file_id ? 'ready' : 'queued', s.signature.id, query],
         );
       } else await this.letterBot.enqueue(actor, `dialogue:${row.id}`, query, tx);
       await tx.query("UPDATE dialogue_actions SET status='executing' WHERE id=$1", [row.id]);
