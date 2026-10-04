@@ -640,7 +640,9 @@ nav .active {
     grid-template-columns: minmax(0, 1fr);
   }
   .letter-actions {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: 1fr;
   }
   .letter-actions button {
     width: 100%;

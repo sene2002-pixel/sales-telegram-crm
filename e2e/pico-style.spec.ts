@@ -44,7 +44,9 @@ for (const width of [375, 1440]) {
     await page.getByLabel('Имя', { exact: true }).fill('Тестовый получатель');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await composer.getByRole('button', { name: 'Создать письмо', exact: true }).click();
-    await expect(page.getByLabel('Моя подпись', { exact: true })).toBeVisible();
+    await expect(
+      composer.getByRole('combobox', { name: 'Моя подпись', exact: true }),
+    ).toBeVisible();
     expect(await composer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     const saveBox = (await composer
       .getByRole('button', { name: 'Сформировать PDF и сохранить' })
