@@ -554,9 +554,13 @@ export class LetterBot {
           }
           const sendPdf = async () => {
             const id = await this.telegram.sendPdf(actor.telegramId, content, file.data.name);
-            await this.reports.messages.remember(this.crm.db, actor.telegramId, id, [
-              `letter:${job.id}`,
-            ]);
+            await this.reports.messages.remember(
+              this.crm.db,
+              actor.telegramId,
+              id,
+              [`letter:${job.id}`],
+              24,
+            );
           };
           if (this.diagnostics)
             await this.diagnostics.span(

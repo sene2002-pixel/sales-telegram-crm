@@ -471,6 +471,7 @@ test('PDF adapter uploads PDF bytes to the employee chat only', async (t) => {
   t.mock.method(globalThis, 'fetch', async (_url: unknown, options: RequestInit) => {
     const body = options.body as FormData;
     assert.equal(body.get('chat_id'), '12345');
+    assert.equal(body.get('caption'), 'Сохранено в CRM. Из чата удалится через 24 часа');
     const file = body.get('document') as File;
     assert.equal(file.type, 'application/pdf');
     assert.equal(file.name, 'letter.pdf');

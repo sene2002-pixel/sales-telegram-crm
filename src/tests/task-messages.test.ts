@@ -212,7 +212,24 @@ test('task cleanup preserves unfinished and shared messages, survives restart an
       "INSERT INTO letter_jobs(id,source_key,user_id,chat_id,query,status) VALUES($1,'pdf-task',$2,'123','test','sent')",
       [job, actor.id],
     );
-    await messages.remember(db, '123', 4, [`letter:${job}`]);
+    await messages.remember(db, '123', 4, [`letter:${job}`], 24);
+    const [deadline] = await db.query(
+      "SELECT available_at FROM task_messages WHERE message_id='4'",
+    );
+    assert.ok(Math.abs(new Date(deadline.available_at).getTime() - Date.now() - 86400000) < 5000);
+    await new TaskMessages(db).cleanup(messenger);
+    assert.ok(!(deleted as string[]).includes('4'));
+    await messages.remember(db, '123', 4, [`letter:${job}`], 24);
+    assert.equal(
+      new Date(
+        (await db.query("SELECT available_at FROM task_messages WHERE message_id='4'"))[0]
+          .available_at,
+      ).getTime(),
+      new Date(deadline.available_at).getTime(),
+    );
+    await db.query(
+      "UPDATE task_messages SET available_at=now()-interval '1 second' WHERE message_id='4'",
+    );
     await messages.cleanup(messenger);
     assert.ok((deleted as string[]).includes('4'));
     await messages.remember(db, '123', 5, [`dialogue:${a}`]);

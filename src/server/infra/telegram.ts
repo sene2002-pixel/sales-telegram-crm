@@ -166,7 +166,7 @@ export class TelegramAdapter implements Messenger {
     );
     body.append(
       'caption',
-      'Информационное письмо. PDF и контакт получателя сохранены в CRM. Клиенту письмо не отправлялось.',
+      'Сохранено в CRM. Из чата удалится через 24 часа',
     );
     const response = await fetch(
       `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,

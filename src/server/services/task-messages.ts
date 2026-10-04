@@ -33,11 +33,17 @@ export class TaskMessages {
       ),
     ];
   }
-  async remember(tx: Sql, chatId: string, messageId: number | void, keys: string[]) {
+  async remember(
+    tx: Sql,
+    chatId: string,
+    messageId: number | void,
+    keys: string[],
+    retainHours = 0,
+  ) {
     if (!Number.isSafeInteger(messageId) || !messageId || !keys.length) return;
     await tx.query(
-      'INSERT INTO task_messages(chat_id,message_id,task_keys) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
-      [chatId, String(messageId), JSON.stringify(keys)],
+      "INSERT INTO task_messages(chat_id,message_id,task_keys,available_at) VALUES($1,$2,$3,now()+$4*interval '1 hour') ON CONFLICT DO NOTHING",
+      [chatId, String(messageId), JSON.stringify(keys), retainHours],
     );
   }
   private async unfinished(tx: Sql, key: string): Promise<boolean> {
