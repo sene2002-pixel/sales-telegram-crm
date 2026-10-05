@@ -406,6 +406,16 @@ test('dialogue actions, durable context and individual confirmations', async (t)
         await s.dialogue.callback(admin, task.id, 'skip');
       },
     );
+    await t.test('letter preview omits auxiliary company and delivery text', async () => {
+      const a = await actor();
+      await s.letters.saveSignature(a, signature);
+      await submit(a, plan([letter(named('Золото Селигдара'))]));
+      const text = await messages(a);
+      assert.match(text, /Компания: Золото Селигдара/);
+      assert.match(text, /Подпись:/);
+      assert.doesNotMatch(text, /Город:|ИНН:|PDF — вам|Компанию и получателя сохраню/);
+      assert.equal((await current(a)).status, 'ready');
+    });
     await t.test(
       'letters request signature first and never require pre-created company or contact after cancellation',
       async () => {
@@ -953,7 +963,8 @@ test('dialogue actions, durable context and individual confirmations', async (t)
           1,
         );
         assert.match(await messages(a), /Компания: Стройтрансгаз/);
-        assert.match(await messages(a), /вам и в CRM, не клиенту/);
+        assert.match(await messages(a), /Подпись: Иванов Иван/);
+        assert.doesNotMatch(await messages(a), /вам и в CRM, не клиенту/);
         assert.equal(request.store, false);
         assert.equal(request.text.format.strict, true);
         assert.ok(!request.tools, 'planner cannot search or execute tools');

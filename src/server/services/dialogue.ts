@@ -284,7 +284,7 @@ export class DialogueService {
         );
         if (previousJob)
           await tx.query(
-            'UPDATE letter_jobs SET research=NULL,research_confirmed=false,research_version=research_version+1,error=NULL,attempts=0,lease_token=NULL,lease_until=NULL WHERE id=$1',
+            'UPDATE letter_jobs SET research=NULL,research_confirmed=false,recipient_user_provided=false,research_version=research_version+1,error=NULL,attempts=0,lease_token=NULL,lease_until=NULL WHERE id=$1',
             [previousJob.id],
           );
         if ('data' in action && row.payload.data)
@@ -920,7 +920,7 @@ export class DialogueService {
           snapshot.defaultStep = options.length > 1 && !options.some((s) => s.is_default);
           notice = snapshot.defaultStep
             ? `Сделать основной: ${signatureName(snapshot.signature.data)}? Письмо подтвердим отдельно.`
-            : `Подпись: ${signatureName(snapshot.signature.data)}\nPDF — вам и в CRM, не клиенту. Компанию и получателя сохраню.`;
+            : `Подпись: ${signatureName(snapshot.signature.data)}`;
         } else if (a.kind === 'signature_edit') {
           if (!Object.keys(supplied(a.data)).length)
             return this.ask(tx, actor, row, 'Какие поля подписи изменить?');
@@ -946,7 +946,10 @@ export class DialogueService {
       "UPDATE dialogue_actions SET status='ready',snapshot=$2,options='[]',preview_version=preview_version+1 WHERE id=$1 RETURNING preview_version",
       [row.id, JSON.stringify(snapshot)],
     );
-    let previewText = `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${row.company ? `Компания: ${row.company.name}\nГород: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n` : ''}\n${notice}${data?.success ? (changes ?? fieldsText(data.data)) : ''}\n\nПодтвердите или уточните текстом/голосом.`;
+    const companyText = row.company
+      ? `Компания: ${row.company.name}\n${a.kind === 'letter' ? '' : `Город: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n`}`
+      : '';
+    let previewText = `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${companyText}\n${notice}${data?.success ? (changes ?? fieldsText(data.data)) : ''}\n\nПодтвердите или уточните текстом/голосом.`;
     while (previewText.length > 3900) {
       await this.reports.notify(tx, actor.telegramId, { text: previewText.slice(0, 3900) });
       previewText = previewText.slice(3900);
@@ -1005,6 +1008,15 @@ export class DialogueService {
         'Сначала завершите связанное действие',
       );
       if (operation === 'edit') {
+        const recipientEditing = await tx.query(
+          "SELECT id FROM letter_jobs WHERE user_id=$1 AND status='waiting_recipient'",
+          [actor.id],
+        );
+        requireCondition(
+          !recipientEditing.length,
+          409,
+          'Сначала завершите уточнение получателя письма',
+        );
         const editing = await tx.query(
           "SELECT id FROM dialogue_actions WHERE user_id=$1 AND id<>$2 AND snapshot->>'editing'='true' AND status='needs_info'",
           [actor.id, id],

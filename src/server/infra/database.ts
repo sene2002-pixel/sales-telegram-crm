@@ -138,6 +138,13 @@ export class Database implements Sql {
       );
       await tx.query('ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research jsonb');
       await tx.query(
+        'ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS recipient_user_provided boolean NOT NULL DEFAULT false',
+      );
+      await tx.query(
+        'ALTER TABLE reports ADD COLUMN IF NOT EXISTS recipient_job_id uuid REFERENCES letter_jobs(id)',
+      );
+      await tx.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS recipient_job_version integer');
+      await tx.query(
         'ALTER TABLE letter_jobs ADD COLUMN IF NOT EXISTS research_version integer NOT NULL DEFAULT 0',
       );
       await tx.query(

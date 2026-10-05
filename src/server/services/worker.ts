@@ -199,6 +199,10 @@ export class ReportWorker {
           });
           return true;
         }
+        if (report.recipient_job_id && this.letterBot) {
+          await this.letterBot.editRecipient(report, token, transcript, image);
+          return true;
+        }
         if (report.purpose === 'dialogue' && this.dialogue) {
           await this.db.query('UPDATE reports SET transcript=$1 WHERE id=$2 AND lease_token=$3', [
             transcript,

@@ -326,6 +326,74 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
       },
     );
     await t.test(
+      'recipient clarification is durable, private, versioned and preserves company',
+      async () => {
+        const actionCount = (await db.query('SELECT * FROM dialogue_actions')).length;
+        s.letters.ai.request = async () => response(research);
+        await bot.enqueue(actor, 'recipient-edit', 'Ромашка');
+        await bot.tick();
+        const [job] = await db.query("SELECT * FROM letter_jobs WHERE source_key='recipient-edit'");
+        await assert.rejects(bot.reviewCompany(other, job.id, 'lr', 1), /не найдена/);
+        await bot.reviewCompany(actor, job.id, 'ln', 1);
+        await bot.reviewCompany(actor, job.id, 'lr', 1);
+        const bind = async (key: string, audio = false) => {
+          const r = await s.reports.enqueue(actor, {
+            sourceKey: key,
+            purpose: 'dialogue',
+            ...(audio ? { audioFileId: 'voice' } : { text: 'Главному инженеру Сидорову Петру' }),
+          });
+          const token = randomUUID();
+          const [row] = await db.query(
+            "UPDATE reports SET status='processing',lease_token=$2 WHERE id=$1 RETURNING *",
+            [r.id, token],
+          );
+          assert.equal(row.recipient_job_id, job.id);
+          return { row, token };
+        };
+        const first = await bind('recipient-text');
+        const stale = await bind('recipient-voice', true);
+        s.letters.ai.request = async () =>
+          response({ name: 'Сидоров Пётр', role: 'Главный инженер' });
+        const restarted = new LetterBot(s.crm, s.letters, s.reports, telegram, config);
+        await restarted.editRecipient(first.row, first.token, 'Главному инженеру Сидорову Петру');
+        const [updated] = await db.query('SELECT * FROM letter_jobs WHERE id=$1', [job.id]);
+        assert.deepEqual(updated.research.company, research.company);
+        assert.deepEqual(updated.research.recipient, {
+          name: 'Сидоров Пётр',
+          role: 'Главный инженер',
+        });
+        assert.equal(updated.status, 'waiting_company');
+        assert.equal(updated.recipient_user_provided, true);
+        assert.equal(updated.research_version, 2);
+        assert.equal(updated.research_confirmed, false);
+        assert.equal((await db.query('SELECT * FROM companies')).length, 0);
+        assert.equal((await db.query('SELECT * FROM dialogue_actions')).length, actionCount);
+        await assert.rejects(bot.reviewCompany(actor, job.id, 'ly', 1), /последнее/);
+        s.letters.ai.request = async () => {
+          throw new Error('Stale clarification must not call AI');
+        };
+        await restarted.editRecipient(stale.row, stale.token, 'Другой человек');
+        await bot.reviewCompany(actor, job.id, 'ln', 2);
+        await bot.reviewCompany(actor, job.id, 'lr', 2);
+        const unclear = await bind('recipient-unclear');
+        s.letters.ai.request = async () => response({ name: null, role: null });
+        await restarted.editRecipient(unclear.row, unclear.token, 'непонятно');
+        assert.equal(
+          (await db.query('SELECT status FROM letter_jobs WHERE id=$1', [job.id]))[0].status,
+          'waiting_recipient',
+        );
+        const cancelled = await bind('recipient-cancelled');
+        s.letters.ai.request = async () => {
+          await bot.reviewCompany(actor, job.id, 'lz', 2);
+          return response({ name: 'Другой человек', role: 'Директор' });
+        };
+        await restarted.editRecipient(cancelled.row, cancelled.token, 'Другой человек');
+        const [final] = await db.query('SELECT * FROM letter_jobs WHERE id=$1', [job.id]);
+        assert.equal(final.status, 'cancelled');
+        assert.equal(final.research, null);
+      },
+    );
+    await t.test(
       'PDF is generated before contact save, delivery retries reuse the same file',
       { skip: !process.env.LETTER_PYTHON },
       async () => {
@@ -335,6 +403,7 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
           const body = JSON.parse(raw as string);
           requests++;
           if (body.include) return response(research);
+          assert.match(JSON.stringify(body), /Сидоров/);
           assert.equal((await db.query("SELECT * FROM records WHERE kind='contact'")).length, 0);
           return response({
             recipient: {
@@ -371,12 +440,37 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         assert.equal(await bot.acceptInn(actor, '7707083893'), true);
         await bot.tick();
         await assert.rejects(bot.reviewCompany(actor, preview.id, 'ly', 1), /последнее сообщение/);
-        await bot.reviewCompany(actor, preview.id, 'ly', 2);
-        await assert.rejects(bot.reviewCompany(actor, preview.id, 'ly', 2), /последнее сообщение/);
+        await bot.reviewCompany(actor, preview.id, 'ln', 2);
+        await bot.reviewCompany(actor, preview.id, 'lr', 2);
+        const clarification = await s.reports.enqueue(actor, {
+          sourceKey: 'successful-recipient-edit',
+          purpose: 'dialogue',
+          text: 'Главному инженеру Сидорову Петру',
+        });
+        const lease = randomUUID();
+        const [editingReport] = await db.query(
+          "UPDATE reports SET status='processing',lease_token=$2 WHERE id=$1 RETURNING *",
+          [clarification.id, lease],
+        );
+        const generate = s.letters.ai.request;
+        s.letters.ai.request = async () =>
+          response({ name: 'Сидоров Пётр', role: 'Главный инженер' });
+        await bot.editRecipient(editingReport, lease, 'Главному инженеру Сидорову Петру');
+        s.letters.ai.request = generate;
+        await bot.reviewCompany(actor, preview.id, 'ly', 3);
+        await assert.rejects(bot.reviewCompany(actor, preview.id, 'ly', 3), /последнее сообщение/);
         await bot.tick();
         const [job] = await db.query("SELECT * FROM letter_jobs WHERE source_key='success'");
         assert.equal(job.status, 'ready');
         assert.equal((await db.query("SELECT * FROM records WHERE kind='contact'")).length, 1);
+        const [recipientContact] = await db.query("SELECT data FROM records WHERE kind='contact'");
+        assert.equal(recipientContact.data.name, 'Сидоров Пётр');
+        assert.equal(recipientContact.data.role, 'Главный инженер');
+        assert.equal(
+          (await db.query("SELECT * FROM audit WHERE action='letter.recipient_user_provided'"))
+            .length,
+          1,
+        );
         const [company] = await db.query('SELECT * FROM companies');
         assert.equal(company.data.industry, 'Энергетика');
         let sends = 0;
@@ -419,7 +513,10 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         // A second request reuses the same company and recipient without duplicate contacts.
         s.letters.ai.request = async (_path, raw) =>
           JSON.parse(raw as string).include
-            ? response(research)
+            ? response({
+                ...research,
+                recipient: { name: 'Сидоров Пётр', role: 'Главный инженер' },
+              })
             : response({
                 recipient: {
                   position_dative: fixture.recipient_lines[0],

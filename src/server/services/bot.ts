@@ -184,7 +184,7 @@ export class BotService {
             if (action === 'lp' && id)
               await this.letters?.chooseSignature(actor, id, Number(version));
             if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
-            if (action && ['ly', 'ln', 'li', 'lz'].includes(action) && id)
+            if (action && ['ly', 'ln', 'li', 'lz', 'lr'].includes(action) && id)
               await this.letters?.reviewCompany(actor, id, action, Number(version));
             if (action === 'da' && id)
               await this.dialogue?.callback(actor, id, 'confirm', Number(version));

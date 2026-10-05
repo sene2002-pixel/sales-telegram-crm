@@ -67,6 +67,7 @@ export class ReportService {
     return this.db.transaction(async (tx) => {
       // Serialize arrival with dialogue callbacks; bind clarification before transcription/AI.
       let editActionId: string | null = null;
+      let recipientJob: any = null;
       if (input.purpose === 'dialogue') {
         await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
         const [editing] = await tx.query(
@@ -74,6 +75,12 @@ export class ReportService {
           [actor.id],
         );
         editActionId = editing?.id ?? null;
+        if (!editActionId) {
+          [recipientJob] = await tx.query(
+            "SELECT id,research_version FROM letter_jobs WHERE user_id=$1 AND status='waiting_recipient' ORDER BY created_at LIMIT 1",
+            [actor.id],
+          );
+        }
       }
       const [created] = await tx.query(
         `INSERT INTO reports(id,author_id,source_key,chat_id,audio_file_id,transcript,created_at,purpose,image_file_id,edit_action_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(source_key) DO NOTHING RETURNING *`,
@@ -91,6 +98,11 @@ export class ReportService {
         ],
       );
       if (created) {
+        if (recipientJob)
+          await tx.query(
+            'UPDATE reports SET recipient_job_id=$2,recipient_job_version=$3 WHERE id=$1',
+            [created.id, recipientJob.id, recipientJob.research_version],
+          );
         if (input.chatId && input.messageId)
           await this.messages.remember(tx, input.chatId, input.messageId, [
             `source:${input.sourceKey}`,

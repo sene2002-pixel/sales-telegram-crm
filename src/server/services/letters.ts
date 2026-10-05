@@ -359,6 +359,7 @@ export class LetterService {
       jobId: string;
       leaseToken: string;
       confirmedCompany?: { name: string; inn: string; city: string; industry: string };
+      recipientUserProvided?: boolean;
     },
   ) {
     const startedAt = Date.now();
@@ -594,12 +595,15 @@ export class LetterService {
                 randomUUID(),
                 actor.id,
                 companyId,
-                'letter.recipient_verified',
+                discovered.recipientUserProvided
+                  ? 'letter.recipient_user_provided'
+                  : 'letter.recipient_verified',
                 discovered.jobId,
                 JSON.stringify({
                   name: contact.data.name,
                   role: contact.data.role,
                   sources: discovered.sources,
+                  recipientSource: discovered.recipientUserProvided ? 'user' : 'search',
                 }),
               ],
             );

@@ -6,7 +6,7 @@ export function callbackTask(data: string): string | undefined {
   const [action, id] = data.split(':');
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
   if (['da', 'dx', 'dr', 'dt', 'de', 'dp'].includes(action!)) return `dialogue:${id}`;
-  if (['lp', 'lc', 'ly', 'ln', 'li', 'lz'].includes(action!)) return `letter:${id}`;
+  if (['lp', 'lc', 'ly', 'ln', 'li', 'lz', 'lr'].includes(action!)) return `letter:${id}`;
   if (['save', 'cancel'].includes(action!)) return `report:${id}`;
   if (['sc', 'sx', 'sp'].includes(action!)) return `signature:${id}`;
   if (['cc', 'cx', 'cp'].includes(action!)) return `report:${id}`;
@@ -69,6 +69,7 @@ export class TaskMessages {
       if (actions.length) return actions.some((a) => !['done', 'cancelled'].includes(a.status));
       const [report] = await tx.query('SELECT * FROM reports WHERE id=$1', [id]);
       if (report?.edit_action_id) return this.unfinished(tx, `dialogue:${report.edit_action_id}`);
+      if (report?.recipient_job_id) return this.unfinished(tx, `letter:${report.recipient_job_id}`);
       if (report?.status === 'failed') return !(await this.replacedBySuccess(tx, report));
       return !report || !['saved', 'cancelled'].includes(report.status);
     }
@@ -87,7 +88,7 @@ export class TaskMessages {
   private async replacedBySuccess(tx: Sql, failed: any): Promise<boolean> {
     const candidates = await tx.query(
       `SELECT * FROM reports WHERE author_id=$1 AND chat_id=$2 AND received_seq>$3
-       AND edit_action_id IS NULL AND status IN ('saved','cancelled') ORDER BY received_seq`,
+       AND edit_action_id IS NULL AND recipient_job_id IS NULL AND status IN ('saved','cancelled') ORDER BY received_seq`,
       [failed.author_id, failed.chat_id, failed.received_seq],
     );
     for (const next of candidates) if (await this.successfulRequest(tx, next)) return true;
