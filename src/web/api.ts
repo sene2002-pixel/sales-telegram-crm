@@ -7,6 +7,7 @@ export function setToken(value: string) {
 export async function api<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch('/api' + path, {
     method,
+    cache: 'no-store',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),

@@ -32,6 +32,7 @@ import { z, ZodError } from 'zod';
 import { Config } from '../config';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
+import { RateLimits } from '../infra/rate-limit';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import { FileDownloads } from '../services/file-downloads';
 import { LetterBot } from '../services/letter-bot';
@@ -569,23 +570,46 @@ export async function createApp(config: Config, existingDb?: Database) {
     }),
   );
   app.use(json({ limit: '256kb' }));
-  const buckets = new Map<string, { count: number; until: number }>();
+  const limits = new RateLimits();
   app.use((req: Request, res: Response, next: () => void) => {
     if (!req.path.startsWith('/api')) return next();
     res.setHeader('Cache-Control', 'no-store');
     const ip = req.socket.remoteAddress || 'unknown';
-    const key = ip + (req.path.startsWith('/api/auth') ? ':auth' : ':api');
-    const now = Date.now();
-    if (buckets.size > 10000) for (const [k, v] of buckets) if (v.until < now) buckets.delete(k);
-    const bucket = buckets.get(key);
-    if (!bucket || bucket.until < now) buckets.set(key, { count: 1, until: now + 60000 });
-    else if (++bucket.count > (key.endsWith(':auth') ? 30 : 600)) {
+    const authPath = req.path === '/api/auth' || req.path.startsWith('/api/auth/');
+    const ipWait = limits.consume(
+      `ip:${ip}:${authPath ? 'auth' : 'api'}`,
+      authPath ? 30 : config.apiIpLimit,
+    );
+    let subject: string | null = null;
+    if (!authPath) {
+      try {
+        subject = services.auth.sessionSubject(
+          (req.headers.authorization || '').replace(/^Bearer /, ''),
+        );
+      } catch {
+        /* Invalid credentials never create independent user buckets. */
+      }
+    }
+    const identityWait = authPath
+      ? 0
+      : limits.consume(
+          subject ? `user:${subject}` : `anonymous:${ip}`,
+          subject ? config.apiUserLimit : 600,
+        );
+    const wait = Math.max(ipWait, identityWait);
+    if (wait) {
       void services.errors.record(new DomainError(429, 'Превышен лимит запросов'), {
         event: 'request.rate_limited',
         status: 429,
         requestId: res.locals.requestId,
       });
-      res.status(429).json({ message: 'Слишком много запросов. Повторите через минуту' });
+      res.setHeader('Retry-After', String(wait));
+      res
+        .status(429)
+        .json({
+          message: `Слишком много запросов. Повторите через ${wait} сек.`,
+          retryAfter: wait,
+        });
       return;
     }
     next();

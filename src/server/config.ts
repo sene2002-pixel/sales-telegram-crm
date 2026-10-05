@@ -5,6 +5,8 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
   const production = env.NODE_ENV === 'production';
   const config = {
     production,
+    apiUserLimit: Number(env.API_RATE_LIMIT_PER_USER || 3000),
+    apiIpLimit: Number(env.API_RATE_LIMIT_PER_IP || 6000),
     port: Number(env.PORT || 3000),
     host: env.HOST || '127.0.0.1',
     publicUrl: env.PUBLIC_URL || 'http://localhost:5173',
@@ -28,6 +30,12 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     maxVoiceSeconds: Number(env.MAX_VOICE_SECONDS || 600),
   };
   new Intl.DateTimeFormat('ru', { timeZone: config.timezone }).format();
+  for (const [name, value] of [
+    ['API_RATE_LIMIT_PER_USER', config.apiUserLimit],
+    ['API_RATE_LIMIT_PER_IP', config.apiIpLimit],
+  ] as const)
+    if (!Number.isInteger(value) || value < 1 || value > 100000)
+      throw new Error(`${name} must be an integer between 1 and 100000`);
   if (
     !Number.isInteger(config.workerConcurrency) ||
     config.workerConcurrency < 1 ||

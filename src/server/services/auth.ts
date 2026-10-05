@@ -92,7 +92,7 @@ export class AuthService {
     ).toString('base64url');
     return `${payload}.${createHmac('sha256', this.config.sessionSecret).update(payload).digest('base64url')}`;
   }
-  async authenticate(token: string): Promise<Actor> {
+  sessionSubject(token: string): string {
     const [payload, signature, extra] = token.split('.');
     requireCondition(payload && signature && !extra, 401, 'Необходим вход');
     const expected = createHmac('sha256', this.config.sessionSecret).update(payload).digest();
@@ -115,8 +115,12 @@ export class AuthService {
       401,
       'Сессия истекла',
     );
+    return session.sub;
+  }
+  async authenticate(token: string): Promise<Actor> {
+    const subject = this.sessionSubject(token);
     const [actor] = await this.db.query<Actor>(`SELECT ${userProjection} FROM users WHERE id=$1`, [
-      session.sub,
+      subject,
     ]);
     requireCondition(actor?.active, 403, 'Доступ заблокирован');
     return actor;

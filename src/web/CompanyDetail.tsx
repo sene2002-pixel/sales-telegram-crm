@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Actor,
   Company,
@@ -44,8 +44,11 @@ export function CompanyDetail({
     [projectId, setProjectId] = useState('');
   const [deleteContactId, setDeleteContactId] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const refreshSequence = useRef(0);
   async function refresh() {
+    const sequence = ++refreshSequence.current;
     const d = await api<Detail>(`/companies/${company.id}`);
+    if (sequence !== refreshSequence.current) return;
     setDetail(d);
     setOwner(d.company.ownerId);
   }
@@ -242,19 +245,35 @@ export function CompanyDetail({
             initial={form.initial}
             projects={projects}
             onSave={async (data, pid) => {
-              if (form.initial)
-                await api(`/records/${form.initial.id}`, 'PATCH', {
-                  version: form.initial.version,
-                  data,
-                });
-              else
-                await api(`/companies/${c.id}/records/${form.kind}`, 'POST', {
-                  data,
-                  projectId: pid,
-                });
+              const saved = form.initial
+                ? await api<CrmRecord>(`/records/${form.initial.id}`, 'PATCH', {
+                    version: form.initial.version,
+                    data,
+                  })
+                : await api<CrmRecord>(`/companies/${c.id}/records/${form.kind}`, 'POST', {
+                    data,
+                    projectId: pid,
+                  });
+              // Invalidate older reads and show only the record acknowledged by the database.
+              ++refreshSequence.current;
+              setDetail(
+                (current) =>
+                  current && {
+                    ...current,
+                    records: current.records.some((r) => r.id === saved.id)
+                      ? current.records.map((r) => (r.id === saved.id ? { ...r, ...saved } : r))
+                      : [...current.records, saved],
+                  },
+              );
               setForm(null);
-              await refresh();
-              await onChanged();
+              try {
+                await refresh();
+                await onChanged();
+              } catch (e) {
+                setError(
+                  `Запись сохранена, но не удалось обновить данные: ${(e as Error).message}`,
+                );
+              }
             }}
           />
         </div>
