@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Actor, roles, labels } from '../shared/contracts';
 import { api, download, today } from './api';
 import { Field, Select } from './forms';
+import { CommercialReport } from './CommercialReport';
 export function Team({
   user,
   users,
@@ -86,6 +87,7 @@ export function Team({
     <>
       <p className="eyebrow">ОБЩАЯ КАРТИНА</p>
       <h1>Команда</h1>
+      <CommercialReport users={users} />
       <button onClick={() => setShowEmployees(!showEmployees)} aria-expanded={showEmployees}>
         Все сотрудники
       </button>

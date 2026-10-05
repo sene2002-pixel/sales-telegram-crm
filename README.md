@@ -13,6 +13,7 @@ CRM для менеджеров: компании, контакты, проек�
 - [Визуальный стиль и аватар Pico](docs/PICO_VISUAL_STYLE.md)
 - [Временные статусы обработки](docs/PROCESSING_STATUS.md)
 - [Защита инструкций и служебных данных Pico](docs/PICO_SECURITY.md)
+- [Новый регламент продаж Pico: возможности, проверки и выпуск](docs/features/pico-sales-instructions/workflow.md)
 - [Оставшиеся требования Asana и вопросы](docs/ASANA_IMPLEMENTATION.md)
 
 ## Что нужно для работы

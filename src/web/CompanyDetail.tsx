@@ -10,6 +10,7 @@ import {
 import { api, download, money } from './api';
 import { CompanyForm, Field, Modal, RecordForm } from './forms';
 import { LetterForm } from './LetterForm';
+import { CompanySales } from './SalesCard';
 const names: Record<RecordKind, string> = {
   task: 'Задачи',
   contact: 'Контакты',
@@ -103,6 +104,7 @@ export function CompanyDetail({
         </div>
       )}
       {c.notes && <p className="preserve">{c.notes}</p>}
+      <CompanySales records={detail.records} />
       {!c.archived && (
         <LetterForm
           key={c.id}

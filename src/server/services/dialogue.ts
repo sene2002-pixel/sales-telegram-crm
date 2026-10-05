@@ -22,6 +22,13 @@ import { LetterBot } from './letter-bot';
 import { LetterService } from './letters';
 import { ReportService } from './reports';
 import { photoInstructions } from './photo-input';
+import {
+  salesInstructions,
+  normalizeSales,
+  salesFeedback,
+  salesQuestions,
+} from '../../shared/sales';
+import { salesSupplementInstructions } from '../../shared/sales-instructions';
 import { assignDefault, checkedSignature, signatureName } from './signature-choice';
 import { requestEvent, requestsConflict } from './request-history';
 import {
@@ -182,6 +189,10 @@ export class DialogueService {
       await this.letters.structured(
         dialoguePlanSchema,
         dialogueInstructions +
+          '\n' +
+          salesInstructions +
+          '\n' +
+          salesSupplementInstructions +
           (image ? photoInstructions : '') +
           (report.edit_action_id
             ? '\nРежим РЕДАКТИРОВАНИЯ: сообщение и фото — дополнение к единственной задаче в pending. Верни ровно одно обновлённое действие того же kind, сохрани все ранее заданные данные, которые явно не исправлены. Не создавай новые задачи и не применяй обычное назначение фото как контакта. При неясности верни actions=[] и короткий вопрос. mode=replace. Если pending пуст — actions=[], задача недоступна.'
@@ -425,7 +436,11 @@ export class DialogueService {
         "UPDATE reports SET status='cancelled',transcript=NULL,audio_file_id=NULL,image_file_id=NULL,draft=NULL,error=NULL,lease_token=NULL,lease_until=NULL,version=version+1 WHERE id=$1",
         [report.id],
       );
-      if (plan.reply || !plan.actions.length)
+      // Structured sales feedback and its question budget are controlled by the server.
+      if (
+        (!plan.actions.some((a) => a.kind === 'activity_create' && a.sales) && plan.reply) ||
+        !plan.actions.length
+      )
         await this.reports.notify(tx, actor.telegramId, {
           text: plan.reply || 'Не знаю такой команды. Уточните задачу или откройте /voice.',
         });
@@ -757,8 +772,38 @@ export class DialogueService {
         phone: a.data.phone || '',
         email: a.data.email || '',
       });
-    if (a.kind === 'activity_create')
-      data = activitySchema.safeParse({ text: a.text, occurredOn: a.occurredOn });
+    if (a.kind === 'activity_create') {
+      data = activitySchema.safeParse({ text: a.text, occurredOn: a.occurredOn, sales: a.sales });
+      if (data.success && data.data.sales) {
+        data.data.sales = normalizeSales(data.data.sales);
+        const { current } = await this.crm.salesPreview(
+          actor,
+          row.company.id,
+          data.data.sales,
+          row.id,
+          a.occurredOn,
+          tx,
+        );
+        const [reportBudget] = await tx.query('SELECT result FROM reports WHERE id=$1 FOR UPDATE', [
+          row.report_id,
+        ]);
+        const used = Number(reportBudget?.result?.salesQuestionsUsed || 0);
+        const questions = salesQuestions(current, row.sequence || 0).slice(
+          0,
+          Math.max(0, 3 - used),
+        );
+        await tx.query(
+          "UPDATE reports SET result=coalesce(result,'{}'::jsonb) || $2::jsonb WHERE id=$1",
+          [row.report_id, JSON.stringify({ salesQuestionsUsed: used + questions.length })],
+        );
+        notice =
+          salesFeedback(row.company.name, { ...current, deferred: true }, row.sequence || 0) +
+          '\n' +
+          questions.map((q) => `- ${q}`).join('\n') +
+          '\n';
+        changes = a.text;
+      }
+    }
     if (a.kind === 'task_create') data = taskSchema.safeParse({ text: a.text, due: a.due });
     if (a.kind === 'company_create')
       data = companySchema.safeParse({
@@ -1297,8 +1342,14 @@ export class DialogueService {
               [row.company.id, JSON.stringify(s.data)],
             )
           : [];
-      if (!duplicates.length)
-        await this.crm.createRecord(actor, row.company.id, kind, s.data, null, tx);
+      if (!duplicates.length) {
+        const record = await this.crm.createRecord(actor, row.company.id, kind, s.data, null, tx);
+        if (kind === 'activity')
+          await tx.query('UPDATE records SET data=data || $2::jsonb WHERE id=$1', [
+            record.id,
+            JSON.stringify({ reportId: row.report_id }),
+          ]);
+      }
     }
     await audit(tx, actor.id, `dialogue.${a.kind}`, row.id, s.company?.id || null);
     await requestEvent(tx, row.report_id, row.id, 'completed', {

@@ -283,12 +283,11 @@ export class ReportWorker {
             tx,
           );
           if (rows.length && report.chat_id) {
-            const summary = draft.blocks
-              .map(
-                (b) =>
-                  `${b.companyName}\n${b.summary}\nЗадач: ${b.tasks.length} · Контактов: ${b.contacts.length}`,
-              )
-              .join('\n\n');
+            const [actor] = await tx.query<any>(
+              'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1',
+              [report.author_id],
+            );
+            const summary = await this.reports.feedback(actor, draft, tx);
             await this.reports.notify(tx, report.chat_id, {
               text: `Проверьте черновик:\n\n${summary.slice(0, 2900)}${draft.warnings.length ? '\n\n⚠ ' + draft.warnings.join('; ').slice(0, 500) : ''}`,
               reply_markup: {

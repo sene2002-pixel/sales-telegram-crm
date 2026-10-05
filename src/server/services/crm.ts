@@ -14,6 +14,14 @@ import { Database, Sql } from '../infra/database';
 import { requireCondition } from '../domain/errors';
 import { audit } from '../infra/audit';
 import { isLeader } from './auth';
+import {
+  salesUpdateSchema,
+  SalesEvent,
+  SalesUpdate,
+  projectSales,
+  confirmed,
+  normalizeSales,
+} from '../../shared/sales';
 
 export function mapCompany(row: any): Company {
   return {
@@ -206,6 +214,80 @@ export class CrmService {
     );
     return rows.map((r) => ({ ...mapRecord(r), companyName: r.company_name }));
   }
+  async salesHistory(actor: Actor, companyId: string, tx: Sql = this.db): Promise<SalesEvent[]> {
+    await this.company(actor, companyId, tx);
+    const rows = await tx.query(
+      "SELECT id,data,created_at FROM records WHERE company_id=$1 AND kind='activity' AND NOT deleted ORDER BY created_at,id",
+      [companyId],
+    );
+    return rows.flatMap((r) => {
+      const parsed = salesUpdateSchema.safeParse(r.data.sales);
+      return parsed.success
+        ? [
+            {
+              id: r.id,
+              occurredOn: r.data.occurredOn,
+              createdAt: new Date(r.created_at).toISOString(),
+              sales: parsed.data,
+            },
+          ]
+        : [];
+    });
+  }
+  async salesPreview(
+    actor: Actor,
+    companyId: string,
+    update: SalesUpdate,
+    eventId: string,
+    occurredOn: string,
+    tx: Sql = this.db,
+  ) {
+    const company = await this.company(actor, companyId, tx);
+    const history = await this.salesHistory(actor, companyId, tx);
+    const projection = projectSales([
+      ...history,
+      {
+        id: eventId,
+        occurredOn,
+        createdAt: new Date().toISOString(),
+        sales: normalizeSales(update),
+      },
+    ]);
+    const current = {
+      ...projection.current,
+      deals: update.deals.map((d, i) =>
+        structuredClone(
+          projection.deals.find((p) => p.key === projection.eventKeys[eventId]?.[i])?.deal || d,
+        ),
+      ),
+      deferred: update.deferred,
+      unknownAnswers: update.unknownAnswers,
+    };
+    // Manual legacy project values are authoritative context, not fabricated scoring evidence.
+    const projects = await tx.query(
+      "SELECT data FROM records WHERE company_id=$1 AND kind='project' AND NOT deleted",
+      [companyId],
+    );
+    for (const deal of current.deals) {
+      const matches = projects.filter(
+        (p) =>
+          deal.name &&
+          p.data.name?.trim().toLocaleLowerCase('ru') === deal.name.trim().toLocaleLowerCase('ru'),
+      );
+      if (matches.length !== 1) continue;
+      const p = matches[0]!.data;
+      if (confirmed(deal.amount) === null && typeof p.amount === 'number')
+        deal.amount = { value: p.amount, certainty: 'confirmed' };
+      if (confirmed(deal.due) === null && typeof p.due === 'string')
+        deal.due = { value: p.due, certainty: 'confirmed' };
+    }
+    if (
+      company.potential === 0 &&
+      !update.annualPotential.some((p) => (confirmed(p.amount) || 0) > 0)
+    )
+      current.deferred = true;
+    return { projection, current };
+  }
   async createRecord(
     actor: Actor,
     companyId: string,
@@ -215,6 +297,8 @@ export class CrmService {
     tx?: Sql,
   ): Promise<CrmRecord> {
     const data = recordSchemas[kind].parse(raw);
+    if (kind === 'activity' && (data as any).sales)
+      (data as any).sales = normalizeSales((data as any).sales);
     if (!tx)
       return this.db.transaction((t) =>
         this.createRecord(actor, companyId, kind, data, projectId, t),
@@ -246,6 +330,31 @@ export class CrmService {
       ],
     );
     await audit(tx, actor.id, `${kind}.created`, id, companyId);
+    if (kind === 'activity' && (data as any).sales) {
+      const projected = projectSales(await this.salesHistory(actor,companyId,tx)).current;
+      const city = confirmed(projected.client.city),
+        segment = confirmed(projected.client.segment);
+      if (
+        (city !== null && city !== company.city) ||
+        (segment !== null && segment !== company.segment)
+      ) {
+        const next = companySchema.parse({
+          ...Object.fromEntries(
+            Object.keys(companySchema.shape).map((k) => [k, (company as any)[k]]),
+          ),
+          ...(city !== null ? { city } : {}),
+          ...(segment !== null ? { segment } : {}),
+        });
+        await tx.query(
+          'UPDATE companies SET data=$2,version=version+1,updated_at=now() WHERE id=$1',
+          [companyId, JSON.stringify(next)],
+        );
+        await audit(tx, actor.id, 'company.sales_updated', id, companyId, {
+          before: company,
+          after: next,
+        });
+      }
+    }
     return mapRecord(row);
   }
   async updateRecord(actor: Actor, id: string, raw: unknown) {

@@ -16,6 +16,7 @@ import { isLeader } from './auth';
 import { audit } from '../infra/audit';
 import { ProcessingStatus } from '../infra/processing-status';
 import { TaskMessages } from './task-messages';
+import { normalizeSales, projectSales, salesFeedback, salesQuestions } from '../../shared/sales';
 
 export function mapReport(r: any): Report {
   return {
@@ -213,6 +214,33 @@ export class ReportService {
     }
     return groups;
   }
+  async feedback(actor: Actor, draft: Extraction, tx: Sql = this.db) {
+    const groups = await this.candidates(actor, draft, tx);
+    const responses: string[] = [];
+    let questionBudget = 3;
+    for (let i = 0; i < draft.blocks.length; i++) {
+      const b = draft.blocks[i]!;
+      if (!b.sales) {
+        responses.push(`${b.companyName}\n${b.summary}`);
+        continue;
+      }
+      const sales = normalizeSales(b.sales);
+      const id = `preview:${i}`;
+      const current =
+        groups[i]?.length === 1
+          ? (await this.crm.salesPreview(actor, groups[i]![0]!, sales, id, b.occurredOn, tx))
+              .current
+          : projectSales([
+              { id, occurredOn: b.occurredOn, createdAt: new Date().toISOString(), sales },
+            ]).current;
+      const questions = salesQuestions(current, i).slice(0, questionBudget);
+      questionBudget -= questions.length;
+      responses.push(
+        `${salesFeedback(b.companyName, { ...current, deferred: true }, i)}\nЧто уточнено: ${b.summary}\n${questions.map((q) => `- ${q}`).join('\n')}`,
+      );
+    }
+    return responses.join('\n\n');
+  }
   async confirmCurrent(actor: Actor, id: string, expectedVersion?: number) {
     const r = await this.get(actor, id);
     if (r.status === 'saved') return { id, status: 'saved', result: r.result };
@@ -283,12 +311,19 @@ export class ReportService {
         requireCondition(!seen.has(companyId), 400, 'Объедините блоки одной компании');
         seen.add(companyId);
         const company = await this.crm.company(actor, companyId, tx, true);
+        const sales = block.sales ? normalizeSales(block.sales) : null;
+        if (sales && !sales.client.city && block.city !== null) sales.client.city={value:block.city,certainty:'confirmed'};
+        if (sales && !sales.client.segment && block.segment !== null) sales.client.segment={value:block.segment,certainty:'confirmed'};
         // A supervisor can confirm an old report after reassignment; a manager cannot access a former company.
         const activity = await this.crm.createRecord(
           actor,
           companyId,
           'activity',
-          { text: block.summary, occurredOn: block.occurredOn },
+          {
+            text: block.summary,
+            occurredOn: block.occurredOn,
+            sales,
+          },
           null,
           tx,
         );
@@ -327,7 +362,9 @@ export class ReportService {
           createdAt: _created,
           updatedAt: _updated,
           ...data
-        } = company;
+        } = await this.crm.company(actor, companyId, tx);
+        if (!sales && block.city !== null) data.city = block.city;
+        if (!sales && block.segment !== null) data.segment = block.segment;
         if (block.stage !== null) data.stage = block.stage;
         if (block.potential !== null) data.potential = block.potential;
         for (const d of block.divisions) data.divisions[d.key] = d.amount;

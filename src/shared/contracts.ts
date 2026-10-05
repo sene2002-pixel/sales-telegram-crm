@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { salesUpdateSchema, SalesUpdate } from './sales';
 
 export const roles = ['manager', 'supervisor', 'admin'] as const;
 export type Role = (typeof roles)[number];
@@ -10,7 +11,13 @@ export interface Actor {
   active: boolean;
   supervisorId?: string | null;
 }
-export const segments = ['shchitovik', 'oem', 'end_client', 'contractor'] as const;
+export const segments = [
+  'shchitovik',
+  'oem',
+  'end_client',
+  'contractor',
+  'design_institute',
+] as const;
 export const stages = ['new', 'dialogue', 'proposal', 'supply', 'closed'] as const;
 export const divisions = ['lv', 'mv', 'drives', 'cells', 'heat', 'services'] as const;
 export const labels: Record<string, string> = {
@@ -21,6 +28,7 @@ export const labels: Record<string, string> = {
   oem: 'OEM',
   end_client: 'Конечный заказчик',
   contractor: 'Подрядчик',
+  design_institute: 'Проектный институт',
   new: 'Новый',
   dialogue: 'Диалог',
   proposal: 'Предложение',
@@ -116,7 +124,13 @@ export const taskSchema = z
     done: z.boolean().default(false),
   })
   .strict();
-export const activitySchema = z.object({ text: text.min(1), occurredOn: dateSchema }).strict();
+export const activitySchema = z
+  .object({
+    text: text.min(1),
+    occurredOn: dateSchema,
+    sales: salesUpdateSchema.nullable().default(null),
+  })
+  .strict();
 export const fileSchema = z.object({
   name,
   category: z.enum(['docs', 'catalog', 'brochure', 'ref', 'model']),
@@ -155,6 +169,7 @@ export const extractionBlockSchema = z
     divisions: z.array(z.object({ key: z.enum(divisions), amount: money })).max(6),
     summary: text.min(1),
     occurredOn: dateSchema,
+    sales: salesUpdateSchema.nullable().default(null),
     contacts: z
       .array(
         z.object({
@@ -174,7 +189,12 @@ export const extractionSchema = z
     warnings: z.array(z.string().max(500)).max(20),
   })
   .strict();
-export type Extraction = z.infer<typeof extractionSchema>;
+export type Extraction = {
+  warnings: string[];
+  blocks: (Omit<z.output<typeof extractionBlockSchema>, 'sales'> & {
+    sales?: SalesUpdate | null;
+  })[];
+};
 export const confirmSchema = z
   .object({
     version: z.number().int().positive(),

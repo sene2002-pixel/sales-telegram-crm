@@ -44,6 +44,7 @@ import { ReportWorker } from '../services/worker';
 import { BotService } from '../services/bot';
 import { DialogueService } from '../services/dialogue';
 import { DashboardService } from '../services/dashboard';
+import { CommercialReportService } from '../services/commercial-report';
 import { ExportService } from '../services/exports';
 import { LetterService } from '../services/letters';
 import { TelegramAdapter } from '../infra/telegram';
@@ -64,6 +65,7 @@ export class Services {
   worker: ReportWorker;
   bot: BotService;
   dashboard: DashboardService;
+  commercial: CommercialReportService;
   exports: ExportService;
   letters: LetterService;
   dialogue: DialogueService;
@@ -124,6 +126,7 @@ export class Services {
       this.dialogue,
     );
     this.dashboard = new DashboardService(db, config.timezone);
+    this.commercial = new CommercialReportService(db);
     this.exports = new ExportService(db, this.dashboard, telegram, config);
   }
 }
@@ -401,6 +404,7 @@ class CrmController {
     return {
       ...mapReport(report),
       candidates: report.draft ? await this.s.reports.candidates(r.actor, report.draft) : [],
+      feedback: report.draft ? await this.s.reports.feedback(r.actor, report.draft) : '',
     };
   }
   @Post('reports') enqueue(@Req() r: AuthedRequest, @Body() b: unknown) {
@@ -439,6 +443,14 @@ class CrmController {
     @Query('to') to: string,
   ) {
     return this.s.dashboard.summary(r.actor, from, to);
+  }
+  @Get('dashboard/commercial') commercial(
+    @Req() r: AuthedRequest,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('authorId') authorId?: string,
+  ) {
+    return this.s.commercial.generate(r.actor, from, to, authorId);
   }
   @Get('dashboard/export') async csv(
     @Req() r: AuthedRequest,

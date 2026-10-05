@@ -7,10 +7,17 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+// Reuse local test sessions instead of hitting the real auth rate limit for every scenario.
+// Each role still exercises the UI login on its first use in this worker.
+const roleTokens = new Map<string, string>();
 async function login(page: Page, role = 'Менеджер') {
+  const existing = roleTokens.get(role);
+  if (existing)
+    await page.addInitScript((token) => sessionStorage.setItem('crm-session', token), existing);
   await page.goto('/');
-  await page.getByRole('button', { name: role, exact: true }).click();
+  if (!existing) await page.getByRole('button', { name: role, exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+  roleTokens.set(role, (await page.evaluate(() => sessionStorage.getItem('crm-session')))!);
 }
 async function api(page: Page, path: string, body?: unknown, method = 'POST') {
   const token = await page.evaluate(() => sessionStorage.getItem('crm-session'));
@@ -255,15 +262,29 @@ test('[UI-05] admin creates a user, changes role, blocks and restores access', a
 test('[UI-06] supervisor assigns company and filters by owner', async ({ page }) => {
   await login(page, 'Руководитель');
   const c = await company(page);
-  const manager = await page.request.post('/api/auth/dev', { data: { role: 'manager' } });
+  const supervisor = await api(page, '/me', undefined, 'GET');
+  const admin = await page.request.post('/api/auth/dev', { data: { role: 'admin' } });
+  expect(admin.ok()).toBeTruthy();
+  const adminToken = (await admin.json()).token;
+  const managerName = `Тестовый менеджер ${Date.now()}`;
+  const manager = await page.request.post('/api/users', {
+    headers: { Authorization: `Bearer ${adminToken}` },
+    data: {
+      telegramId: String(Date.now()),
+      name: managerName,
+      role: 'manager',
+      active: true,
+      supervisorId: supervisor.id,
+    },
+  });
   expect(manager.ok()).toBeTruthy();
-  const id = (await manager.json()).user.id;
+  const id = (await manager.json()).id;
   await reload(page);
   await page.getByRole('heading', { name: c.name, exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Передать компанию').selectOption(id);
   await dialog.getByRole('button', { name: 'Назначить', exact: true }).click();
-  await expect(dialog).toContainText('Демо manager');
+  await expect(dialog).toContainText(managerName);
   await dialog.getByRole('button', { name: 'Изменения', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('company.assigned');
   await dialog.getByRole('button', { name: 'Закрыть' }).click();

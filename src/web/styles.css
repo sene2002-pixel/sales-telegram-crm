@@ -17,6 +17,48 @@
   --canvas: #f5f7ff;
   --shadow: 0 4px 18px #4358ad08;
 }
+.sales-blocks {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sales-deal {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.sales-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.sales-fields dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.sales-fields dd {
+  margin: 4px 0 0;
+}
+.deal-score {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.deal-score span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+}
+.deal-score .filled {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.commercial-report {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
 * {
   box-sizing: border-box;
 }

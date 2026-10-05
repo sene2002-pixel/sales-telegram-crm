@@ -10,6 +10,8 @@ import {
 } from '../shared/contracts';
 import { api } from './api';
 import { Field, Modal, Select } from './forms';
+import { SalesBlocks } from './SalesCard';
+import { salesUpdateSchema } from '../shared/sales';
 
 export function Reports({
   companies,
@@ -131,8 +133,10 @@ function ReportEditor({
     [ids, setIds] = useState<(string | null)[]>([]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
   async function load() {
-    const r = await api<Report & { candidates: string[][] }>(`/reports/${id}`);
+    const r = await api<Report & { candidates: string[][]; feedback: string }>(`/reports/${id}`);
+    setFeedback(r.feedback);
     setReport(r);
     setDraft(r.draft);
     setIds(r.candidates.map((g) => (g.length === 1 ? g[0]! : null)));
@@ -143,9 +147,12 @@ function ReportEditor({
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        const r = await api<Report & { candidates: string[][] }>(`/reports/${id}`);
+        const r = await api<Report & { candidates: string[][]; feedback: string }>(
+          `/reports/${id}`,
+        );
         if (!alive) return;
         setReport(r);
+        setFeedback(r.feedback);
         setDraft(r.draft);
         setIds(r.candidates.map((g) => (g.length === 1 ? g[0]! : null)));
         if (['queued', 'processing'].includes(r.status)) timer = setTimeout(poll, 2500);
@@ -208,11 +215,49 @@ function ReportEditor({
           <p className="muted">
             Проверьте компании, суммы и сроки. Сохранение применит все блоки одновременно.
           </p>
+          {feedback && (
+            <p className="preserve" aria-label="Рекомендации Pico">
+              {feedback}
+            </p>
+          )}
           {draft.blocks.map((b, i) => (
             <section className="inset" key={i}>
               <h3>
                 {i + 1}. {b.companyName}
               </h3>
+              {b.sales && (
+                <>
+                  <SalesBlocks sales={b.sales} />
+                  <details>
+                    <summary>Исправить структурированные данные</summary>
+                    <p className="muted">
+                      Измените JSON и примените исправление перед сохранением. Неизвестное — null;
+                      confirmed — только факт.
+                    </p>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const raw = new FormData(e.currentTarget).get('sales');
+                        try {
+                          update(i, 'sales', salesUpdateSchema.parse(JSON.parse(String(raw))));
+                          setError('');
+                        } catch {
+                          setError('Проверьте структуру и значения пяти блоков');
+                        }
+                      }}
+                    >
+                      <Field label="JSON пяти блоков">
+                        <textarea
+                          name="sales"
+                          rows={12}
+                          defaultValue={JSON.stringify(b.sales, null, 2)}
+                        />
+                      </Field>
+                      <button>Применить исправление</button>
+                    </form>
+                  </details>
+                </>
+              )}
               <Field label="Записать в компанию">
                 <select
                   value={ids[i] || ''}
