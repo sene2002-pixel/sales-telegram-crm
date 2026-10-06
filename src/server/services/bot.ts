@@ -165,7 +165,7 @@ export class BotService {
         return await this.reports.messages.run(
           callbackTask(callback.data || '') || '',
           async () => {
-            const [action, id, version] = (callback.data || '').split(':');
+            const [action, id, version, industryId] = (callback.data || '').split(':');
             await this.diagnostics?.record('telegram.callback.started', {
               action,
               entityId: id,
@@ -184,8 +184,8 @@ export class BotService {
             if (action === 'lp' && id)
               await this.letters?.chooseSignature(actor, id, Number(version));
             if (action === 'lc' && id) await this.letters?.chooseSignature(actor, id);
-            if (action && ['ly', 'ln', 'li', 'lz', 'lr'].includes(action) && id)
-              await this.letters?.reviewCompany(actor, id, action, Number(version));
+            if (action && ['ly', 'ln', 'li', 'lz', 'lr', 'lg'].includes(action) && id)
+              await this.letters?.reviewCompany(actor, id, action, Number(version), industryId);
             if (action === 'da' && id)
               await this.dialogue?.callback(actor, id, 'confirm', Number(version));
             if (action === 'dx' && id) await this.dialogue?.callback(actor, id, 'skip');

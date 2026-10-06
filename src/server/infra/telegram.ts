@@ -150,7 +150,12 @@ export class TelegramAdapter implements Messenger {
     const result = (await response.json()) as any;
     requireCondition(result.ok, 502, 'Telegram отклонил отправку файла');
   }
-  async sendPdf(chatId: string, content: Uint8Array, filename: string): Promise<number | void> {
+  async sendPdf(
+    chatId: string,
+    content: Uint8Array,
+    filename: string,
+    warning?: string,
+  ): Promise<number | void> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     requireCondition(
       Buffer.from(content).subarray(0, 5).toString() === '%PDF-',
@@ -166,7 +171,7 @@ export class TelegramAdapter implements Messenger {
     );
     body.append(
       'caption',
-      'Сохранено в CRM. Из чата удалится через 24 часа',
+      'Сохранено в CRM. Из чата удалится через 24 часа' + (warning ? `\n${warning}` : ''),
     );
     const response = await fetch(
       `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,

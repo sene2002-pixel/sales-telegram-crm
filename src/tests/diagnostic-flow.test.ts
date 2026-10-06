@@ -96,6 +96,7 @@ test(
                     inn: '7707083893',
                     city: 'Москва',
                     industry: 'Строительство',
+                    activity: 'Генподрядчик',
                   },
                   recipient: { name: 'Иванов Иван Иванович', role: 'Генеральный директор' },
                   sources: [claimedUrl],

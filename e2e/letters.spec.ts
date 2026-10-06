@@ -65,8 +65,12 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Петров');
   await page.getByLabel('Фамилия', { exact: true }).fill('Сидоров');
   await page.getByRole('button', { name: 'Сохранить изменения' }).click();
-  await expect(page.getByRole('button', { name: 'Сформировать PDF и сохранить' })).toBeEnabled();
   await expect(page.getByRole('dialog')).toContainText('Сидоров');
+  await expect(page.getByRole('button', { name: 'Сформировать PDF и сохранить' })).toBeDisabled();
+  await page
+    .getByLabel('Подтвердите отрасль компании')
+    .selectOption({ label: 'Машиностроение/OEM' });
+  await expect(page.getByRole('button', { name: 'Сформировать PDF и сохранить' })).toBeEnabled();
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: 'Мой профиль', exact: false }).click();

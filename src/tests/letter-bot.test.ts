@@ -105,7 +105,13 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
   const sources = ['https://example.com/company'];
   const research = {
     status: 'found',
-    company: { name: 'ООО Ромашка', inn: '7707083893', city: 'Москва', industry: 'Энергетика' },
+    company: {
+      name: 'ООО Ромашка',
+      inn: '7707083893',
+      city: 'Москва',
+      industry: 'Энергетика — генерация',
+      activity: 'Генерация электроэнергии',
+    },
     recipient: { name: 'Иванов Иван Иванович', role: 'Генеральный директор' },
     sources,
   };
@@ -411,7 +417,7 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
               company_name: fixture.recipient_lines[1],
               full_name_dative: fixture.recipient_lines[2],
             },
-            references_paragraph: fixture.references_paragraph,
+            reference_ids: JSON.parse(body.input).referenceCandidates.map((r: any) => r.id),
             sources,
           });
         };
@@ -472,11 +478,17 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
           1,
         );
         const [company] = await db.query('SELECT * FROM companies');
-        assert.equal(company.data.industry, 'Энергетика');
+        assert.equal(company.data.industry, 'Энергетика — генерация');
+        const warning = 'В базе нет референсов по отрасли тест, нужен ручной подбор';
+        await db.query(
+          "UPDATE audit SET details=details || $2::jsonb WHERE action='letter.references_selected' AND entity_id=$1",
+          [job.file_id, JSON.stringify({ warning })],
+        );
         let sends = 0;
-        telegram.sendPdf = async (chatId, content) => {
+        telegram.sendPdf = async (chatId, content, _filename, captionWarning) => {
           deliveryOrder.push('pdf');
           assert.equal(chatId, actor.telegramId);
+          if (sends < 2) assert.equal(captionWarning, warning);
           assert.equal(Buffer.from(content).subarray(0, 5).toString(), '%PDF-');
           if (++sends === 1) throw new Error('temporary');
         };
@@ -523,7 +535,9 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
                   company_name: fixture.recipient_lines[1],
                   full_name_dative: fixture.recipient_lines[2],
                 },
-                references_paragraph: fixture.references_paragraph,
+                reference_ids: JSON.parse(JSON.parse(raw as string).input).referenceCandidates.map(
+                  (r: any) => r.id,
+                ),
                 sources,
               });
         await bot.enqueue(actor, 'repeat-company', 'ООО Ромашка');

@@ -35,7 +35,7 @@ test(
     });
     const fixture = JSON.parse(await readFile('assets/esq/data_example.json', 'utf8'));
     const original = s.letters.ai.request;
-    s.letters.ai.request = async () => ({
+    s.letters.ai.request = async (_path, raw) => ({
       status: 'completed',
       output: [
         {
@@ -48,7 +48,9 @@ test(
                   company_name: fixture.recipient_lines[1],
                   full_name_dative: fixture.recipient_lines[2],
                 },
-                references_paragraph: fixture.references_paragraph,
+                reference_ids: JSON.parse(JSON.parse(raw as string).input).referenceCandidates.map(
+                  (r: any) => r.id,
+                ),
                 sources: ['https://example.com'],
               }),
             },
@@ -59,12 +61,14 @@ test(
     try {
       const result = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
         contactId: contact.id,
+        confirmedIndustry: 'Энергетика — генерация',
       }).expect(201);
       const file = await api(actors.manager, 'get', `/files/${result.body.record.id}`).expect(200);
       assert.equal(file.body.subarray(0, 5).toString(), '%PDF-');
       await api(other, 'get', `/files/${result.body.record.id}`).expect(404);
       const second = await api(actors.manager, 'post', `/companies/${own.id}/letters`, {
         contactId: contact.id,
+        confirmedIndustry: 'Энергетика — генерация',
       }).expect(201);
       assert.equal(second.body.record.data.name, result.body.record.data.name);
       assert.notEqual(second.body.record.id, result.body.record.id);

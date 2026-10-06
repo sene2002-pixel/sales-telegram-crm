@@ -15,7 +15,7 @@ test('letter source schema omits unsupported uri format but validates URLs local
       company_name: 'ООО Тест',
       full_name_dative: 'Иванову Ивану',
     },
-    references_paragraph: 'а'.repeat(330),
+    reference_ids: ['example-1'],
     sources: ['https://example.com'],
   };
   assert.ok(letterSchema.safeParse(data).success);
@@ -58,7 +58,7 @@ test('recipient header has a single dedicated name field, rejects legacy duplica
         recipient.full_name_dative,
         'Дрегваль Сергей Георгиевич',
       ],
-      references_paragraph: 'а'.repeat(330),
+      reference_ids: ['example-1'],
       sources: ['https://example.com'],
     }).success,
     false,

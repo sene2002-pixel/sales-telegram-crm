@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CrmRecord } from '../shared/contracts';
 import { SavedSignature, maxSignatures, noContacts } from '../shared/letters';
+import { industryGroups } from '../shared/reference-industries';
 import { api } from './api';
 import { Field } from './forms';
 import { SignatureManager } from './SignatureManager';
@@ -21,6 +22,8 @@ export function LetterForm({
     [signatureId, setSignatureId] = useState(''),
     [message, setMessage] = useState('');
   const [creating, setCreating] = useState(false);
+  const [confirmedIndustry, setConfirmedIndustry] = useState('');
+  const [confirmedActivity, setConfirmedActivity] = useState('');
   const signature = signatures.find((s) => s.id === signatureId);
   if (creating)
     return (
@@ -60,6 +63,8 @@ export function LetterForm({
             const result = await api<SavedSignature[]>('/me/letter-signatures');
             setSignatures(result);
             setSignatureId('');
+            setConfirmedIndustry('');
+            setConfirmedActivity('');
             setContactId(contacts.length === 1 ? contacts[0].id : '');
             setOpen(true);
           });
@@ -75,6 +80,28 @@ export function LetterForm({
       {message && <p role="status">{message}</p>}
       {open && (
         <div className="letter-form">
+          <Field label="Подтвердите отрасль компании">
+            <select
+              disabled={busy}
+              value={confirmedIndustry}
+              onChange={(e) => setConfirmedIndustry(e.target.value)}
+            >
+              <option value="">Выберите отрасль</option>
+              {industryGroups.map((group) => (
+                <option key={group.id} value={group.label}>
+                  {group.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Вид деятельности / оборудование (необязательно)">
+            <input
+              disabled={busy}
+              maxLength={150}
+              value={confirmedActivity}
+              onChange={(e) => setConfirmedActivity(e.target.value)}
+            />
+          </Field>
           <Field label="Получатель письма">
             <select
               disabled={busy}
@@ -116,13 +143,20 @@ export function LetterForm({
           <div className="letter-actions">
             <button
               className="primary"
-              disabled={busy || !signature || !contactId}
+              disabled={busy || !signature || !contactId || !confirmedIndustry}
               onClick={() =>
                 void run(async () => {
-                  await api(`/companies/${companyId}/letters`, 'POST', { contactId, signatureId });
+                  const result = await api<{ referenceWarning?: string }>(
+                    `/companies/${companyId}/letters`,
+                    'POST',
+                    { contactId, signatureId, confirmedIndustry, confirmedActivity },
+                  );
                   await onCreated();
                   setOpen(false);
-                  setMessage('Письмо сохранено в разделе «Файлы» компании.');
+                  setMessage(
+                    'Письмо сохранено в разделе «Файлы» компании.' +
+                      (result.referenceWarning ? ` ${result.referenceWarning}` : ''),
+                  );
                 })
               }
             >

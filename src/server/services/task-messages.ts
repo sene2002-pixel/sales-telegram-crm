@@ -6,7 +6,7 @@ export function callbackTask(data: string): string | undefined {
   const [action, id] = data.split(':');
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
   if (['da', 'dx', 'dr', 'dt', 'de', 'dp'].includes(action!)) return `dialogue:${id}`;
-  if (['lp', 'lc', 'ly', 'ln', 'li', 'lz', 'lr'].includes(action!)) return `letter:${id}`;
+  if (['lp', 'lc', 'ly', 'ln', 'li', 'lz', 'lr', 'lg'].includes(action!)) return `letter:${id}`;
   if (['save', 'cancel'].includes(action!)) return `report:${id}`;
   if (['sc', 'sx', 'sp'].includes(action!)) return `signature:${id}`;
   if (['cc', 'cx', 'cp'].includes(action!)) return `report:${id}`;
