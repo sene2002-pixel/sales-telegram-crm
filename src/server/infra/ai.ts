@@ -95,6 +95,7 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
       'responses',
       JSON.stringify({
         model: this.config.extractionModel,
+        ...(this.config.extractionModel === 'gpt-6-luna' ? { reasoning: { effort: 'none' } } : {}),
         store: false,
         instructions:
           protectedInstructions(

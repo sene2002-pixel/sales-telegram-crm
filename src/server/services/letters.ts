@@ -208,6 +208,7 @@ export class LetterService {
           'responses',
           JSON.stringify({
             model: this.config.letterModel,
+            ...(this.config.letterModel === 'gpt-6-luna' ? { reasoning: { effort: 'none' } } : {}),
             store: false,
             ...(options.maxOutputTokens ? { max_output_tokens: options.maxOutputTokens } : {}),
             ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),

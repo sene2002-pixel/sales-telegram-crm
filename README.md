@@ -59,7 +59,9 @@ CRM для менеджеров: компании, контакты, проек�
 В текущем коде один ключ используется для двух операций:
 
 - `TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe`: голос → текст, endpoint `/v1/audio/transcriptions`.
-- `EXTRACTION_MODEL=gpt-4o-mini`: текст → структурированный черновик, endpoint `/v1/responses`.
+- `EXTRACTION_MODEL=gpt-6-luna`: текст → структурированный черновик, endpoint `/v1/responses`.
+- `LETTER_MODEL=gpt-6-luna`: команды, фото, поиск компаний и письма, endpoint `/v1/responses`.
+- Для Luna явно используется `reasoning.effort=none`, сохраняя прежний режим без дополнительного рассуждения. Аудио распознаётся отдельной моделью. При обновлении существующей установки замените обе переменные в `.env`: старые значения перекрывают новые defaults. Пересоздайте приложение: `docker compose up -d --build app`. Откат: верните `EXTRACTION_MODEL=gpt-4o-mini`, `LETTER_MODEL=gpt-4.1-mini` и пересоздайте app. База данных не меняется. Перед production проверьте голос, фото и поиск с реальным API; доступ к Luna зависит от API-проекта.
 
 Это настройки проекта, а не обещание доступности моделей в любом аккаунте. Другого провайдера нельзя подключить простой подстановкой его ключа: текущий адаптер обращается к `api.openai.com`. Голос и текст отчёта передаются внешнему ИИ-провайдеру; согласуйте допустимость передачи клиентских данных. Без ключа ручное ведение CRM доступно, но подготовка ИИ-отчётов не работает.
 
@@ -123,7 +125,8 @@ SESSION_SECRET=REPLACE_WITH_UNIQUE_RANDOM_HEX
 TELEGRAM_WEBHOOK_SECRET=REPLACE_WITH_ANOTHER_RANDOM_HEX
 POSTGRES_PASSWORD=REPLACE_WITH_THIRD_RANDOM_HEX
 TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
-EXTRACTION_MODEL=gpt-4o-mini
+EXTRACTION_MODEL=gpt-6-luna
+LETTER_MODEL=gpt-6-luna
 WORKER_ENABLED=true
 REPORT_TIMEZONE=Europe/Moscow
 ```
