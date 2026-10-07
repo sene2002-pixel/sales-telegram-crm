@@ -80,7 +80,10 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
     const body = new FormData();
     body.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/ogg' }), 'voice.ogg');
     body.append('model', this.config.transcriptionModel);
-    body.append('language', 'ru');
+    body.append(
+      this.config.transcriptionModel === 'gpt-transcribe' ? 'languages[]' : 'language',
+      'ru',
+    );
     const result = await this.request('audio/transcriptions', body, true);
     requireCondition(
       typeof result.text === 'string' && result.text.trim().length > 0,

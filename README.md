@@ -58,7 +58,7 @@ CRM для менеджеров: компании, контакты, проек�
 
 В текущем коде один ключ используется для двух операций:
 
-- `TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe`: голос → текст, endpoint `/v1/audio/transcriptions`.
+- `TRANSCRIPTION_MODEL=gpt-transcribe`: голос → текст, endpoint `/v1/audio/transcriptions`, подсказка языка `languages[]=ru`. Для старых моделей сохраняется `language=ru`. На существующем сервере обновите эту переменную в `.env`; для отката верните `gpt-4o-mini-transcribe` и пересоздайте app.
 - `EXTRACTION_MODEL=gpt-6-luna`: текст → структурированный черновик, endpoint `/v1/responses`.
 - `LETTER_MODEL=gpt-6-luna`: команды, фото, поиск компаний и письма, endpoint `/v1/responses`.
 - Для Luna явно используется `reasoning.effort=none`, сохраняя прежний режим без дополнительного рассуждения. Аудио распознаётся отдельной моделью. При обновлении существующей установки замените обе переменные в `.env`: старые значения перекрывают новые defaults. Пересоздайте приложение: `docker compose up -d --build app`. Откат: верните `EXTRACTION_MODEL=gpt-4o-mini`, `LETTER_MODEL=gpt-4.1-mini` и пересоздайте app. База данных не меняется. Перед production проверьте голос, фото и поиск с реальным API; доступ к Luna зависит от API-проекта.
@@ -124,7 +124,7 @@ OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY
 SESSION_SECRET=REPLACE_WITH_UNIQUE_RANDOM_HEX
 TELEGRAM_WEBHOOK_SECRET=REPLACE_WITH_ANOTHER_RANDOM_HEX
 POSTGRES_PASSWORD=REPLACE_WITH_THIRD_RANDOM_HEX
-TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+TRANSCRIPTION_MODEL=gpt-transcribe
 EXTRACTION_MODEL=gpt-6-luna
 LETTER_MODEL=gpt-6-luna
 WORKER_ENABLED=true

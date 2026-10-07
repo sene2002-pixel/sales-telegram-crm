@@ -18,7 +18,7 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminTelegramId: env.BOOTSTRAP_ADMIN_TELEGRAM_ID || '',
     apiKey: env.OPENAI_API_KEY || '',
-    transcriptionModel: env.TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe',
+    transcriptionModel: env.TRANSCRIPTION_MODEL || 'gpt-transcribe',
     extractionModel: env.EXTRACTION_MODEL || 'gpt-6-luna',
     letterModel: env.LETTER_MODEL || 'gpt-6-luna',
     worker: env.WORKER_ENABLED !== 'false',

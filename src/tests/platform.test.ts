@@ -532,7 +532,9 @@ test('OpenAI adapter uses multipart transcription and strict output schema, hand
     assert.equal(await adapter.transcribe(new Uint8Array([1, 2])), 'Текст из аудио');
     const body = seen[0].init.body as FormData;
     assert.ok(body.get('file') instanceof Blob);
-    assert.equal(body.get('language'), 'ru');
+    assert.equal(body.get('model'), 'gpt-transcribe');
+    assert.equal(body.get('languages[]'), 'ru');
+    assert.equal(body.get('language'), null);
     const result = await adapter.extract('Отчёт', '2026-09-14T12:00:00Z');
     assert.equal(result.blocks[0]?.companyName, 'Контракт провайдера');
     const requestBody = JSON.parse(seen[1].init.body);

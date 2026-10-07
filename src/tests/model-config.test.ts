@@ -6,11 +6,32 @@ import { OpenAiAdapter } from '../server/infra/ai';
 import { LetterService } from '../server/services/letters';
 import { CrmService } from '../server/services/crm';
 
+test('transcription switches language hints by model and rejects empty speech', async () => {
+  for (const model of ['gpt-transcribe', 'gpt-4o-mini-transcribe']) {
+    const ai = new OpenAiAdapter(makeConfig({ TRANSCRIPTION_MODEL: model }));
+    ai.request = async (path, raw, multipart) => {
+      assert.equal(path, 'audio/transcriptions');
+      assert.equal(multipart, true);
+      const body = raw as FormData;
+      assert.equal(body.get('model'), model);
+      assert.equal(body.get('languages[]'), model === 'gpt-transcribe' ? 'ru' : null);
+      assert.equal(body.get('language'), model === 'gpt-transcribe' ? null : 'ru');
+      const file = body.get('file') as File;
+      assert.equal(file.name, 'voice.ogg');
+      assert.equal(file.type, 'audio/ogg');
+      return { text: 'Подготовь письмо' };
+    };
+    assert.equal(await ai.transcribe(new Uint8Array([1])), 'Подготовь письмо');
+    ai.request = async () => ({ text: ' ' });
+    await assert.rejects(() => ai.transcribe(new Uint8Array([1])), /разобрать речь/);
+  }
+});
+
 test('Luna defaults preserve separate speech model and explicit rollback overrides', () => {
   const config = makeConfig({});
   assert.equal(config.extractionModel, 'gpt-6-luna');
   assert.equal(config.letterModel, 'gpt-6-luna');
-  assert.equal(config.transcriptionModel, 'gpt-4o-mini-transcribe');
+  assert.equal(config.transcriptionModel, 'gpt-transcribe');
   const old = makeConfig({ EXTRACTION_MODEL: 'gpt-4o-mini', LETTER_MODEL: 'gpt-4.1-mini' });
   assert.equal(old.extractionModel, 'gpt-4o-mini');
   assert.equal(old.letterModel, 'gpt-4.1-mini');
