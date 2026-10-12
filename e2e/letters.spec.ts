@@ -1,8 +1,12 @@
+import { prepareDemoAuth } from './helpers';
+import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 test('letter contact validation and editable signature', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+  await clients(page);
   const headers = {
     Authorization: `Bearer ${await page.evaluate(() => sessionStorage.getItem('crm-session'))}`,
   };
@@ -11,7 +15,7 @@ test('letter contact validation and editable signature', async ({ page }) => {
   ).json();
   for (const s of signatures)
     await page.request.delete('/api/me/letter-signatures/' + s.id, { headers });
-  await page.getByRole('button', { name: '+ Компания', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить клиента', exact: true }).click();
   await page.getByLabel('Название', { exact: true }).fill('Письма ' + Date.now());
   await page.getByRole('button', { name: 'Сохранить компанию' }).click();
   await expect(page.locator('.letter-composer')).not.toHaveClass(/inset/);
@@ -73,7 +77,7 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Сформировать PDF и сохранить' })).toBeEnabled();
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.reload();
-  await page.getByRole('button', { name: 'Мой профиль', exact: false }).click();
+  await navigate(page, 'Мой профиль');
   await page.getByRole('button', { name: 'Редактировать подпись', exact: true }).click();
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Сидоров');
   await page.getByRole('button', { name: 'Отмена', exact: true }).click();

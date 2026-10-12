@@ -397,6 +397,13 @@ class CrmController {
   ) {
     return this.s.crm.updateRecord(r.actor, id, b);
   }
+  @Delete('tasks/:id') deleteTask(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.s.crm.deleteTask(r.actor, id, b);
+  }
   @Get('reports') reports(@Req() r: AuthedRequest) {
     return this.s.reports.list(r.actor);
   }
@@ -604,12 +611,10 @@ export async function createApp(config: Config, existingDb?: Database) {
         requestId: res.locals.requestId,
       });
       res.setHeader('Retry-After', String(wait));
-      res
-        .status(429)
-        .json({
-          message: `Слишком много запросов. Повторите через ${wait} сек.`,
-          retryAfter: wait,
-        });
+      res.status(429).json({
+        message: `Слишком много запросов. Повторите через ${wait} сек.`,
+        retryAfter: wait,
+      });
       return;
     }
     next();

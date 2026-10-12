@@ -1,13 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Actor, Company, CrmRecord, labels, segments, divisions, roles } from '../shared/contracts';
-import { api, setToken, token, today, money, download } from './api';
+import { api, setToken, token, download } from './api';
 import { CompanyForm, Modal, Select } from './forms';
 import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
 import { Team } from './Team';
 import { RoleGuide } from './RoleGuide';
 import { Profile } from './Profile';
+import { ClientRow } from './ClientRow';
+import { Icon } from './Icons';
+import {
+  HomeScreen,
+  TasksScreen,
+  ProjectsScreen,
+  AnalyticsScreen,
+  RecordCreate,
+  ScreenGuide,
+} from './Screens';
 import './styles.css';
 declare global {
   interface Window {
@@ -40,7 +50,7 @@ function App() {
     [error, setError] = useState(''),
     [dev, setDev] = useState(false),
     [tab, setTab] = useState(
-      new URLSearchParams(location.search).has('report') ? 'reports' : 'companies',
+      new URLSearchParams(location.search).has('report') ? 'reports' : 'home',
     );
   const [selected, setSelected] = useState<Company | null>(null),
     [create, setCreate] = useState(false),
@@ -49,15 +59,19 @@ function App() {
     [segment, setSegment] = useState(''),
     [division, setDivision] = useState(''),
     [owner, setOwner] = useState(''),
-    [archive, setArchive] = useState(false),
-    [taskFilter, setTaskFilter] = useState('open'),
-    [date, setDate] = useState(today()),
-    [calendarMonth, setCalendarMonth] = useState(today().slice(0, 7));
+    [archive, setArchive] = useState(false);
   const [files, setFiles] = useState<(CrmRecord & { companyName: string })[]>([]),
     [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]);
-  const [busy, setBusy] = useState(false);
   const [help, setHelp] = useState(false);
+  const [more, setMore] = useState(false),
+    [recordCreate, setRecordCreate] = useState<'task' | 'project' | null>(null),
+    [filtersOpen, setFiltersOpen] = useState(false),
+    [clientStatus, setClientStatus] = useState('all'),
+    [clientSort, setClientSort] = useState('name'),
+    [selectedTab, setSelectedTab] = useState('contact');
+  const refreshSequence = useRef(0);
   async function refresh() {
+    const sequence = ++refreshSequence.current;
     const [c, u, t, f, p] = await Promise.all([
       api<Company[]>('/companies'),
       api<Actor[]>('/users'),
@@ -65,6 +79,7 @@ function App() {
       api<any[]>('/records/file'),
       api<any[]>('/records/project'),
     ]);
+    if (sequence !== refreshSequence.current) return;
     setCompanies(c);
     setUsers(u);
     setTasks(t);
@@ -115,40 +130,11 @@ function App() {
     })();
   }, []);
   useEffect(() => {
-    const back = window.Telegram?.WebApp?.BackButton;
-    if (!back) return;
-    const close = () => {
-      setSelected(null);
-      setCreate(false);
-      setHelp(false);
-    };
-    if (selected || create || help) {
-      back.show();
-      back.onClick(close);
-    } else back.hide();
-    return () => back.offClick(close);
-  }, [selected, create, help]);
-  useEffect(() => {
     if (!user) return;
     const onFocus = () => refresh().catch((e) => setError(e.message));
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [user]);
-  async function toggle(task: CrmRecord) {
-    setBusy(true);
-    setError('');
-    try {
-      await api(`/records/${task.id}`, 'PATCH', {
-        version: task.version,
-        data: { text: task.data.text, due: task.data.due, done: !task.data.done },
-      });
-      await refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   if (!user)
     return (
       <main className="login">
@@ -188,65 +174,41 @@ function App() {
       </main>
     );
   const nav = [
-    ['companies', 'База', '◫'],
-    ['reports', 'Отчёты', '◉'],
-    ['tasks', 'Задачи', '✓'],
-    ['calendar', 'Календарь', '▦'],
-    ['projects', 'Проекты', '▱'],
-    ['files', 'Файлы', '▤'],
-    ['profile', 'Мой профиль', '○'],
-    ...(user.role !== 'manager' ? [['team', 'Команда', '◎']] : []),
+    ['home', 'Главная', 'home'],
+    ['companies', 'Клиенты', 'clients'],
+    ['projects', 'Проекты', 'projects'],
+    ['tasks', 'Задачи', 'tasks'],
+    ['analytics', 'Аналитика', 'analytics'],
   ];
+  const secondary = [
+    ['reports', 'Отчёты'],
+    ['calendar', 'Календарь'],
+    ['files', 'Файлы'],
+    ['profile', 'Мой профиль'],
+    ...(user.role !== 'manager' ? [['team', 'Команда']] : []),
+  ];
+  const openCompany = (company: Company, nextTab = 'contact') => {
+    setSelectedTab(nextTab);
+    setSelected(company);
+  };
+  const screenProps = {
+    companies,
+    projects,
+    tasks,
+    users,
+    onChanged: refresh,
+    onCompany: openCompany,
+  };
   const visible = companies.filter(
     (c) =>
       c.archived === archive &&
+      (clientStatus === 'all' ||
+        (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
       (!query || `${c.name} ${c.inn}`.toLowerCase().includes(query.toLowerCase())) &&
       (!city || c.city === city) &&
       (!segment || c.segment === segment) &&
       (!division || c.divisions[division as keyof typeof c.divisions] != null) &&
       (!owner || c.ownerId === owner),
-  );
-  const filteredTasks = tasks.filter((t) =>
-    taskFilter === 'done'
-      ? t.data.done
-      : taskFilter === 'overdue'
-        ? !t.data.done && t.data.due && t.data.due < today()
-        : !t.data.done,
-  );
-  const taskRows = (list: typeof tasks) => (
-    <div className="list">
-      {list.map((t) => (
-        <article className="task-row" key={t.id}>
-          <button
-            className={'checkbox ' + (t.data.done ? 'checked' : '')}
-            aria-label={t.data.done ? 'Вернуть задачу' : 'Выполнить задачу'}
-            disabled={busy}
-            onClick={() => toggle(t)}
-          >
-            {t.data.done ? '✓' : ''}
-          </button>
-          <button
-            className="task-text"
-            onClick={() => setSelected(companies.find((c) => c.id === t.companyId) || null)}
-          >
-            <strong className={t.data.done ? 'done' : ''}>{t.data.text}</strong>
-            <small>
-              {t.companyName}
-              {t.data.due ? ' · до ' + t.data.due : ' · без срока'} ·{' '}
-              {users.find((u) => u.id === t.assigneeId)?.name || ''}
-            </small>
-          </button>
-          {!t.data.done && t.data.due && t.data.due < today() && (
-            <span className="status failed">Просрочено</span>
-          )}
-        </article>
-      ))}
-      {!list.length && (
-        <div className="empty">
-          Задач пока нет. Добавьте задачу в карточке компании или отправьте отчёт.
-        </div>
-      )}
-    </div>
   );
   return (
     <div className="app-shell">
@@ -266,11 +228,18 @@ function App() {
                 setError('');
               }}
             >
-              <span>{icon}</span>
+              <Icon name={icon!} />
               {label}
             </button>
           ))}
         </nav>
+        <div className="pico-secondary-nav">
+          {secondary.map(([key, label]) => (
+            <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key!)}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="profile">
           <span className="avatar">{user.name.slice(0, 1)}</span>
           <div>
@@ -305,6 +274,45 @@ function App() {
               Права и помощь
             </button>
           </div>
+          <button
+            className="pico-more-button"
+            aria-label="Дополнительное меню"
+            aria-expanded={more}
+            onClick={() => setMore(!more)}
+          >
+            <Icon name="more" />
+          </button>
+          {more && (
+            <div className="pico-more-menu">
+              <button
+                onClick={() => {
+                  setMore(false);
+                  refresh().catch((e) => setError(e.message));
+                }}
+              >
+                Обновить
+              </button>
+              <button
+                onClick={() => {
+                  setMore(false);
+                  setHelp(true);
+                }}
+              >
+                Права и помощь
+              </button>
+              {secondary.map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setTab(key!);
+                    setMore(false);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="connection-state">
             <span className="online-dot" />
             <span className="connection-label">Подключено</span>{' '}
@@ -321,116 +329,127 @@ function App() {
             {error}
           </p>
         )}
+        {tab === 'home' && (
+          <HomeScreen
+            {...screenProps}
+            user={user}
+            onNavigate={setTab}
+            onCreateCompany={() => setCreate(true)}
+            onCreateRecord={setRecordCreate}
+          />
+        )}
+        {tab === 'analytics' && <AnalyticsScreen companies={companies} user={user} users={users} />}
         {tab === 'companies' && (
           <>
             <div className="section-head">
-              <div>
-                <p className="eyebrow">ОТ ПЕРВОГО КОНТАКТА ДО ПОСТАВКИ</p>
-                <h1>Клиенты и компании</h1>
-              </div>
-              <button className="primary" onClick={() => setCreate(true)}>
-                + Компания
+              <h1>Клиенты</h1>
+              <button aria-label="Фильтры клиентов" onClick={() => setFiltersOpen(!filtersOpen)}>
+                <Icon name="filter" />
               </button>
             </div>
-            <div className="metrics">
-              <div>
-                <span>Компаний в работе</span>
-                <strong>{companies.filter((c) => !c.archived).length}</strong>
-              </div>
-              <div>
-                <span>Открытых задач</span>
-                <strong>{tasks.filter((t) => !t.data.done).length}</strong>
-              </div>
-              <div>
-                <span>Просрочено</span>
-                <strong className="danger">
-                  {tasks.filter((t) => !t.data.done && t.data.due && t.data.due < today()).length}
-                </strong>
-              </div>
-              <div>
-                <span>Потенциал</span>
-                <strong>
-                  {money(
-                    companies
-                      .filter((c) => !c.archived)
-                      .reduce((s, c) => s + (c.potential || 0), 0),
-                  )}
-                </strong>
-              </div>
-            </div>
-            <div className="filters">
+            <div className="pico-search">
+              <Icon name="search" />
               <input
                 aria-label="Поиск компаний"
-                placeholder="Поиск по названию или ИНН"
+                placeholder="Поиск клиента или ИНН"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
-              <Select
-                value={city}
-                onChange={setCity}
-                options={[...new Set(companies.map((c) => c.city).filter(Boolean))].sort()}
-                empty="Все города"
-              />
-              <Select
-                value={segment}
-                onChange={setSegment}
-                options={segments}
-                empty="Все сегменты"
-              />
-              <Select
-                value={division}
-                onChange={setDivision}
-                options={divisions}
-                empty="Все направления"
-              />
-              {user.role !== 'manager' && (
-                <select
-                  aria-label="Ответственный"
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
+            </div>
+            <button className="pico-add-row" onClick={() => setCreate(true)}>
+              <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
+            </button>
+            <div className="tabs pico-chips">
+              {[
+                ['all', 'Все'],
+                ['open', 'В работе'],
+                ['closed', 'Закрытые'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  className={clientStatus === key ? 'active' : ''}
+                  onClick={() => setClientStatus(key)}
                 >
-                  <option value="">Все сотрудники</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <button className={archive ? 'active' : ''} onClick={() => setArchive(!archive)}>
-                {archive ? '✓ Архив компаний' : 'Архив компаний'}
-              </button>
-            </div>
-            <div className="section-head">
-              <h3>
-                {archive ? 'Архив компаний' : 'База клиентов'}{' '}
-                <span className="count">{visible.length}</span>
-              </h3>
-              <small>Данные сохраняются автоматически после подтверждения формы</small>
-            </div>
-            <div className="company-grid">
-              {visible.map((c, i) => (
-                <button className="company-card" key={c.id} onClick={() => setSelected(c)}>
-                  <div className="section-head">
-                    <span className={'city color-' + (i % 4)}>{c.city || 'Без города'}</span>
-                    <span className="stage">{labels[c.stage]}</span>
-                  </div>
-                  <h2>{c.name}</h2>
-                  <p>
-                    {labels[c.segment]}
-                    {c.industry ? ' · ' + c.industry : ''}
-                  </p>
-                  <div className="company-money">
-                    <small>Потенциал</small>
-                    <strong>{money(c.potential)}</strong>
-                  </div>
-                  <footer>
-                    <span className="avatar small">{c.ownerName.slice(0, 1)}</span>
-                    <span>{c.ownerName}</span>
-                    <span className="arrow">↗</span>
-                  </footer>
+                  {label}
                 </button>
               ))}
+            </div>
+            {filtersOpen && (
+              <Modal title="Фильтры клиентов" onClose={() => setFiltersOpen(false)}>
+                <div className="filters">
+                  <Select
+                    value={city}
+                    onChange={setCity}
+                    options={[...new Set(companies.map((c) => c.city).filter(Boolean))].sort()}
+                    empty="Все города"
+                  />
+                  <Select
+                    value={segment}
+                    onChange={setSegment}
+                    options={segments}
+                    empty="Все сегменты"
+                  />
+                  <Select
+                    value={division}
+                    onChange={setDivision}
+                    options={divisions}
+                    empty="Все направления"
+                  />
+                  {user.role !== 'manager' && (
+                    <select
+                      aria-label="Ответственный"
+                      value={owner}
+                      onChange={(e) => setOwner(e.target.value)}
+                    >
+                      <option value="">Все сотрудники</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button className={archive ? 'active' : ''} onClick={() => setArchive(!archive)}>
+                    {archive ? '✓ Архив компаний' : 'Архив компаний'}
+                  </button>
+                  <label className="field">
+                    <span>Сортировка</span>
+                    <select value={clientSort} onChange={(e) => setClientSort(e.target.value)}>
+                      <option value="name">А–Я</option>
+                      <option value="potential">Потенциал ↓</option>
+                      <option value="updated">Обновление ↓</option>
+                    </select>
+                  </label>
+                  <button
+                    onClick={() => {
+                      setCity('');
+                      setSegment('');
+                      setDivision('');
+                      setOwner('');
+                      setArchive(false);
+                      setClientSort('name');
+                    }}
+                  >
+                    Сбросить
+                  </button>
+                  <button className="primary" onClick={() => setFiltersOpen(false)}>
+                    Показать ({visible.length})
+                  </button>
+                </div>
+              </Modal>
+            )}
+            <div className="pico-client-list">
+              {[...visible]
+                .sort((a, b) =>
+                  clientSort === 'potential'
+                    ? (b.potential || 0) - (a.potential || 0)
+                    : clientSort === 'updated'
+                      ? b.updatedAt.localeCompare(a.updatedAt)
+                      : a.name.localeCompare(b.name, 'ru'),
+                )
+                .map((c) => (
+                  <ClientRow key={c.id} company={c} onOpen={openCompany} onChanged={refresh} />
+                ))}
             </div>
             {!visible.length && (
               <div className="empty">
@@ -444,117 +463,32 @@ function App() {
             )}
           </>
         )}
+        {tab === 'companies' && !companies.length && (
+          <ScreenGuide
+            title="Что будет в карточке клиента"
+            items={[
+              ['contact', 'Контакты', 'ЛПР и все, кто влияет на выбор'],
+              ['potential', 'Потенциал', 'Потребность в оборудовании за год'],
+              ['file', 'Файлы', 'Письма и КП, которые подготовил Pico'],
+              ['notes', 'Заметки', 'Договорённости и следующий шаг'],
+            ]}
+          />
+        )}
         {tab === 'reports' && <Reports companies={companies} onChanged={refresh} />}
         {tab === 'profile' && <Profile key={user.id} />}
         {tab === 'tasks' && (
-          <>
-            <p className="eyebrow">СЛЕДУЮЩИЙ ШАГ</p>
-            <h1>Задачи</h1>
-            <div className="tabs">
-              {[
-                ['open', 'Открытые'],
-                ['overdue', 'Просроченные'],
-                ['done', 'Выполненные'],
-              ].map(([k, l]) => (
-                <button
-                  key={k}
-                  className={taskFilter === k ? 'active' : ''}
-                  onClick={() => setTaskFilter(k!)}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            {taskRows(filteredTasks)}
-          </>
+          <TasksScreen {...screenProps} onCreate={() => setRecordCreate('task')} />
         )}
         {tab === 'calendar' && (
-          <>
-            <p className="eyebrow">ПЛАН НА МЕСЯЦ</p>
-            <h1>Календарь</h1>
-            <div className="filters calendar-toolbar">
-              <input
-                aria-label="Месяц"
-                type="month"
-                value={calendarMonth}
-                onChange={(e) => {
-                  if (e.target.value) setCalendarMonth(e.target.value);
-                }}
-              />
-              <button
-                onClick={() => {
-                  setCalendarMonth(today().slice(0, 7));
-                  setDate(today());
-                }}
-              >
-                Сегодня
-              </button>
-            </div>
-            <div className="calendar">
-              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
-                <small key={d}>{d}</small>
-              ))}
-              {Array.from(
-                { length: (new Date(calendarMonth + '-01T12:00:00').getDay() + 6) % 7 },
-                (_, i) => (
-                  <span key={'empty' + i} />
-                ),
-              )}
-              {Array.from(
-                {
-                  length: new Date(
-                    Number(calendarMonth.slice(0, 4)),
-                    Number(calendarMonth.slice(5, 7)),
-                    0,
-                  ).getDate(),
-                },
-                (_, i) => {
-                  const key = calendarMonth + '-' + String(i + 1).padStart(2, '0'),
-                    count = tasks.filter((t) => t.data.due === key && !t.data.done).length;
-                  return (
-                    <button
-                      aria-label={`${key}${count ? `, открытых задач: ${count}` : ''}`}
-                      aria-pressed={date === key}
-                      className={date === key ? 'selected' : ''}
-                      key={key}
-                      onClick={() => setDate(key)}
-                    >
-                      <strong>{i + 1}</strong>
-                      {count > 0 && <span className="calendar-count">{count}</span>}
-                    </button>
-                  );
-                },
-              )}
-            </div>
-            <h3>{date}</h3>
-            {taskRows(tasks.filter((t) => t.data.due === date))}
-            <h3>Без срока</h3>
-            {taskRows(tasks.filter((t) => !t.data.due && !t.data.done))}
-          </>
+          <TasksScreen
+            key="calendar"
+            {...screenProps}
+            calendarOnly
+            onCreate={() => setRecordCreate('task')}
+          />
         )}
         {tab === 'projects' && (
-          <>
-            <p className="eyebrow">ВОЗМОЖНОСТИ И ПОСТАВКИ</p>
-            <h1>Проекты</h1>
-            <div className="list">
-              {projects.map((p) => (
-                <button
-                  className="report-row"
-                  key={p.id}
-                  onClick={() => setSelected(companies.find((c) => c.id === p.companyId) || null)}
-                >
-                  <strong>{p.data.name}</strong>
-                  <span>
-                    {p.companyName} · {money(p.data.amount)}
-                  </span>
-                  <small>
-                    {labels[p.data.stage]} · {p.data.due || 'Без срока'}
-                  </small>
-                </button>
-              ))}
-            </div>
-            {!projects.length && <p className="empty">Добавьте проект в карточке компании.</p>}
-          </>
+          <ProjectsScreen {...screenProps} onCreate={() => setRecordCreate('project')} />
         )}
         {tab === 'files' && (
           <>
@@ -589,6 +523,30 @@ function App() {
           <Team user={user} users={users} onChanged={refresh} />
         )}
       </main>
+      <nav className="pico-bottom-nav" aria-label="Основная навигация">
+        {nav.map(([key, label, icon]) => (
+          <button
+            key={key}
+            className={tab === key ? 'active' : ''}
+            onClick={() => {
+              setTab(key!);
+              setError('');
+            }}
+          >
+            <Icon name={icon!} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+      {recordCreate && (
+        <RecordCreate
+          kind={recordCreate}
+          companies={companies}
+          projects={projects}
+          onChanged={refresh}
+          onClose={() => setRecordCreate(null)}
+        />
+      )}
       {help && <RoleGuide role={user.role} onClose={() => setHelp(false)} />}
       {create && (
         <Modal title="Новая компания" onClose={() => setCreate(false)}>
@@ -597,6 +555,7 @@ function App() {
               const c = await api('/companies', 'POST', data);
               setCreate(false);
               await refresh();
+              setSelectedTab('activity');
               setSelected(c);
             }}
           />
@@ -606,6 +565,8 @@ function App() {
         <CompanyDetail
           key={selected.id}
           company={selected}
+          companies={companies}
+          initialTab={selectedTab}
           user={user}
           users={users}
           onClose={() => setSelected(null)}

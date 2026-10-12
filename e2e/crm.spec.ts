@@ -1,4 +1,8 @@
+import { prepareDemoAuth } from './helpers';
+import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 test('manager creates a company and task, then data survives reload', async ({
   page,
 }, testInfo) => {
@@ -6,8 +10,8 @@ test('manager creates a company and task, then data survives reload', async ({
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
-  await page.getByRole('button', { name: '+ Компания', exact: true }).click();
+  await clients(page);
+  await page.getByRole('button', { name: 'Добавить клиента', exact: true }).click();
   const name = 'Электрострой ' + testInfo.project.name + ' ' + Date.now();
   await page.getByLabel('Название', { exact: true }).fill(name);
   await page.getByLabel('Город', { exact: true }).fill('Казань');
@@ -22,8 +26,9 @@ test('manager creates a company and task, then data survives reload', async ({
   await expect(page.getByRole('dialog')).toContainText('Отправить предложение');
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.reload();
-  await expect(page.getByRole('heading', { name: name, exact: true })).toBeVisible();
-  await page.getByRole('heading', { name: name, exact: true }).click();
+  await clients(page);
+  await expect(page.locator('.pico-client-row').filter({ hasText: name })).toBeVisible();
+  await openCompany(page, name);
   await page.getByRole('button', { name: 'Редактировать компанию' }).click();
   await page.getByLabel('Город', { exact: true }).fill('Москва');
   await page.getByRole('button', { name: 'Сохранить компанию' }).click();
@@ -39,7 +44,7 @@ test('manager creates a company and task, then data survives reload', async ({
 test('admin can inspect the team, managers cannot see team navigation', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Администратор', exact: true }).click();
-  await page.getByRole('navigation').getByRole('button', { name: 'Команда' }).click();
+  await navigate(page, 'Команда');
   await expect(page.getByRole('heading', { name: 'Команда', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Доступ сотрудников' })).toBeVisible();
 });

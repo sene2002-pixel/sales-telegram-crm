@@ -1102,3 +1102,1056 @@ details {
     scroll-behavior: auto !important;
   }
 }
+/* Pico screen system: shared with the mobile Mini App and desktop workspace. */
+:root {
+  --primary: #2d84ef;
+  --primary-hover: #2073d7;
+  --soft: #eef5ff;
+  --canvas: #f4f7fd;
+  --line: #e7ecf4;
+  --muted: #8994a7;
+  --shadow: 0 2px 12px #253e6510;
+  color: #22284f;
+  background: var(--canvas);
+}
+body {
+  background: var(--canvas);
+}
+[hidden] {
+  display: none !important;
+}
+h1 {
+  font-size: 26px;
+  letter-spacing: -0.6px;
+  margin: 0 0 16px;
+}
+h2 {
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+button {
+  border-radius: 10px;
+}
+.primary {
+  box-shadow: none;
+}
+.text-button {
+  color: var(--primary);
+}
+.app-shell {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+.workspace {
+  max-width: 1140px;
+  padding-bottom: 60px;
+  align-self: start;
+}
+.workspace > header {
+  position: relative;
+  height: 68px;
+  margin-bottom: 25px;
+}
+.logo {
+  padding-bottom: 28px;
+}
+.pico-secondary-nav {
+  display: grid;
+  gap: 3px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.pico-secondary-nav button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pico-secondary-nav button.active {
+  color: var(--primary);
+  background: var(--soft);
+}
+.pico-more-button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  margin-left: auto;
+}
+.pico-more-menu {
+  position: absolute;
+  right: 0;
+  top: 58px;
+  z-index: 6;
+  min-width: 185px;
+  padding: 6px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px #20325122;
+  display: grid;
+}
+.pico-more-menu button {
+  text-align: left;
+  border: 0;
+}
+.icon-badge,
+.pico-row-icon,
+.pico-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--primary);
+  background: #e3f0ff;
+  flex-shrink: 0;
+}
+.badge-purple {
+  color: #9b49e8;
+  background: #f0e7fc;
+}
+.badge-green {
+  color: #2ead60;
+  background: #e3f5e9;
+}
+.badge-amber {
+  color: #e9a21b;
+  background: #fff4db;
+}
+.badge-red {
+  color: #ed536c;
+  background: #fde9ed;
+}
+.badge-teal {
+  color: #1aa5a1;
+  background: #e0f5f3;
+}
+.badge-orange {
+  color: #eb862b;
+  background: #ffeddf;
+}
+.badge-cyan {
+  color: #159cc4;
+  background: #e0f3fc;
+}
+.badge-pink {
+  color: #d63d92;
+  background: #fde6f4;
+}
+.badge-slate {
+  color: #6b7990;
+  background: #edf0f5;
+}
+.badge-brown {
+  color: #a77238;
+  background: #f4ede3;
+}
+.pico-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 20px 0 24px;
+  padding: 10px 0;
+}
+.pico-summary button {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 2px 8px;
+}
+.pico-summary button:last-child {
+  border: 0;
+}
+.pico-summary strong {
+  font-size: 22px;
+}
+.pico-summary small {
+  font-size: 11px;
+}
+.pico-intro {
+  border-radius: 15px;
+  background: linear-gradient(125deg, #328bed, #2168d3);
+  padding: 22px;
+  color: white;
+}
+.pico-intro h2 {
+  margin-top: 0;
+}
+.pico-intro p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e6f1ff;
+}
+.pico-intro p svg {
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.pico-intro strong {
+  color: white;
+}
+.pico-home > .muted {
+  margin-top: -9px;
+}
+.pico-home > h2 {
+  margin: 24px 0 12px;
+}
+.pico-compact-list {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  overflow: hidden;
+}
+.pico-compact-list:empty {
+  display: none;
+}
+.pico-task-row.task-row {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 14px 12px;
+  gap: 10px;
+}
+.pico-task-row:last-child {
+  border-bottom: 0;
+}
+.pico-task-row .task-text strong {
+  font-size: 13px;
+}
+.pico-task-row .checkbox {
+  color: #31ac62;
+  background: #e5f5eb;
+  border: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+}
+.pico-task-row .checkbox.checked {
+  color: white;
+  background: #31ac62;
+}
+.pico-onboarding > button {
+  width: 100%;
+  display: flex;
+  text-align: left;
+  gap: 12px;
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 15px;
+}
+.pico-onboarding > button:last-child {
+  border: 0;
+}
+.pico-onboarding > button > span:nth-child(2) {
+  flex: 1;
+}
+.pico-onboarding strong,
+.pico-onboarding small {
+  display: block;
+}
+.pico-onboarding strong {
+  font-size: 13px;
+}
+.pico-onboarding small {
+  margin-top: 3px;
+  font-size: 11px;
+}
+.pico-onboarding > button:nth-child(2) .pico-row-icon {
+  color: #9b49e8;
+  background: #f0e7fc;
+}
+.pico-onboarding > button:nth-child(3) .pico-row-icon {
+  color: #2ead60;
+  background: #e3f5e9;
+}
+.pico-onboarding > button:nth-child(4) .pico-row-icon {
+  color: #e9a21b;
+  background: #fff4db;
+}
+.pico-empty {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: center;
+  padding: 28px 20px;
+  margin: 12px 0;
+}
+.pico-empty-icon {
+  width: 46px;
+  height: 46px;
+  margin-bottom: 5px;
+}
+.pico-empty h3 {
+  font-size: 14px;
+  margin: 8px 0 4px;
+}
+.pico-empty p {
+  max-width: 350px;
+  margin: 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.pico-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0 10px;
+  margin: 0 0 12px;
+  color: #99aec8;
+}
+.pico-search input {
+  border: 0;
+  padding: 11px 0;
+  font-size: 12px;
+  background: transparent;
+}
+.pico-search input:focus {
+  outline-offset: 4px;
+}
+.pico-add-row {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  color: var(--primary);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 650;
+  margin: 12px 0;
+  padding: 12px;
+}
+.pico-add-row > svg:last-child {
+  margin-left: auto;
+}
+.pico-client-list,
+.pico-project-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.pico-client-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  width: 100%;
+  text-align: left;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.pico-client-row > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.pico-client-row strong,
+.pico-client-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.pico-client-row strong {
+  font-size: 14px;
+}
+.pico-client-row small {
+  font-size: 11px;
+  margin-top: 3px;
+}
+.pico-client-row > svg {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.pico-client-row .company-money {
+  margin: 0;
+  min-width: 95px;
+}
+.pico-client-row .company-money strong {
+  font-size: 12px;
+}
+.panel {
+  padding: 18px;
+}
+.pico-project-row.panel {
+  margin: 0;
+  padding: 0 14px;
+  background: white;
+}
+.pico-project-row > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.pico-project-row > summary > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.pico-project-row > summary strong,
+.pico-project-row > summary small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.pico-project-row > summary strong {
+  font-size: 13px;
+}
+.pico-project-row > summary small {
+  font-size: 11px;
+  margin-top: 3px;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+.pico-project-row[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.pico-project-row[open] > summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.pico-detail-fields {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 0;
+  font-size: 12px;
+}
+.pico-detail-fields dt,
+.pico-detail-fields dd {
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pico-detail-fields dt {
+  color: var(--muted);
+}
+.pico-detail-fields dd {
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.pico-chips.tabs {
+  margin: 12px 0;
+  gap: 6px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.pico-chips button {
+  border-radius: 20px;
+  font-size: 11px;
+  padding: 6px 10px;
+  background: white;
+  border-color: var(--line);
+  color: #7d95b4;
+}
+.pico-chips button.active {
+  background: var(--primary);
+  color: white;
+}
+.pico-calendar {
+  max-width: 520px;
+  margin: 15px 0;
+}
+.pico-calendar .section-head button {
+  border: 0;
+  color: var(--primary);
+  padding: 6px;
+}
+.pico-calendar .section-head strong {
+  font-size: 13px;
+  text-transform: capitalize;
+}
+.pico-calendar input[type='month'] {
+  font-size: 12px;
+  margin: 6px 0 10px;
+}
+.pico-calendar .calendar {
+  gap: 3px;
+}
+.pico-calendar .calendar button {
+  height: 40px;
+  padding: 7px 3px;
+  border: 0;
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.pico-calendar .calendar button strong {
+  font-size: 12px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.pico-calendar .calendar .selected strong {
+  background: var(--primary);
+  color: white;
+}
+.pico-calendar .calendar-count {
+  position: absolute;
+  bottom: 0;
+  font-size: 8px;
+}
+.pico-calendar .calendar small {
+  font-size: 10px;
+  color: #9db0c9;
+  margin-bottom: 3px;
+}
+.pico-quick-dates {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 20px 0;
+  overflow: hidden;
+}
+.pico-quick-dates button {
+  text-align: left;
+  padding: 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--primary);
+  font-size: 12px;
+}
+.pico-funnel h2,
+.pico-potential h2 {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 0;
+}
+.pico-funnel-row {
+  display: grid;
+  grid-template-columns: minmax(95px, 1fr) minmax(100px, 1fr) 28px;
+  align-items: center;
+  gap: 12px;
+  margin: 5px 0;
+  font-size: 12px;
+}
+.pico-funnel-bar {
+  clip-path: polygon(0 0, 100% 0, 94% 100%, 6% 100%);
+  padding: 10px;
+  color: white;
+  text-align: center;
+  background: #6576ef;
+  justify-self: center;
+  font-weight: 700;
+}
+.funnel-1 {
+  background: #86a0f6;
+}
+.funnel-2 {
+  background: #77c5ee;
+}
+.funnel-3 {
+  background: #63cdb4;
+}
+.funnel-4 {
+  background: #3fb8b3;
+}
+.pico-analytics-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.pico-analytics-metrics .panel {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.pico-analytics-metrics strong {
+  font-size: 28px;
+}
+.pico-potential details {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--line);
+}
+.pico-potential summary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  list-style: none;
+  padding: 14px 0;
+  cursor: pointer;
+}
+.pico-potential summary > span {
+  flex: 1;
+}
+.pico-potential summary > strong {
+  font-size: 12px;
+}
+.pico-potential summary > svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.pico-potential-client {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-left: 28px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.pico-potential-client span {
+  color: #6b809e;
+}
+.modal {
+  background: white;
+  border-radius: 22px;
+}
+.modal > .section-head {
+  position: sticky;
+  top: -26px;
+  background: white;
+  z-index: 1;
+  padding: 8px 0 14px;
+}
+.modal > .section-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.modal .field {
+  margin-bottom: 5px;
+}
+.modal input,
+.modal textarea,
+.modal select {
+  background: #f5f8fd;
+}
+.modal .primary {
+  min-height: 44px;
+}
+.equipment-line,
+.participant-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+  font-size: 12px;
+}
+.equipment-line > span,
+.participant-line > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.participant-line small {
+  display: block;
+  margin-top: 3px;
+}
+.equipment-line button,
+.participant-line button {
+  border: 0;
+  padding: 5px;
+  color: #92a7c2;
+}
+@media (min-width: 761px) {
+  .pico-home {
+    max-width: 700px;
+  }
+  .pico-client-list,
+  .pico-project-list {
+    max-width: 850px;
+  }
+  .pico-more-button {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .workspace {
+    padding: 0 16px calc(95px + env(safe-area-inset-bottom));
+  }
+  .workspace > header {
+    height: 52px;
+    border: 0;
+    margin-bottom: 13px;
+  }
+  .header-leading > .text-button,
+  .connection-state,
+  .pico-secondary-nav {
+    display: none;
+  }
+  .mobile-brand {
+    font-size: 14px;
+  }
+  .mobile-brand .brand-mark {
+    width: 24px;
+    height: 24px;
+  }
+  aside {
+    padding: 6px 10px calc(10px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+    background: white;
+  }
+  aside nav {
+    overflow: hidden;
+  }
+  nav button {
+    min-width: 0;
+    padding: 7px 1px;
+    gap: 5px;
+    font-size: 10px;
+    color: #798393;
+  }
+  nav .active {
+    background: transparent;
+    color: var(--primary);
+  }
+  nav button svg {
+    width: 21px;
+    height: 21px;
+  }
+  h1 {
+    font-size: 22px;
+    margin-bottom: 15px;
+  }
+  h2 {
+    font-size: 17px;
+  }
+  .pico-summary {
+    margin: 16px 0 21px;
+  }
+  .pico-summary strong {
+    font-size: 19px;
+  }
+  .pico-client-row strong {
+    font-size: 13px;
+  }
+  .pico-client-row small {
+    font-size: 10px;
+  }
+  .pico-client-row .company-money {
+    min-width: 76px;
+  }
+  .pico-client-row .company-money strong {
+    font-size: 10px;
+  }
+  .pico-calendar {
+    max-width: none;
+    padding: 10px;
+  }
+  .pico-task-row .status {
+    font-size: 9px;
+    padding: 4px;
+  }
+  .pico-funnel-row {
+    grid-template-columns: minmax(90px, 1fr) minmax(85px, 1fr) 22px;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .pico-potential summary {
+    font-size: 12px;
+    gap: 7px;
+  }
+  .modal-backdrop {
+    padding: 0;
+    background: #222b5466;
+    backdrop-filter: none;
+  }
+  .modal {
+    max-height: 92dvh;
+    width: 100%;
+    border-radius: 22px 22px 0 0;
+    padding: 26px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal::before {
+    content: '';
+    display: block;
+    width: 38px;
+    height: 4px;
+    border-radius: 5px;
+    background: #d7deea;
+    margin: -14px auto 18px;
+  }
+  .modal > .section-head {
+    top: -26px;
+  }
+  .modal > .section-head h2 {
+    font-size: 16px;
+  }
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .pico-analytics-metrics small {
+    font-size: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+.pico-client-accordion {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.pico-client-accordion > .pico-client-row {
+  border: 0;
+}
+.pico-client-content {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.pico-client-content > .section-head {
+  padding: 8px 0;
+}
+.pico-client-content .section-head button {
+  font-size: 11px;
+  padding: 6px 8px;
+  border: 0;
+  color: var(--primary);
+  background: var(--soft);
+}
+.pico-client-content section {
+  padding: 3px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.pico-client-content section h3 {
+  font-size: 12px;
+  margin: 8px 0;
+}
+.pico-client-content section > p {
+  font-size: 12px;
+  margin: 6px 0;
+}
+.pico-client-content .pico-potential-client {
+  margin-left: 0;
+  padding: 8px 0;
+}
+.pico-inline-contact {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+}
+.pico-inline-contact > span {
+  flex: 1;
+  min-width: 0;
+}
+.pico-inline-contact > svg {
+  color: #93b5df;
+  flex-shrink: 0;
+  width: 16px;
+}
+.pico-inline-contact strong,
+.pico-inline-contact small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.pico-inline-contact strong {
+  font-size: 12px;
+}
+.pico-inline-contact small {
+  font-size: 10px;
+  margin-top: 2px;
+}
+.pico-task-row.task-type-meeting .checkbox {
+  color: #975ae9;
+  background: #f0e8fb;
+}
+.pico-task-row.task-type-call .checkbox {
+  color: #30ae60;
+  background: #e3f5e9;
+}
+.pico-task-row.task-type-email .checkbox {
+  color: #2d84ef;
+  background: #e3efff;
+}
+.pico-task-row.task-type-reminder .checkbox {
+  color: #e78632;
+  background: #ffecde;
+}
+@media (min-width: 761px) {
+  .pico-client-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .pico-client-content > .section-head,
+  .pico-client-content > .error,
+  .pico-client-content > [role='status'] {
+    grid-column: 1/-1;
+  }
+}
+.pico-task-row {
+  flex-wrap: wrap;
+}
+.pico-task-actions {
+  flex-basis: 100%;
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.pico-task-actions button {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+  padding: 8px 4px;
+  font-size: 11px;
+  background: var(--soft);
+  border: 0;
+  color: var(--primary);
+}
+.pico-task-actions button:first-child {
+  background: #e3f5e9;
+  color: #30a961;
+}
+.pico-task-actions button:last-child {
+  background: #fde9ed;
+  color: #e95b71;
+}
+.pico-bottom-nav {
+  display: none;
+}
+@media (max-width: 760px) {
+  .app-shell {
+    display: block;
+  }
+  .app-shell > aside {
+    display: none;
+  }
+  .pico-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    justify-content: space-around;
+    gap: 0;
+    padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+    background: white;
+    border-top: 1px solid var(--line);
+    border-radius: 18px 18px 0 0;
+  }
+  .pico-bottom-nav button {
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+    padding: 5px 0;
+    font-size: 10px;
+    color: #798393;
+  }
+  .pico-bottom-nav button.active {
+    color: var(--primary);
+    background: transparent;
+  }
+  .pico-bottom-nav button > span {
+    font-size: 10px;
+  }
+}
+.pico-admin-button {
+  color: #eba41d;
+  background: #fff4da;
+  border: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  padding: 5px;
+}
+.pico-calendar {
+  position: relative;
+}
+.pico-calendar input[type='month'] {
+  position: absolute;
+  width: 170px;
+  height: 32px;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.pico-calendar:has(input[type='month']:focus-visible) .section-head strong {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+@media (max-width: 760px) {
+  .pico-calendar input[type='month'] {
+    top: 12px;
+  }
+  .pico-calendar .calendar button {
+    height: 32px;
+  }
+  .pico-calendar .calendar button strong {
+    width: 25px;
+    height: 25px;
+  }
+  .workspace .section-head > button:not(.primary) {
+    padding: 7px;
+    color: var(--primary);
+  }
+}
+.pico-guide {
+  margin: 22px 0;
+}
+.pico-guide > h3 {
+  font-size: 14px;
+}
+.pico-guide-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.pico-guide-row:last-child {
+  border-bottom: 0;
+}
+.pico-guide-row .pico-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.pico-guide-row strong,
+.pico-guide-row small {
+  display: block;
+}
+.pico-guide-row strong {
+  font-size: 13px;
+}
+.pico-guide-row small {
+  font-size: 11px;
+  margin-top: 3px;
+}

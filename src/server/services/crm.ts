@@ -288,6 +288,40 @@ export class CrmService {
       current.deferred = true;
     return { projection, current };
   }
+  private async validateRecordLinks(
+    actor: Actor,
+    companyId: string,
+    kind: RecordKind,
+    data: any,
+    tx: Sql,
+    previous?: any,
+  ) {
+    const checkContact = async (contactId: string | null, ownerCompanyId: string) => {
+      if (!contactId) return;
+      const [contact] = await tx.query(
+        "SELECT id FROM records WHERE id=$1 AND company_id=$2 AND kind='contact' AND NOT deleted",
+        [contactId, ownerCompanyId],
+      );
+      requireCondition(contact, 400, 'Контакт не принадлежит выбранному клиенту');
+    };
+    if (kind === 'task' && (!previous || data.contactId !== previous.contactId))
+      await checkContact(data.contactId, companyId);
+    if (kind === 'project') {
+      const seen = new Set<string>();
+      for (const participant of data.participants) {
+        requireCondition(!seen.has(participant.companyId), 400, 'Участник проекта уже добавлен');
+        seen.add(participant.companyId);
+        const existing = previous?.participants?.find(
+          (p: any) =>
+            p.companyId === participant.companyId && p.contactId === participant.contactId,
+        );
+        if (existing) continue;
+        const company = await this.company(actor, participant.companyId, tx);
+        requireCondition(!company.archived, 409, 'Участник проекта находится в архиве');
+        await checkContact(participant.contactId, participant.companyId);
+      }
+    }
+  }
   async createRecord(
     actor: Actor,
     companyId: string,
@@ -305,6 +339,7 @@ export class CrmService {
       );
     const company = await this.company(actor, companyId, tx, true);
     requireCondition(!company.archived, 409, 'Сначала восстановите компанию из архива');
+    await this.validateRecordLinks(actor, companyId, kind, data, tx);
     if (projectId) {
       const [project] = await tx.query(
         `SELECT id FROM records WHERE id=$1 AND company_id=$2 AND kind='project' AND NOT deleted`,
@@ -331,7 +366,7 @@ export class CrmService {
     );
     await audit(tx, actor.id, `${kind}.created`, id, companyId);
     if (kind === 'activity' && (data as any).sales) {
-      const projected = projectSales(await this.salesHistory(actor,companyId,tx)).current;
+      const projected = projectSales(await this.salesHistory(actor, companyId, tx)).current;
       const city = confirmed(projected.client.city),
         segment = confirmed(projected.client.segment);
       if (
@@ -381,6 +416,7 @@ export class CrmService {
         'Этот тип записи не редактируется',
       );
       const data: any = recordSchemas[row.kind as RecordKind].parse(input.data);
+      await this.validateRecordLinks(actor, row.company_id, row.kind, data, tx, current.data);
       if (row.kind === 'task')
         data.completedAt = data.done ? current.data.completedAt || new Date().toISOString() : null;
       const [updated] = await tx.query(
@@ -392,6 +428,30 @@ export class CrmService {
         after: data,
       });
       return mapRecord(updated);
+    });
+  }
+  async deleteTask(actor: Actor, id: string, raw: unknown) {
+    const input = z.object({ version: z.number().int().positive() }).strict().parse(raw);
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.query(
+        "SELECT * FROM records WHERE id=$1 AND kind='task' AND NOT deleted",
+        [idSchema.parse(id)],
+      );
+      requireCondition(row, 404, 'Задача не найдена');
+      await this.company(actor, row.company_id, tx, true);
+      const [current] = await tx.query(
+        "SELECT * FROM records WHERE id=$1 AND kind='task' AND NOT deleted FOR UPDATE",
+        [id],
+      );
+      requireCondition(current, 404, 'Задача не найдена');
+      requireCondition(
+        current.version === input.version,
+        409,
+        'Запись изменена. Обновите страницу',
+      );
+      await tx.query('UPDATE records SET deleted=true,version=version+1 WHERE id=$1', [id]);
+      await audit(tx, actor.id, 'task.deleted', id, row.company_id);
+      return { ok: true };
     });
   }
   async deleteContact(actor: Actor, id: string) {

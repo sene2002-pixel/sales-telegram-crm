@@ -1,4 +1,8 @@
+import { prepareDemoAuth } from './helpers';
+import { action, clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
 test('contact edit retains rejected input and reloads the database after successful retry', async ({
   page,
@@ -8,7 +12,7 @@ test('contact edit retains rejected input and reloads the database after success
   );
   await page.goto('/');
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+  await clients(page);
   const token = await page.evaluate(() => sessionStorage.getItem('crm-session'));
   const headers = { Authorization: `Bearer ${token}` };
   const companyResponse = await page.request.post('/api/companies', {
@@ -23,8 +27,8 @@ test('contact edit retains rejected input and reloads the database after success
   });
   expect(contactResponse.ok()).toBeTruthy();
   const contact = await contactResponse.json();
-  await page.getByRole('button', { name: 'Обновить', exact: true }).click();
-  await page.getByRole('heading', { name: company.name, exact: true }).click();
+  await action(page, 'Обновить');
+  await openCompany(page, company.name);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
   await dialog.getByRole('button', { name: 'Изменить', exact: true }).click();

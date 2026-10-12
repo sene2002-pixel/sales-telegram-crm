@@ -6,6 +6,7 @@ import {
   CrmRecord,
   labels,
   RecordKind,
+  taskSchema,
 } from '../shared/contracts';
 import { api, download, money } from './api';
 import { CompanyForm, Field, Modal, RecordForm } from './forms';
@@ -22,17 +23,25 @@ export function CompanyDetail({
   company,
   user,
   users,
+  companies = [],
+  initialTab = 'activity',
   onClose,
   onChanged,
 }: {
   company: Company;
+  companies?: Company[];
+  initialTab?: string;
   user: Actor;
   users: Actor[];
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null),
-    [tab, setTab] = useState<RecordKind | 'audit'>('activity'),
+    [tab, setTab] = useState<RecordKind | 'audit'>(
+      ['contact', 'project', 'task', 'activity', 'file', 'audit'].includes(initialTab)
+        ? (initialTab as RecordKind | 'audit')
+        : 'activity',
+    ),
     [edit, setEdit] = useState(false),
     [form, setForm] = useState<{ kind: Exclude<RecordKind, 'file'>; initial?: CrmRecord } | null>(
       null,
@@ -244,6 +253,8 @@ export function CompanyDetail({
             kind={form.kind}
             initial={form.initial}
             projects={projects}
+            companies={companies}
+            contacts={detail.records.filter((r) => r.kind === 'contact')}
             onSave={async (data, pid) => {
               const saved = form.initial
                 ? await api<CrmRecord>(`/records/${form.initial.id}`, 'PATCH', {
@@ -349,7 +360,14 @@ export function CompanyDetail({
                           run(() =>
                             api(`/records/${r.id}`, 'PATCH', {
                               version: r.version,
-                              data: { text: r.data.text, due: r.data.due, done: !r.data.done },
+                              data: taskSchema.parse({
+                                text: r.data.text,
+                                due: r.data.due,
+                                done: !r.data.done,
+                                type: r.data.type,
+                                time: r.data.time,
+                                contactId: r.data.contactId,
+                              }),
                             }),
                           )
                         }

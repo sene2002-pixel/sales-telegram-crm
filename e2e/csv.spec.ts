@@ -1,4 +1,8 @@
+import { prepareDemoAuth } from './helpers';
+import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
 // Reuse the demo session within this worker to respect the real login rate limit.
 let demoSession: any;
@@ -16,7 +20,7 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Администратор', exact: true }).click();
-  await page.getByRole('navigation').getByRole('button', { name: 'Команда' }).click();
+  await navigate(page, 'Команда');
 });
 
 test('CSV browser download has dated filename', async ({ page }) => {

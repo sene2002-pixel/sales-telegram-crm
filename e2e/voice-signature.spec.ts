@@ -1,4 +1,8 @@
+import { prepareDemoAuth } from './helpers';
+import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 test('voice draft opens editable form and only saves on confirmation', async ({ page }) => {
   const data = {
     lastName: 'Голосов',
@@ -21,7 +25,7 @@ test('voice draft opens editable form and only saves on confirmation', async ({ 
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
-  await page.getByRole('button', { name: 'Мой профиль', exact: false }).click();
+  await navigate(page, 'Мой профиль');
   await page.getByRole('button', { name: 'Проверить голосовую подпись' }).click();
   await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Голосов');
   expect(saved).toBe(false);

@@ -1,4 +1,8 @@
+import { prepareDemoAuth } from './helpers';
+import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
 for (const width of [375, 1440]) {
   test(`Pico style remains responsive and keeps the letter form compact at ${width}px`, async ({
@@ -16,15 +20,15 @@ for (const width of [375, 1440]) {
     await expect(avatar).toHaveJSProperty('naturalWidth', 1254);
 
     await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+    await clients(page);
     await expect(page.getByRole('navigation').getByRole('button', { name: 'Команда' })).toHaveCount(
       0,
     );
     await expect(page.locator(width < 760 ? '.mobile-brand' : '.logo')).toContainText('Pico');
     await expect(page.locator(width < 760 ? '.mobile-brand' : '.logo')).toBeVisible();
-    const createCompany = page.getByRole('button', { name: '+ Компания', exact: true });
-    await expect(createCompany).toHaveCSS('background-color', 'rgb(70, 87, 237)');
-    await expect(page.locator('body')).toHaveCSS('color', 'rgb(25, 36, 77)');
+    const createCompany = page.getByRole('button', { name: 'Добавить клиента', exact: true });
+    await expect(createCompany).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(page.locator('body')).toHaveCSS('color', 'rgb(34, 40, 79)');
     const noOverflow = () =>
       page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     expect(await noOverflow()).toBe(true);

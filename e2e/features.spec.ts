@@ -1,4 +1,8 @@
+import { prepareDemoAuth } from './helpers';
+import { action, clients, navigate, openCompany } from './helpers';
 import { test, expect, Page } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
 // These tests use local demo authentication, not the Telegram client SDK.
 test.beforeEach(async ({ page }) => {
@@ -16,7 +20,7 @@ async function login(page: Page, role = 'Менеджер') {
     await page.addInitScript((token) => sessionStorage.setItem('crm-session', token), existing);
   await page.goto('/');
   if (!existing) await page.getByRole('button', { name: role, exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+  await clients(page);
   roleTokens.set(role, (await page.evaluate(() => sessionStorage.getItem('crm-session')))!);
 }
 async function api(page: Page, path: string, body?: unknown, method = 'POST') {
@@ -34,7 +38,7 @@ async function company(page: Page, name = unique(), extra: object = {}) {
   return api(page, '/companies', { name, ...extra });
 }
 async function reload(page: Page) {
-  await page.getByRole('button', { name: 'Обновить', exact: true }).click();
+  await action(page, 'Обновить');
 }
 
 for (const [role, team, access] of [
@@ -44,7 +48,7 @@ for (const [role, team, access] of [
 ] as const) {
   test(`[UI-01] ${role}: navigation, role guide and administrative controls`, async ({ page }) => {
     await login(page, role);
-    await page.getByRole('button', { name: 'Права и помощь' }).click();
+    await action(page, 'Права и помощь');
     const guide = page.getByRole('dialog', { name: 'Права и помощь' });
     await expect(guide).toContainText(`Ваша роль: ${role}`);
     await expect(
@@ -52,10 +56,17 @@ for (const [role, team, access] of [
     ).toBeVisible();
     await expect(guide).toContainText('Последнего активного администратора нельзя');
     await guide.getByRole('button', { name: 'Закрыть' }).click();
-    const button = page.getByRole('navigation').getByRole('button', { name: 'Команда' });
+    const mobile = !(await page.locator('.pico-secondary-nav').isVisible());
+    if (mobile)
+      await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
+    const button = page
+      .locator(mobile ? '.pico-more-menu' : '.pico-secondary-nav')
+      .getByRole('button', { name: 'Команда', exact: true });
     await expect(button).toHaveCount(team ? 1 : 0);
+    if (mobile)
+      await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
     if (team) {
-      await button.click();
+      await navigate(page, 'Команда');
       await expect(page.locator('input[type="date"]')).toHaveCount(0);
       await expect(page.getByText('Текущий месяц · по сегодня', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Все сотрудники', exact: true }).click();
@@ -88,20 +99,21 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
   await company(page, prefix + ' Архив', { archived: true });
   await reload(page);
   await page.getByRole('textbox', { name: 'Поиск компаний' }).fill(prefix);
-  await expect(page.locator('.company-card')).toHaveCount(2);
+  await expect(page.locator('.pico-client-accordion')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
   await page.getByRole('combobox', { name: 'Все города' }).selectOption('Москва');
-  await expect(page.locator('.company-card')).toHaveCount(1);
-  await expect(page.locator('.company-card')).toContainText(prefix + ' Москва');
+  await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
+  await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
   await page.getByRole('combobox', { name: 'Все города' }).selectOption('');
   await page.getByRole('combobox', { name: 'Все сегменты' }).selectOption('contractor');
-  await expect(page.locator('.company-card')).toContainText(prefix + ' Казань');
+  await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Казань');
   await page.getByRole('combobox', { name: 'Все сегменты' }).selectOption('');
   await page.getByRole('combobox', { name: 'Все направления' }).selectOption('lv');
-  await expect(page.locator('.company-card')).toContainText(prefix + ' Москва');
+  await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
   await page.getByRole('combobox', { name: 'Все направления' }).selectOption('');
   await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
-  await expect(page.locator('.company-card')).toHaveCount(1);
-  await expect(page.locator('.company-card')).toContainText(prefix + ' Архив');
+  await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
+  await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Архив');
 });
 test('Company archive and restore buttons require confirmation and preserve contacts', async ({
   page,
@@ -110,7 +122,7 @@ test('Company archive and restore buttons require confirmation and preserve cont
   const c = await company(page);
   await api(page, `/companies/${c.id}/records/contact`, { data: { name: 'Сохранённый контакт' } });
   await reload(page);
-  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
   const confirmation = page.getByRole('alertdialog');
@@ -123,8 +135,13 @@ test('Company archive and restore buttons require confirmation and preserve cont
     dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }),
   ).toBeVisible();
   await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
   await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
-  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Фильтры клиентов' })
+    .getByRole('button', { name: /^Показать/ })
+    .click();
+  await openCompany(page, c.name);
   await dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();
   await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
@@ -135,7 +152,7 @@ test('Company archive controls are unavailable to managers', async ({ page }) =>
   await login(page);
   const c = await company(page);
   await reload(page);
-  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toHaveCount(
     0,
@@ -149,7 +166,7 @@ test('[UI-03] contact/project/history forms and protected file download/archive'
   await login(page);
   const c = await company(page);
   await reload(page);
-  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
   await dialog.getByRole('button', { name: '+ Добавить' }).click();
@@ -200,8 +217,13 @@ test('[UI-04] task filters, completion/reopening and calendar with undated tasks
   });
   await api(page, `/companies/${c.id}/records/task`, { data: { text: title + ' без срока' } });
   await reload(page);
-  await page.getByRole('navigation').getByRole('button', { name: 'Задачи' }).click();
+  await navigate(page, 'Задачи');
+  await page.getByRole('button', { name: 'Фильтры задач' }).click();
   await page.getByRole('button', { name: 'Просроченные', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Фильтры задач' })
+    .getByRole('button', { name: /^Показать/ })
+    .click();
   await expect(page.locator('.task-row').filter({ hasText: title + ' просрочено' })).toBeVisible();
   await expect(page.locator('.task-row').filter({ hasText: title + ' без срока' })).toHaveCount(0);
   await page
@@ -209,14 +231,19 @@ test('[UI-04] task filters, completion/reopening and calendar with undated tasks
     .filter({ hasText: title + ' просрочено' })
     .getByRole('button', { name: 'Выполнить задачу' })
     .click();
+  await page.getByRole('button', { name: 'Фильтры задач' }).click();
   await page.getByRole('button', { name: 'Выполненные', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Фильтры задач' })
+    .getByRole('button', { name: /^Показать/ })
+    .click();
   await page
     .locator('.task-row')
     .filter({ hasText: title + ' просрочено' })
     .getByRole('button', { name: 'Вернуть задачу' })
     .click();
-  await page.getByRole('navigation').getByRole('button', { name: 'Календарь' }).click();
-  await page.getByLabel('Месяц').fill('2000-01');
+  await navigate(page, 'Календарь');
+  await page.getByLabel('Месяц', { exact: true }).fill('2000-01');
   await page
     .locator('.calendar')
     .getByRole('button')
@@ -227,7 +254,7 @@ test('[UI-04] task filters, completion/reopening and calendar with undated tasks
 });
 test('[UI-05] admin creates a user, changes role, blocks and restores access', async ({ page }) => {
   await login(page, 'Администратор');
-  await page.getByRole('navigation').getByRole('button', { name: 'Команда' }).click();
+  await navigate(page, 'Команда');
   const name = unique(),
     telegramId = String(Date.now());
   await expect(page.getByLabel('Telegram ID')).toHaveCount(0);
@@ -280,7 +307,7 @@ test('[UI-06] supervisor assigns company and filters by owner', async ({ page })
   expect(manager.ok()).toBeTruthy();
   const id = (await manager.json()).id;
   await reload(page);
-  await page.getByRole('heading', { name: c.name, exact: true }).click();
+  await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Передать компанию').selectOption(id);
   await dialog.getByRole('button', { name: 'Назначить', exact: true }).click();
@@ -288,15 +315,20 @@ test('[UI-06] supervisor assigns company and filters by owner', async ({ page })
   await dialog.getByRole('button', { name: 'Изменения', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('company.assigned');
   await dialog.getByRole('button', { name: 'Закрыть' }).click();
+  await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
   await page.getByLabel('Ответственный', { exact: true }).selectOption(id);
+  await page
+    .getByRole('dialog', { name: 'Фильтры клиентов' })
+    .getByRole('button', { name: /^Показать/ })
+    .click();
   await page.getByLabel('Поиск компаний').fill(c.name);
-  await expect(page.locator('.company-card')).toHaveCount(1);
+  await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
 });
 test('[UI-07] text report is queued and cancellable without applying CRM records', async ({
   page,
 }) => {
   await login(page);
-  await page.getByRole('navigation').getByRole('button', { name: 'Отчёты' }).click();
+  await navigate(page, 'Отчёты');
   await page.getByLabel('Текст отчёта').fill(unique() + ' итог встречи');
   await page.getByRole('button', { name: 'Подготовить черновик' }).click();
   const dialog = page.getByRole('dialog');
@@ -311,17 +343,12 @@ test('[UI-08] compact six-week calendar fits a narrow phone and keeps selection 
 }) => {
   await page.setViewportSize({ width: 360, height: 640 });
   await login(page);
-  await page.getByRole('navigation').getByRole('button', { name: 'Календарь' }).click();
-  await page.getByLabel('Месяц').fill('2026-08');
+  await navigate(page, 'Календарь');
+  await page.getByLabel('Месяц', { exact: true }).fill('2026-08');
   const calendar = page.locator('.calendar');
   await expect(calendar.getByRole('button')).toHaveCount(31);
   const box = await calendar.boundingBox();
   expect(box!.height).toBeLessThan(315);
-  const month = await page.getByLabel('Месяц').boundingBox();
-  const todayButton = await page
-    .getByRole('button', { name: 'Сегодня', exact: true })
-    .boundingBox();
-  expect(Math.abs(month!.y - todayButton!.y)).toBeLessThan(5);
   await calendar.getByRole('button', { name: '2026-08-31', exact: true }).click();
   await expect(calendar.getByRole('button', { name: '2026-08-31', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -331,4 +358,8 @@ test('[UI-08] compact six-week calendar fits a narrow phone and keeps selection 
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBeTruthy();
   await page.screenshot({ path: test.info().outputPath('compact-calendar.png') });
+  await page.getByRole('button', { name: 'Сегодня', exact: true }).click();
+  await expect(page.getByLabel('Месяц', { exact: true })).toHaveValue(
+    new Date().toISOString().slice(0, 7),
+  );
 });

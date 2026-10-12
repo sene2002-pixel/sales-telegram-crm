@@ -108,6 +108,13 @@ export const contactSchema = z
     email: z.union([z.literal(''), z.email()]).default(''),
   })
   .strict();
+export const taskTypes = ['meeting', 'call', 'email', 'reminder'] as const;
+export const taskTypeLabels: Record<string, string> = {
+  meeting: 'Встреча',
+  call: 'Звонок',
+  email: 'Письмо',
+  reminder: 'Напоминание',
+};
 export const projectSchema = z
   .object({
     name,
@@ -115,6 +122,29 @@ export const projectSchema = z
     due: dateSchema.nullable().default(null),
     stage: z.enum(stages).default('new'),
     notes: text.default(''),
+    city: z.string().trim().max(150).default(''),
+    objectType: z.string().trim().max(150).default(''),
+    purchaseDate: dateSchema.nullable().default(null),
+    equipment: z
+      .array(
+        z.object({ division: z.enum(divisions), name: name, amount: money.nullable() }).strict(),
+      )
+      .max(30)
+      .default([]),
+    participants: z
+      .array(
+        z
+          .object({
+            companyId: idSchema,
+            role: z.string().trim().min(1).max(150),
+            contactId: idSchema.nullable().default(null),
+            currentTask: text.default(''),
+            nextStep: text.default(''),
+          })
+          .strict(),
+      )
+      .max(30)
+      .default([]),
   })
   .strict();
 export const taskSchema = z
@@ -122,6 +152,13 @@ export const taskSchema = z
     text: name,
     due: dateSchema.nullable().default(null),
     done: z.boolean().default(false),
+    type: z.enum(taskTypes).default('reminder'),
+    time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .nullable()
+      .default(null),
+    contactId: idSchema.nullable().default(null),
   })
   .strict();
 export const activitySchema = z

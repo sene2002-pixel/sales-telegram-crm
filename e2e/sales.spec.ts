@@ -1,5 +1,9 @@
+import { prepareDemoAuth } from './helpers';
+import { action, clients, navigate, openCompany } from './helpers';
 import { test, expect, Page } from '@playwright/test';
 import { emptyDeal, emptySales, Fact } from '../src/shared/sales';
+
+test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 const fact = <T>(value: T): Fact<T> => ({ value, certainty: 'confirmed' });
 async function api(page: Page, path: string, body: unknown) {
   const token = await page.evaluate(() => sessionStorage.getItem('crm-session'));
@@ -20,7 +24,7 @@ test('SALES-UI-01 five blocks, accessible six-point indicator and dated history'
 }, info) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Клиенты и компании' })).toBeVisible();
+  await clients(page);
   const name = `Sales UI ${Date.now()} ${info.project.name}`;
   const c = await api(page, '/companies', { name, city: 'Москва', segment: 'design_institute' });
   const s = emptySales(),
@@ -49,12 +53,9 @@ test('SALES-UI-01 five blocks, accessible six-point indicator and dated history'
   await api(page, `/companies/${c.id}/records/activity`, {
     data: { text: 'Подтверждённый результат', occurredOn: '2026-10-01', sales: s },
   });
-  await page.getByRole('button', { name: 'Обновить', exact: true }).click();
+  await action(page, 'Обновить');
   await page.getByRole('textbox', { name: 'Поиск компаний' }).fill(name);
-  await page
-    .getByRole('button')
-    .filter({ has: page.getByRole('heading', { name, exact: true }) })
-    .click();
+  await openCompany(page, name);
   const dialog = page.getByRole('dialog', { name });
   await expect(dialog.getByRole('region', { name: 'Пять блоков CRM' })).toBeVisible();
   for (const h of [
@@ -78,7 +79,7 @@ test('SALES-UI-01 five blocks, accessible six-point indicator and dated history'
 test('SALES-UI-02 leader commercial report period and empty state', async ({ page }, info) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Руководитель', exact: true }).click();
-  await page.getByRole('navigation').getByRole('button', { name: 'Команда' }).click();
+  await navigate(page, 'Команда');
   await page.getByRole('button', { name: 'Коммерческий отчёт руководителю', exact: true }).click();
   await page.getByLabel('Период с', { exact: true }).fill('2020-01-01');
   await page.getByLabel('Период по', { exact: true }).fill('2020-01-02');
