@@ -3,6 +3,7 @@ export interface TelegramViewport {
   ready?: () => void;
   expand?: () => void;
   requestFullscreen?: () => void;
+  exitFullscreen?: () => void;
   isFullscreen?: boolean;
   platform?: string;
   lockOrientation?: () => void;
@@ -165,10 +166,10 @@ export function configureViewport(telegram?: TelegramViewport) {
     else if (telegram.isVersionAtLeast('6.1')) telegram.setHeaderColor?.('bg_color');
   });
   safeCall(() => telegram?.expand?.());
-  if (telegram?.requestFullscreen && !telegram.isFullscreen) {
+  // Keep Telegram's native title/close/menu bar visible, including reopened sessions.
+  if (telegram?.exitFullscreen && telegram.isFullscreen) {
     try {
-      if (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('8.0'))
-        telegram.requestFullscreen();
+      if (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('8.0')) telegram.exitFullscreen();
     } catch {
       fallback();
     }

@@ -53,11 +53,19 @@ for (const width of [360, 390, 1440]) {
     expect(Math.abs(subtitleBox!.x - headingBox!.x)).toBeLessThan(1);
     expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeGreaterThanOrEqual(6);
     expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeLessThanOrEqual(10);
-    const brand = page.locator('.brand-mark:visible').first();
-    await expect(brand).toHaveAttribute('src', '/brand/pico-avatar.png');
-    expect(
-      await brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0),
-    ).toBeTruthy();
+    if (width <= 760) {
+      const brand = page.locator('.mobile-brand');
+      await expect(brand).toHaveText('Pico Bot');
+      await expect(brand.locator('.brand-mark')).toBeHidden();
+      const box = await brand.boundingBox();
+      expect(Math.abs(box!.x + box!.width / 2 - width / 2)).toBeLessThan(1);
+    } else {
+      const brand = page.locator('.brand-mark:visible').first();
+      await expect(brand).toHaveAttribute('src', '/brand/pico-avatar.png');
+      expect(
+        await brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0),
+      ).toBeTruthy();
+    }
     await page.screenshot({ path: info.outputPath(`home-${width}.png`), animations: 'disabled' });
     await crown.click();
     await expect(page.getByRole('heading', { name: 'Пользователи', exact: true })).toBeVisible();

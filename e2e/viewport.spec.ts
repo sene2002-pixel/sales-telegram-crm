@@ -33,6 +33,7 @@ async function configureSdk(
         ready: 0,
         expand: 0,
         fullscreen: 0,
+        exit: 0,
         on: [] as string[],
         off: [] as string[],
         lock: 0,
@@ -49,11 +50,14 @@ async function configureSdk(
         },
         requestFullscreen() {
           calls.fullscreen++;
+        },
+        exitFullscreen() {
+          calls.exit++;
           if (mode === 'throw') throw new Error('Local unsupported native capability');
         },
         isVersionAtLeast: (version: string) =>
-          options.version ? Number(version) <= Number(options.version) : mode !== 'old',
-        isFullscreen: mode === 'already',
+          options.version ? Number(version) <= Number(options.version) : !mode.startsWith('old'),
+        isFullscreen: ['already', 'throw', 'old-fullscreen', 'missing-fullscreen'].includes(mode),
         platform: options.platform,
         isOrientationLocked: options.locked || false,
         lockOrientation() {
@@ -81,7 +85,7 @@ async function configureSdk(
           events.get(name)?.delete(callback);
         },
       };
-      if (mode === 'missing') delete sdk.requestFullscreen;
+      if (mode.startsWith('missing')) delete sdk.exitFullscreen;
       (window as any).__sdk = {
         sdk,
         calls,
@@ -120,20 +124,22 @@ async function installOrientation(page: Page, type: string, behavior = 'reject')
   );
 }
 
-test('Viewport: modern fullscreen, old/missing capability fallback, failure and already-fullscreen are bounded', async ({
+test('Viewport: expanded standard header exits existing fullscreen with bounded compatibility and failure', async ({
   page,
 }) => {
   await isolatedModule(page);
-  for (const [mode, fullscreen, expand] of [
-    ['modern', 1, 1],
+  for (const [mode, exit, expand] of [
+    ['modern', 0, 1],
     ['old', 0, 1],
     ['missing', 0, 1],
     ['throw', 1, 2],
-    ['already', 0, 1],
+    ['already', 1, 1],
+    ['old-fullscreen', 0, 1],
+    ['missing-fullscreen', 0, 1],
   ] as const) {
     await configureSdk(page, mode);
     const calls = await page.evaluate(() => (window as any).__sdk.calls);
-    expect(calls).toMatchObject({ ready: 1, fullscreen, expand });
+    expect(calls).toMatchObject({ ready: 1, fullscreen: 0, exit, expand });
     expect(calls.on.sort()).toEqual([
       'contentSafeAreaChanged',
       'fullscreenChanged',
@@ -146,14 +152,15 @@ test('Viewport: modern fullscreen, old/missing capability fallback, failure and 
   await configureSdk(page);
   await page.evaluate(() => (window as any).__sdk.emit('fullscreenFailed'));
   expect(await page.evaluate(() => (window as any).__sdk.calls)).toMatchObject({
-    fullscreen: 1,
+    fullscreen: 0,
+    exit: 0,
     expand: 2,
   });
   await page.evaluate(() => {
     (window as any).__sdk.sdk.isFullscreen = true;
     (window as any).__sdk.emit('fullscreenChanged');
   });
-  expect(await page.evaluate(() => (window as any).__sdk.calls.fullscreen)).toBe(1);
+  expect(await page.evaluate(() => (window as any).__sdk.calls.fullscreen)).toBe(0);
 });
 
 test('Viewport: stable SDK height, safe-area events, keyboard viewport and orientation update real CSS variables', async ({
@@ -360,7 +367,7 @@ test('Viewport: SDK failures do not interrupt the existing Telegram authenticati
     return route.fulfill({ json: { token, user } });
   });
   await page.addInitScript(() => {
-    const calls = { ready: 0, expand: 0, fullscreen: 0 };
+    const calls = { ready: 0, expand: 0, fullscreen: 0, exit: 0 };
     (window as any).__nativeCalls = calls;
     (window as any).Telegram = {
       WebApp: {
@@ -374,7 +381,12 @@ test('Viewport: SDK failures do not interrupt the existing Telegram authenticati
         },
         requestFullscreen() {
           calls.fullscreen++;
-          throw new Error('Local native fullscreen unsupported');
+          throw new Error('requestFullscreen must never be called');
+        },
+        isFullscreen: true,
+        exitFullscreen() {
+          calls.exit++;
+          throw new Error('Local native exit unsupported');
         },
         isVersionAtLeast: () => true,
         viewportStableHeight: 700,
@@ -392,7 +404,8 @@ test('Viewport: SDK failures do not interrupt the existing Telegram authenticati
   expect(await page.evaluate(() => (window as any).__nativeCalls)).toEqual({
     ready: 1,
     expand: 2,
-    fullscreen: 1,
+    fullscreen: 0,
+    exit: 1,
   });
   expect(errors).toEqual([]);
 });

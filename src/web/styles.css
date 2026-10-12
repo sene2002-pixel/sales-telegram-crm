@@ -3038,3 +3038,20 @@ html[data-pico-portrait-required='true'] .pico-portrait-guard {
 .pico-portrait-guard svg {
   color: var(--primary);
 }
+
+/* Telegram supplies the centered bot title; browsers retain a centered brand. */
+@media (max-width: 760px) {
+  .workspace > header {
+    position: relative;
+  }
+  .mobile-brand {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .mobile-brand .brand-mark,
+  .telegram-native-header .mobile-brand {
+    display: none;
+  }
+}

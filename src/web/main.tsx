@@ -323,7 +323,9 @@ function App() {
       (!owner || c.ownerId === owner),
   );
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${window.Telegram?.WebApp?.initData ? ' telegram-native-header' : ''}`}
+    >
       <aside>
         <div className="logo">
           <img className="brand-mark" src="/brand/pico-avatar.png" alt="" width="40" height="40" />
@@ -374,7 +376,7 @@ function App() {
                 width="28"
                 height="28"
               />
-              <strong>Pico</strong>
+              <strong>Pico Bot</strong>
             </div>
             <button className="text-button" onClick={() => setHelp(true)}>
               Права и помощь
