@@ -1477,7 +1477,11 @@ export function AnalyticsScreen({
                       <strong>{money(c.divisions[direction as keyof Company['divisions']])}</strong>
                     </div>
                   ))}
-                  {!list.length && <p className="muted">Потенциал пока не указан</p>}
+                  {!list.length && (
+                    <div className="pico-potential-client">
+                      <span>Потенциал пока не указан</span>
+                    </div>
+                  )}
                 </details>
               );
             })}
