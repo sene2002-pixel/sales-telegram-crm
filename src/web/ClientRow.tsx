@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useRef, useState } from 'react';
 import {
   Company,
@@ -75,7 +76,7 @@ export function ClientRow({
           <Icon name={icon} />
         </span>
         <span>
-          <strong>{company.name}</strong>
+          <strong>{companyDisplayName(company.name)}</strong>
           <small>
             {[labels[company.segment], company.city, company.industry].filter(Boolean).join(' · ')}
           </small>
@@ -237,7 +238,7 @@ export function ClientRow({
             contact !== 'new' && (
               <>
                 <p className="muted">
-                  {contact.data.role} · {company.name}
+                  {contact.data.role} · {companyDisplayName(company.name)}
                 </p>
                 <dl className="pico-detail-fields">
                   <dt>Телефон</dt>

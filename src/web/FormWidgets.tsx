@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { ReactNode, useState } from 'react';
 import { Company, labels, divisionLabels } from '../shared/contracts';
 import { Icon, industryIcon } from './Icons';
@@ -62,7 +63,9 @@ export function ClientPicker({
     (c) =>
       !c.archived &&
       !exclude.includes(c.id) &&
-      `${c.name} ${c.city} ${c.industry}`.toLowerCase().includes(query.toLowerCase()),
+      `${c.name} ${companyDisplayName(c.name)} ${c.city} ${c.industry}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
   return (
     <div className="pico-client-picker" role="group" aria-label={label}>
@@ -95,7 +98,7 @@ export function ClientPicker({
                   <Icon name={icon} size={16} />
                 </span>
                 <span>
-                  <strong>{c.name}</strong>
+                  <strong>{companyDisplayName(c.name)}</strong>
                   <small>
                     {[labels[c.segment], c.city, c.industry].filter(Boolean).join(' · ')}
                   </small>

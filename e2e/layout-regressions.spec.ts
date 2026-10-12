@@ -13,6 +13,19 @@ for (const width of [360, 390, 1440]) {
     page,
   }, info) => {
     await page.setViewportSize({ width, height: width === 360 ? 640 : 900 });
+    if (info.project.name === 'mobile' && width === 1440) {
+      // Wide portrait tablet with a keyboard-height window; actual landscape is tested separately.
+      await page.addInitScript(() => {
+        Object.defineProperties(screen, {
+          width: { configurable: true, value: 1440 },
+          height: { configurable: true, value: 2560 },
+        });
+        Object.defineProperties(screen.orientation, {
+          type: { configurable: true, value: 'portrait-primary' },
+          angle: { configurable: true, value: 0 },
+        });
+      });
+    }
     await page.goto('/');
     await page.getByRole('button', { name: 'Администратор', exact: true }).click();
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();

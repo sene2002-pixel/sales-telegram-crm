@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useState } from 'react';
 import {
   Company,
@@ -91,7 +92,7 @@ export function Reports({
           <button className="report-row" key={r.id} onClick={() => setSelected(r.id)}>
             <span className={'status ' + r.status}>{labels[r.status]}</span>
             <strong>
-              {r.draft?.blocks.map((b) => b.companyName).join(', ') ||
+              {r.draft?.blocks.map((b) => companyDisplayName(b.companyName)).join(', ') ||
                 r.transcript?.slice(0, 80) ||
                 'Голосовой отчёт'}
             </strong>
@@ -223,7 +224,7 @@ function ReportEditor({
           {draft.blocks.map((b, i) => (
             <section className="inset" key={i}>
               <h3>
-                {i + 1}. {b.companyName}
+                {i + 1}. {companyDisplayName(b.companyName)}
               </h3>
               {b.sales && (
                 <>
@@ -270,7 +271,7 @@ function ReportEditor({
                     .filter((c) => !c.archived)
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} · {c.inn || c.city} · {c.ownerName}
+                        {companyDisplayName(c.name)} · {c.inn || c.city} · {c.ownerName}
                       </option>
                     ))}
                 </select>

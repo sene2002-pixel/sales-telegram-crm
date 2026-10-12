@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../../shared/company-display-name';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -497,7 +498,7 @@ export class DialogueService {
       [actor.id],
     );
     await this.reports.notify(tx, actor.telegramId, {
-      text: `Редактирование: ${titles[row.payload.kind as DialogueAction['kind']]}${row.company ? ` · ${row.company.name}` : ''}\n${question}`,
+      text: `Редактирование: ${titles[row.payload.kind as DialogueAction['kind']]}${row.company ? ` · ${companyDisplayName(row.company.name)}` : ''}\n${question}`,
       reply_markup: {
         inline_keyboard: [[{ text: 'Отменить задачу', callback_data: `dx:${row.id}` }]],
       },
@@ -515,7 +516,7 @@ export class DialogueService {
       JSON.stringify({ question: text, remedy }),
     ]);
     await this.reports.notify(tx, actor.telegramId, {
-      text: `Следующая задача: ${titles[row.payload.kind as DialogueAction['kind']]}\n${row.company ? `Компания: ${row.company.name}\n` : ''}${remedy ? 'Выполнить невозможно: ' : ''}${text}\nУточните текстом или голосом.`,
+      text: `Следующая задача: ${titles[row.payload.kind as DialogueAction['kind']]}\n${row.company ? `Компания: ${companyDisplayName(row.company.name)}\n` : ''}${remedy ? 'Выполнить невозможно: ' : ''}${text}\nУточните текстом или голосом.`,
       reply_markup: {
         inline_keyboard: [
           ...(remedy ? [[{ text: titles[remedy], callback_data: `dr:${row.id}` }]] : []),
@@ -621,7 +622,7 @@ export class DialogueService {
           JSON.stringify({ jobFailed: true, question: reason }),
         ]);
         await this.reports.notify(tx, actor.telegramId, {
-          text: `Задача: подготовить письмо для ${row.company.name}.\nВыполнение остановлено: ${reason}\nОчередь ждёт. Сохранённые данные остаются.`,
+          text: `Задача: подготовить письмо для ${companyDisplayName(row.company.name)}.\nВыполнение остановлено: ${reason}\nОчередь ждёт. Сохранённые данные остаются.`,
           reply_markup: {
             inline_keyboard: [
               ...(job.status === 'failed'
@@ -947,7 +948,7 @@ export class DialogueService {
       [row.id, JSON.stringify(snapshot)],
     );
     const companyText = row.company
-      ? `Компания: ${row.company.name}\n${a.kind === 'letter' ? '' : `Город: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n`}`
+      ? `Компания: ${companyDisplayName(row.company.name)}\n${a.kind === 'letter' ? '' : `Город: ${row.company.city || '—'} · ИНН: ${row.company.inn || '—'}\n`}`
       : '';
     let previewText = `${snapshot.defaultStep ? 'Назначить подпись по умолчанию' : titles[a.kind]}\n${companyText}\n${notice}${data?.success ? (changes ?? fieldsText(data.data)) : ''}\n\nПодтвердите или уточните текстом/голосом.`;
     while (previewText.length > 3900) {
@@ -1277,7 +1278,7 @@ export class DialogueService {
       } else await this.letterBot.enqueue(actor, `dialogue:${row.id}`, query, tx);
       await tx.query("UPDATE dialogue_actions SET status='executing' WHERE id=$1", [row.id]);
       await this.reports.notify(tx, actor.telegramId, {
-        text: `Готовлю письмо: ${row.company.name}. Очередь ждёт отправки PDF.`,
+        text: `Готовлю письмо: ${companyDisplayName(row.company.name)}. Очередь ждёт отправки PDF.`,
       });
       return;
     } else if (a.kind === 'signature_create') {
@@ -1383,7 +1384,7 @@ export class DialogueService {
       [row.id],
     );
     await this.reports.notify(tx, actor.telegramId, {
-      text: `Выполнено: ${titles[a.kind]}${row.company ? ` · ${row.company.name}` : ''}.`,
+      text: `Выполнено: ${titles[a.kind]}${row.company ? ` · ${companyDisplayName(row.company.name)}` : ''}.`,
     });
   }
 }

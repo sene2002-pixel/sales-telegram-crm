@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useState } from 'react';
 import {
   Actor,
@@ -97,7 +98,7 @@ export function RecordCreate({
               <PickerRow
                 label="Заказчик"
                 icon="clients"
-                value={companies.find((c) => c.id === companyId)?.name}
+                value={companyDisplayName(companies.find((c) => c.id === companyId)?.name)}
                 onClick={() => setCompanyPickerOpen(!companyPickerOpen)}
               />
               {companyPickerOpen && (
@@ -349,7 +350,8 @@ export function TaskList({
             >
               <strong className={t.data.done ? 'done' : ''}>{t.data.text}</strong>
               <small>
-                {props.projects.find((p) => p.id === t.projectId)?.data.name || t.companyName}
+                {props.projects.find((p) => p.id === t.projectId)?.data.name ||
+                  companyDisplayName(t.companyName)}
                 {t.data.due
                   ? ' · ' +
                     (inlineActions
@@ -503,7 +505,7 @@ export function TaskList({
                 <dt>Тип задачи</dt>
                 <dd>{taskTypeLabels[selected.data.type] || 'Напоминание'}</dd>
                 <dt>Клиент</dt>
-                <dd>{selected.companyName}</dd>
+                <dd>{companyDisplayName(selected.companyName)}</dd>
                 <dt>Проект</dt>
                 <dd>
                   {props.projects.find((p) => p.id === selected.projectId)?.data.name ||
@@ -723,7 +725,7 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
     [type, setType] = useState(''),
     [filtersOpen, setFiltersOpen] = useState(false);
   const search = props.tasks.filter((t) =>
-    `${t.data.text} ${t.companyName} ${props.projects.find((p) => p.id === t.projectId)?.data.name || ''}`
+    `${t.data.text} ${t.companyName} ${companyDisplayName(t.companyName)} ${props.projects.find((p) => p.id === t.projectId)?.data.name || ''}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
@@ -924,7 +926,9 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
     .filter(
       (p) =>
         (!equipment || p.data.equipment?.some((e: any) => e.division === equipment)) &&
-        `${p.data.name} ${p.companyName}`.toLowerCase().includes(query.toLowerCase()) &&
+        `${p.data.name} ${p.companyName} ${companyDisplayName(p.companyName)}`
+          .toLowerCase()
+          .includes(query.toLowerCase()) &&
         (filter === 'all' ||
           (filter === 'closed' ? p.data.stage === 'closed' : p.data.stage !== 'closed')),
     )
@@ -1047,7 +1051,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
               })()}
               <span>
                 <strong>{p.data.name}</strong>
-                <small>{p.companyName}</small>
+                <small>{companyDisplayName(p.companyName)}</small>
                 <small>
                   Сумма: <b>{money(p.data.amount)}</b>
                 </small>
@@ -1095,8 +1099,9 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
                 {p.data.participants.map((member: any, i: number) => (
                   <details key={i}>
                     <summary>
-                      {props.companies.find((c) => c.id === member.companyId)?.name ||
-                        'Клиент недоступен'}{' '}
+                      {companyDisplayName(
+                        props.companies.find((c) => c.id === member.companyId)?.name,
+                      ) || 'Клиент недоступен'}{' '}
                       · {member.role}
                     </summary>
                     <dl className="pico-detail-fields">
@@ -1128,7 +1133,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
                 if (c) props.onCompany(c);
               }}
             >
-              Открыть клиента · {p.companyName}
+              Открыть клиента · {companyDisplayName(p.companyName)}
               <Icon name="chevron-right" size={16} />
             </button>
             <h3>Задачи проекта</h3>
@@ -1464,7 +1469,7 @@ export function AnalyticsScreen({
                   </summary>
                   {list.map((c) => (
                     <div className="pico-potential-client" key={c.id}>
-                      <span>{c.name}</span>
+                      <span>{companyDisplayName(c.name)}</span>
                       <strong>{money(c.divisions[direction as keyof Company['divisions']])}</strong>
                     </div>
                   ))}

@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../../shared/company-display-name';
 import { randomUUID } from 'node:crypto';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import {
@@ -233,7 +234,7 @@ export class ReportService {
     for (let i = 0; i < draft.blocks.length; i++) {
       const b = draft.blocks[i]!;
       if (!b.sales) {
-        responses.push(`${b.companyName}\n${b.summary}`);
+        responses.push(`${companyDisplayName(b.companyName)}\n${b.summary}`);
         continue;
       }
       const sales = normalizeSales(b.sales);
@@ -324,8 +325,10 @@ export class ReportService {
         seen.add(companyId);
         const company = await this.crm.company(actor, companyId, tx, true);
         const sales = block.sales ? normalizeSales(block.sales) : null;
-        if (sales && !sales.client.city && block.city !== null) sales.client.city={value:block.city,certainty:'confirmed'};
-        if (sales && !sales.client.segment && block.segment !== null) sales.client.segment={value:block.segment,certainty:'confirmed'};
+        if (sales && !sales.client.city && block.city !== null)
+          sales.client.city = { value: block.city, certainty: 'confirmed' };
+        if (sales && !sales.client.segment && block.segment !== null)
+          sales.client.segment = { value: block.segment, certainty: 'confirmed' };
         // A supervisor can confirm an old report after reassignment; a manager cannot access a former company.
         const activity = await this.crm.createRecord(
           actor,

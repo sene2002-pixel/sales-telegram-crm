@@ -27,6 +27,20 @@ async function login(page: Page) {
   await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
 }
 
+async function portraitTablet(page: Page) {
+  // A wide portrait tablet can have a short visible viewport; the orientation guard remains active.
+  await page.addInitScript(() => {
+    Object.defineProperties(screen, {
+      width: { configurable: true, value: 1440 },
+      height: { configurable: true, value: 2560 },
+    });
+    Object.defineProperties(screen.orientation, {
+      type: { configurable: true, value: 'portrait-primary' },
+      angle: { configurable: true, value: 0 },
+    });
+  });
+}
+
 async function capture(page: Page, state: string) {
   const info = test.info();
   const requestedWidth = page.viewportSize()!.width;
@@ -139,8 +153,9 @@ async function capture(page: Page, state: string) {
 for (const width of [360, 390, 1440]) {
   test(`UI audit: secondary routes, guide, account, reports, users and team at ${width}px`, async ({
     page,
-  }) => {
+  }, info) => {
     await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
+    if (info.project.name === 'mobile' && width === 1440) await portraitTablet(page);
     await login(page);
     await capture(page, 'home');
     if (width < 761) {
@@ -270,8 +285,9 @@ for (const width of [360, 390, 1440]) {
 
   test(`UI audit: long client, every detail tab, nested forms, letter and failures at ${width}px`, async ({
     page,
-  }) => {
+  }, info) => {
     await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
+    if (info.project.name === 'mobile' && width === 1440) await portraitTablet(page);
     await login(page);
     const name = 'Компания_' + 'Оченьдлинноеназвание'.repeat(8) + '-' + Date.now();
     const projectName = 'Реконструкция_' + 'Подстанция'.repeat(13) + '-' + Date.now();

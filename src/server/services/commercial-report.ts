@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../../shared/company-display-name';
 import { Actor, dateSchema, idSchema } from '../../shared/contracts';
 import {
   confirmed,
@@ -125,7 +126,7 @@ export class CommercialReportService {
           approximate[category] ||= approx;
         }
         lines.push(
-          `${clean(c.name)} / ${clean(d.name || 'Проект не указан')} (${statuses[confirmed(d.status) || ''] || 'статус не указан'}, ${directionLabels[d.direction || ''] || 'направление не указано'}, ${amount === null ? 'сумма не указана' : `${approx ? 'около ' : ''}${rubles(amount)}`})`,
+          `${clean(companyDisplayName(c.name))} / ${clean(d.name || 'Проект не указан')} (${statuses[confirmed(d.status) || ''] || 'статус не указан'}, ${directionLabels[d.direction || ''] || 'направление не указано'}, ${amount === null ? 'сумма не указана' : `${approx ? 'около ' : ''}${rubles(amount)}`})`,
         );
         if (!identified)
           lines.push('- Привязка проекта не определена; объём не включён в общие суммы');
@@ -142,7 +143,8 @@ export class CommercialReportService {
           `- Следующий шаг: ${clean(confirmed(d.nextStep) || 'не указано')}; срок: ${confirmed(d.nextDue) || 'не указано'}`,
         );
       }
-      if (!lines.length) lines.push(`${clean(c.name)} (данные сделки не указаны)`);
+      if (!lines.length)
+        lines.push(`${clean(companyDisplayName(c.name))} (данные сделки не указаны)`);
       const unmatched = [...results.values()].filter((r) => !r.dealKey);
       if (unmatched.length)
         lines.push(

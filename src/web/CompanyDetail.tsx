@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useRef, useState } from 'react';
 import {
   Actor,
@@ -79,14 +80,14 @@ export function CompanyDetail({
   }
   if (!detail)
     return (
-      <Modal title={company.name} onClose={onClose}>
+      <Modal title={companyDisplayName(company.name)} onClose={onClose}>
         <p>{error || 'Загрузка…'}</p>
       </Modal>
     );
   const c = detail.company,
     projects = detail.records.filter((r) => r.kind === 'project');
   return (
-    <Modal title={c.name} onClose={onClose}>
+    <Modal title={companyDisplayName(c.name)} onClose={onClose}>
       <div className="chips">
         <span>{c.city || 'Город не указан'}</span>
         <span>{labels[c.segment]}</span>
@@ -149,8 +150,8 @@ export function CompanyDetail({
         >
           <p>
             {c.archived
-              ? `Восстановить «${c.name}»?`
-              : `Перенести «${c.name}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет только суперадмин.`}
+              ? `Восстановить «${companyDisplayName(c.name)}»?`
+              : `Перенести «${companyDisplayName(c.name)}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет только суперадмин.`}
           </p>
           <button
             disabled={busy}

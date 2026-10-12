@@ -9,6 +9,19 @@ for (const width of [375, 1440]) {
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
+    if (testInfo.project.name === 'mobile' && width === 1440) {
+      // Wide portrait tablet with a keyboard-height window; keep portrait-only guard active.
+      await page.addInitScript(() => {
+        Object.defineProperties(screen, {
+          width: { configurable: true, value: 1440 },
+          height: { configurable: true, value: 2560 },
+        });
+        Object.defineProperties(screen.orientation, {
+          type: { configurable: true, value: 'portrait-primary' },
+          angle: { configurable: true, value: 0 },
+        });
+      });
+    }
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');

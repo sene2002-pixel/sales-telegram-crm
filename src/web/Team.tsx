@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useState } from 'react';
 import { Actor, roles, labels } from '../shared/contracts';
 import { api, download, today } from './api';
@@ -185,7 +186,7 @@ export function Team({
         {stats.flatMap((s) =>
           s.inactiveCompanies.map((c: any) => (
             <p key={c.id}>
-              {c.name} <span className="muted">· {s.name}</span>
+              {companyDisplayName(c.name)} <span className="muted">· {s.name}</span>
             </p>
           )),
         )}

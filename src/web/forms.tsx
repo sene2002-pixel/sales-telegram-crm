@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import { createPortal } from 'react-dom';
 import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react';
 import {
@@ -619,7 +620,7 @@ export function TaskComposer({
       <PickerRow
         label="Клиент"
         icon="clients"
-        value={companies.find((c) => c.id === companyId)?.name}
+        value={companyDisplayName(companies.find((c) => c.id === companyId)?.name)}
         onClick={() => setClientOpen(!clientOpen)}
       />
       {clientOpen && (
@@ -1103,7 +1104,8 @@ export function RecordForm({
                   <Icon name="clients" size={16} />
                   <span>
                     <strong>
-                      {companies.find((c) => c.id === item.companyId)?.name || 'Клиент недоступен'}
+                      {companyDisplayName(companies.find((c) => c.id === item.companyId)?.name) ||
+                        'Клиент недоступен'}
                     </strong>
                     <small>{item.role}</small>
                   </span>
@@ -1225,7 +1227,8 @@ export function RecordForm({
                 label="Клиент"
                 icon="clients"
                 value={
-                  companies.find((c) => c.id === participant.companyId)?.name || 'Клиент недоступен'
+                  companyDisplayName(companies.find((c) => c.id === participant.companyId)?.name) ||
+                  'Клиент недоступен'
                 }
                 onClick={() => setParticipantClientOpen(true)}
               />

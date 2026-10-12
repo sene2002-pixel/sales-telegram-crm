@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../../shared/company-display-name';
 import { z } from 'zod';
 import { Actor, Company, contactSchema, idSchema, validInn } from '../../shared/contracts';
 import { Config } from '../config';
@@ -147,12 +148,12 @@ export class VoiceContacts {
       if (draft.company) await this.preview(tx, report.chat_id, report.id, draft);
       else
         await this.reports.notify(tx, report.chat_id, {
-          text: `Найдено несколько компаний. Выберите компанию для контакта ${draft.data.name}. Затем — проверка данных.\n\n${matches.map((item, index) => `${index + 1}. ${item.name.slice(0, 150)} · ${item.city.slice(0, 70) || 'город не указан'} · ИНН ${item.inn || 'не указан'}`).join('\n\n')}`,
+          text: `Найдено несколько компаний. Выберите компанию для контакта ${draft.data.name}. Затем — проверка данных.\n\n${matches.map((item, index) => `${index + 1}. ${companyDisplayName(item.name).slice(0, 150)} · ${item.city.slice(0, 70) || 'город не указан'} · ИНН ${item.inn || 'не указан'}`).join('\n\n')}`,
           reply_markup: {
             inline_keyboard: [
               ...matches.map((item, index) => [
                 {
-                  text: `${index + 1}. ${item.name}`.slice(0, 100),
+                  text: `${index + 1}. ${companyDisplayName(item.name)}`.slice(0, 100),
                   callback_data: `cp:${report.id}:${index}`,
                 },
               ]),
@@ -206,7 +207,7 @@ export class VoiceContacts {
     const company = draft.company!;
     const data = draft.data;
     return this.reports.notify(tx, chatId, {
-      text: `Проверьте контакт перед сохранением:\n\nКомпания: ${company.name}\nГород: ${company.city || '—'}\nИНН: ${company.inn || '—'}\n\nИмя: ${data.name}\nДолжность: ${data.role || '—'}\nТелефон: ${data.phone || '—'}\nEmail: ${data.email || '—'}\n\nДля правки отмените и повторите команду.`,
+      text: `Проверьте контакт перед сохранением:\n\nКомпания: ${companyDisplayName(company.name)}\nГород: ${company.city || '—'}\nИНН: ${company.inn || '—'}\n\nИмя: ${data.name}\nДолжность: ${data.role || '—'}\nТелефон: ${data.phone || '—'}\nEmail: ${data.email || '—'}\n\nДля правки отмените и повторите команду.`,
       reply_markup: {
         inline_keyboard: [
           [
@@ -262,8 +263,8 @@ export class VoiceContacts {
       );
       await this.reports.notify(tx, current.telegramId, {
         text: existing
-          ? `Контакт ${data.name} с такими данными уже есть в компании ${company.name}. Повторно не создавал.`
-          : `Контакт ${data.name} сохранён в компании ${company.name}.`,
+          ? `Контакт ${data.name} с такими данными уже есть в компании ${companyDisplayName(company.name)}. Повторно не создавал.`
+          : `Контакт ${data.name} сохранён в компании ${companyDisplayName(company.name)}.`,
         reply_markup: {
           inline_keyboard: [[{ text: 'Открыть CRM', web_app: { url: this.config.publicUrl } }]],
         },

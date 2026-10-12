@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../../shared/company-display-name';
 import { timingSafeEqual } from 'node:crypto';
 import { Config } from '../config';
 import { AuthService } from './auth';
@@ -248,7 +249,7 @@ export class BotService {
             ? tasks
                 .map(
                   (t) =>
-                    `${t.companyName}: ${t.data.text}${t.data.due ? ' · до ' + t.data.due : ''}`,
+                    `${companyDisplayName(t.companyName)}: ${t.data.text}${t.data.due ? ' · до ' + t.data.due : ''}`,
                 )
                 .join('\n')
                 .slice(0, 3900)

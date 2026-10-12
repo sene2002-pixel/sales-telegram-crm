@@ -1,3 +1,4 @@
+import { companyDisplayName } from './company-display-name';
 import { z } from 'zod';
 import { segments } from './crm-taxonomy';
 
@@ -383,6 +384,7 @@ export function salesQuestions(s: SalesUpdate, variant = 0): string[] {
   return questions.slice(0, 3);
 }
 export function salesFeedback(company: string, s: SalesUpdate, variant = 0): string {
+  company = companyDisplayName(company);
   const reaction = variant % 2 ? 'Разобрал, вот что получилось.' : 'Принял, спасибо.';
   const lines = [reaction, company];
   for (const d of s.deals) {

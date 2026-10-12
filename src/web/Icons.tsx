@@ -1,5 +1,11 @@
 import { ReactNode } from 'react';
 const paths: Record<string, ReactNode> = {
+  phone: (
+    <>
+      <rect x="6" y="2" width="12" height="20" rx="2" />
+      <path d="M10 18h4" />
+    </>
+  ),
   'chevron-right': <path d="m9 5 7 7-7 7" />,
   'chevron-left': <path d="m15 5-7 7 7 7" />,
   'chevron-down': <path d="m5 9 7 7 7-7" />,

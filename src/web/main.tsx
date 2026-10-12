@@ -1,3 +1,4 @@
+import { companyDisplayName } from '../shared/company-display-name';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -30,10 +31,11 @@ import {
   ScreenGuide,
 } from './Screens';
 import './styles.css';
+import { configureViewport, TelegramViewport } from './viewport';
 declare global {
   interface Window {
     Telegram?: {
-      WebApp?: {
+      WebApp?: TelegramViewport & {
         initData: string;
         ready: () => void;
         expand: () => void;
@@ -205,8 +207,7 @@ function App() {
     }
   }
   useEffect(() => {
-    window.Telegram?.WebApp?.ready();
-    window.Telegram?.WebApp?.expand();
+    const cleanupViewport = configureViewport(window.Telegram?.WebApp);
     api('/config')
       .then((c) => setDev(c.devAuth))
       .catch(() => {});
@@ -228,7 +229,11 @@ function App() {
         setLoading(false);
       }
     })();
+    return cleanupViewport;
   }, []);
+  useEffect(() => {
+    if (user?.id) window.scrollTo(0, 0);
+  }, [user?.id]);
   useEffect(() => {
     if (!user) return;
     const onFocus = () => refresh().catch((e) => setError(e.message));
@@ -306,7 +311,7 @@ function App() {
       (clientStatus === 'all' ||
         (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
       (!query ||
-        `${c.name} ${c.inn} ${contacts
+        `${c.name} ${companyDisplayName(c.name)} ${c.inn} ${contacts
           .filter((contact) => contact.companyId === c.id)
           .map((contact) => `${contact.data.name} ${contact.data.phone} ${contact.data.email}`)
           .join(' ')}`
@@ -615,8 +620,8 @@ function App() {
                   <div className="task-text">
                     <strong>{f.data.name}</strong>
                     <small>
-                      {f.companyName} · {labels[f.data.category]} · {Math.ceil(f.data.size / 1024)}{' '}
-                      КБ
+                      {companyDisplayName(f.companyName)} · {labels[f.data.category]} ·{' '}
+                      {Math.ceil(f.data.size / 1024)} КБ
                     </small>
                   </div>
                   <button
@@ -704,4 +709,17 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <>
+    <div id="pico-app">
+      <App />
+    </div>
+    <section className="pico-portrait-guard" role="status" aria-live="polite">
+      <div>
+        <Icon name="phone" size={36} />
+        <h1>Поверните устройство вертикально</h1>
+        <p>Приложение работает в вертикальном положении.</p>
+      </div>
+    </section>
+  </>,
+);
