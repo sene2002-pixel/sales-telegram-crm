@@ -331,6 +331,9 @@ class CrmController {
   @Post('users') user(@Req() r: AuthedRequest, @Body() b: unknown) {
     return this.s.auth.saveUser(r.actor, b);
   }
+  @Post('users/admit') admitUser(@Req() r: AuthedRequest, @Body() body: unknown) {
+    return this.s.auth.admitUser(r.actor, body);
+  }
   @Get('companies') companies(@Req() r: AuthedRequest) {
     return this.s.crm.list(r.actor);
   }
@@ -404,6 +407,9 @@ class CrmController {
   ) {
     return this.s.crm.deleteTask(r.actor, id, b);
   }
+  @Get('tasks/:id/advice') taskAdvice(@Req() r: AuthedRequest, @Param('id') id: string) {
+    return this.s.crm.taskAdvice(r.actor, id);
+  }
   @Get('reports') reports(@Req() r: AuthedRequest) {
     return this.s.reports.list(r.actor);
   }
@@ -451,6 +457,13 @@ class CrmController {
     @Query('to') to: string,
   ) {
     return this.s.dashboard.summary(r.actor, from, to);
+  }
+  @Get('analytics') analytics(
+    @Req() r: AuthedRequest,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    return this.s.dashboard.analytics(r.actor, from, to);
   }
   @Get('dashboard/commercial') commercial(
     @Req() r: AuthedRequest,

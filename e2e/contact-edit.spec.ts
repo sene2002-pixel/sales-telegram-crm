@@ -44,11 +44,11 @@ test('contact edit retains rejected input and reloads the database after success
       });
     } else await route.continue();
   });
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Слишком много запросов');
   await expect(dialog.getByLabel('Имя', { exact: true })).toHaveValue('Пётр');
   await expect(dialog.locator('.records')).toContainText('Иван');
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('Пётр');
   await expect(dialog.getByLabel('Имя', { exact: true })).toHaveCount(0);
   const freshResponse = await page.request.get(`/api/companies/${company.id}`, { headers });

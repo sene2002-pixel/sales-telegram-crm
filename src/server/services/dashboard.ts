@@ -2,11 +2,31 @@ import { Actor, dateSchema } from '../../shared/contracts';
 import { Database } from '../infra/database';
 import { requireCondition } from '../domain/errors';
 import { isLeader } from './auth';
+import { summarizeAnalytics } from '../../shared/analytics';
 export class DashboardService {
   constructor(
     private db: Database,
     private timezone: string,
   ) {}
+  async analytics(actor: Actor, from: string, to: string) {
+    dateSchema.parse(from);
+    dateSchema.parse(to);
+    requireCondition(from <= to, 400, 'Неверный период');
+    requireCondition(
+      (+new Date(to) - +new Date(from)) / 86400000 <= 3660,
+      400,
+      'Период не должен превышать десять лет',
+    );
+    const companies = await this.db.query(
+      'SELECT id,data,created_at,updated_at FROM companies WHERE ($1::boolean OR owner_id=$2)',
+      [isLeader(actor), actor.id],
+    );
+    const events = await this.db.query(
+      "SELECT a.company_id,a.action,a.details,a.created_at FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND a.action IN ('company.created','company.updated','company.sales_updated','company.archived','company.restored') ORDER BY a.created_at,a.id",
+      [isLeader(actor), actor.id],
+    );
+    return summarizeAnalytics(companies as any, events as any, from, to, this.timezone);
+  }
   async summary(actor: Actor, from: string, to: string) {
     requireCondition(isLeader(actor), 403, 'Отчёт доступен руководителю');
     dateSchema.parse(from);

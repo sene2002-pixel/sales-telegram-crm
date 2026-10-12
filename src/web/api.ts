@@ -52,11 +52,10 @@ export function today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-export const money = (n: number | null | undefined) =>
-  n == null
-    ? '—'
-    : new Intl.NumberFormat('ru-RU', {
-        style: 'currency',
-        currency: 'RUB',
-        maximumFractionDigits: 0,
-      }).format(n);
+export const money = (n: number | null | undefined) => {
+  if (n == null) return '—';
+  const formatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+  if (Math.abs(n) >= 1_000_000) return formatter.format(n / 1_000_000) + ' млн ₽';
+  if (Math.abs(n) >= 1_000) return formatter.format(n / 1_000) + ' тыс. ₽';
+  return formatter.format(n) + ' ₽';
+};

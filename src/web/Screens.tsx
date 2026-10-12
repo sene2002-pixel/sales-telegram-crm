@@ -4,14 +4,21 @@ import {
   Company,
   CrmRecord,
   divisions,
+  primaryDivisions,
+  primarySegments,
+  projectSupplyTypes,
+  projectServiceTypes,
+  divisionLabels,
   labels,
   stages,
   taskSchema,
   taskTypeLabels,
 } from '../shared/contracts';
 import { api, money, today } from './api';
-import { Field, Modal, RecordForm } from './forms';
-import { Icon } from './Icons';
+import { Field, Modal, RecordForm, TaskComposer, Chips, ClientPicker } from './forms';
+import { Icon, industryIcon } from './Icons';
+import { PickerRow } from './FormWidgets';
+import { AnalyticsSummary } from '../shared/analytics';
 import { CommercialReport } from './CommercialReport';
 export type NamedRecord = CrmRecord & { companyName: string };
 type Common = {
@@ -34,7 +41,9 @@ export function RecordCreate({
 }) {
   const [companyId, setCompanyId] = useState(''),
     [contacts, setContacts] = useState<CrmRecord[]>([]),
-    [contactError, setContactError] = useState('');
+    [contactError, setContactError] = useState(''),
+    [companyPickerOpen, setCompanyPickerOpen] = useState(false),
+    [acknowledged, setAcknowledged] = useState(false);
   useEffect(() => {
     let current = true;
     setContacts([]);
@@ -53,39 +62,73 @@ export function RecordCreate({
   }, [companyId]);
   return (
     <Modal title={kind === 'task' ? 'Новая задача' : 'Новый проект'} onClose={onClose}>
-      <Field label="Клиент">
-        <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
-          <option value="">Выберите клиента</option>
-          {companies
-            .filter((c) => !c.archived)
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-        </select>
-      </Field>
-      {contactError && (
-        <p className="error" role="alert">
-          {contactError}
-        </p>
-      )}
-      {companyId ? (
-        <RecordForm
-          key={companyId}
-          kind={kind}
+      {acknowledged ? (
+        <>
+          <p role="status">Запись сохранена. Обновите список, чтобы увидеть изменения.</p>
+          <button className="primary pico-sheet-submit" onClick={onClose}>
+            Готово
+          </button>
+        </>
+      ) : kind === 'task' ? (
+        <TaskComposer
           companies={companies}
-          contacts={contacts}
-          projects={projects.filter((p) => p.companyId === companyId)}
-          onSave={async (data, projectId) => {
-            await api(`/companies/${companyId}/records/${kind}`, 'POST', { data, projectId });
-            await onChanged();
-            onClose();
+          projects={projects}
+          onSave={async (data, cid, pid) => {
+            await api(`/companies/${cid}/records/task`, 'POST', { data, projectId: pid });
+            setAcknowledged(true);
+            try {
+              await onChanged();
+              onClose();
+            } catch (e) {
+              setContactError(
+                'Запись сохранена, но обновление не удалось: ' + (e as Error).message,
+              );
+            }
           }}
         />
       ) : (
-        <p className="muted">
-          Выберите клиента, чтобы {kind === 'task' ? 'добавить задачу' : 'создать проект'}.
+        <RecordForm
+          kind="project"
+          companies={companies}
+          contacts={contacts}
+          projects={projects.filter((p) => p.companyId === companyId)}
+          clientRow={
+            <div className="pico-picker-box">
+              <PickerRow
+                label="Заказчик"
+                icon="clients"
+                value={companies.find((c) => c.id === companyId)?.name}
+                onClick={() => setCompanyPickerOpen(!companyPickerOpen)}
+              />
+              {companyPickerOpen && (
+                <ClientPicker
+                  companies={companies}
+                  value={companyId}
+                  onChange={(id) => {
+                    setCompanyId(id);
+                    setCompanyPickerOpen(false);
+                  }}
+                  label="Клиент проекта"
+                />
+              )}
+            </div>
+          }
+          onSave={async (data, projectId) => {
+            if (!companyId) throw new Error('Выберите заказчика проекта');
+            await api(`/companies/${companyId}/records/project`, 'POST', { data, projectId });
+            setAcknowledged(true);
+            try {
+              await onChanged();
+              onClose();
+            } catch (e) {
+              setContactError('Проект сохранён, но обновление не удалось: ' + (e as Error).message);
+            }
+          }}
+        />
+      )}
+      {contactError && (
+        <p role="alert" className="error">
+          {contactError}
         </p>
       )}
     </Modal>
@@ -116,7 +159,7 @@ function ContactLabel({ companyId, contactId }: { companyId: string; contactId?:
     };
   }, [companyId, contactId]);
   return (
-    <span>
+    <span className="pico-contact-label">
       {error ? (
         'Контакт недоступен'
       ) : contact ? (
@@ -138,6 +181,42 @@ function ContactLabel({ companyId, contactId }: { companyId: string; contactId?:
         'Не выбран'
       )}
     </span>
+  );
+}
+function TaskAdvice({ id }: { id: string }) {
+  const [advice, setAdvice] = useState<{
+      text: string;
+      source: string;
+      asOf: string | null;
+    } | null>(null),
+    [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    api(`/tasks/${id}/advice`)
+      .then((a) => {
+        if (active) setAdvice(a);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+  return (
+    <section className="pico-task-advice">
+      <h3>
+        <Icon name="sparkles" size={16} /> Pico подсказывает
+      </h3>
+      {advice ? (
+        <>
+          <p>{advice.text}</p>
+          {advice.asOf && <small>По подтверждённым данным от {advice.asOf}</small>}
+        </>
+      ) : (
+        <p>{error ? 'Подсказка недоступна. ' + error : 'Загрузка подсказки…'}</p>
+      )}
+    </section>
   );
 }
 export function ScreenGuide({
@@ -238,7 +317,10 @@ export function TaskList({
       )}
       <div className="pico-compact-list">
         {list.map((t) => (
-          <article className="pico-task-row task-row" key={t.id}>
+          <article
+            className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
+            key={t.id}
+          >
             <button
               className={
                 'checkbox task-type-' +
@@ -267,9 +349,16 @@ export function TaskList({
             >
               <strong className={t.data.done ? 'done' : ''}>{t.data.text}</strong>
               <small>
-                {t.companyName}
+                {props.projects.find((p) => p.id === t.projectId)?.data.name || t.companyName}
                 {t.data.due
-                  ? ' · ' + t.data.due + (t.data.time ? ' · ' + t.data.time : '')
+                  ? ' · ' +
+                    (inlineActions
+                      ? ''
+                      : new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
+                          day: 'numeric',
+                          month: 'short',
+                        }) + ' · ') +
+                    (t.data.time || 'Без времени')
                   : ' · Без срока'}
               </small>
             </button>
@@ -314,6 +403,15 @@ export function TaskList({
       {selected && (
         <Modal
           title={postpone ? 'Отложить задачу' : selected.data.text}
+          titleIcon={
+            !postpone ? (
+              <span className={'pico-detail-type task-type-' + (selected.data.type || 'reminder')}>
+                <span className="checkbox">
+                  <Icon name={selected.data.type || 'reminder'} size={16} />
+                </span>
+              </span>
+            ) : undefined
+          }
           onClose={() => {
             setSelected(null);
             setPostpone(false);
@@ -345,10 +443,19 @@ export function TaskList({
                     );
                   }}
                 >
-                  Через час
+                  <Icon name="clock" size={16} />
+                  <strong>Через час</strong>
+                  <small>
+                    {new Date(Date.now() + 3600000).toLocaleString('ru-RU', {
+                      day: 'numeric',
+                      month: 'long',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </small>
                 </button>
                 {[
-                  ['Завтра', 1],
+                  ['Завтра утром', 1],
                   ['Через неделю', 7],
                 ].map(([label, n]) => (
                   <button
@@ -356,12 +463,25 @@ export function TaskList({
                     onClick={() => {
                       const d = new Date(today() + 'T12:00:00');
                       d.setDate(d.getDate() + Number(n));
+                      if (Number(n) === 1) setTime('10:00');
                       setDue(
                         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
                       );
                     }}
                   >
-                    {label}
+                    <Icon name="calendar" size={16} />
+                    <strong>{label}</strong>
+                    <small>
+                      {(() => {
+                        const d = new Date(today() + 'T12:00:00');
+                        d.setDate(d.getDate() + Number(n));
+                        return (
+                          d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) +
+                          ', ' +
+                          (Number(n) === 1 ? '10:00' : time || 'без времени')
+                        );
+                      })()}
+                    </small>
                   </button>
                 ))}
               </div>
@@ -401,7 +521,8 @@ export function TaskList({
                   {props.users.find((u) => u.id === selected.assigneeId)?.name || 'Не назначен'}
                 </dd>
               </dl>
-              <div className="actions">
+              <TaskAdvice id={selected.id} />
+              <div className="actions pico-task-detail-actions">
                 <button onClick={() => setPostpone(true)} disabled={busy}>
                   Отложить
                 </button>
@@ -467,7 +588,7 @@ export function HomeScreen(
           <button
             className="pico-admin-button"
             aria-label="Управление пользователями"
-            onClick={() => props.onNavigate('team')}
+            onClick={() => props.onNavigate('users')}
           >
             <Icon name="crown" />
           </button>
@@ -741,7 +862,7 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
             >
               Сбросить
             </button>
-            <button className="primary" onClick={() => setFiltersOpen(false)}>
+            <button className="primary pico-sheet-submit" onClick={() => setFiltersOpen(false)}>
               Показать ({list.length})
             </button>
           </div>
@@ -822,16 +943,24 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
       </div>
       {filtersOpen && (
         <Modal title="Фильтры проектов" onClose={() => setFiltersOpen(false)}>
-          <Field label="Оборудование">
-            <select value={equipment} onChange={(e) => setEquipment(e.target.value)}>
-              <option value="">Все направления</option>
-              {divisions.map((d) => (
-                <option key={d} value={d}>
-                  {labels[d]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <Chips
+            label="Оборудование"
+            options={primaryDivisions.filter((d) => d !== 'services')}
+            value={equipment}
+            onChange={setEquipment}
+          />
+          <Chips
+            label="Проектная поставка"
+            options={projectSupplyTypes}
+            value={equipment}
+            onChange={setEquipment}
+          />
+          <Chips
+            label="Услуги"
+            options={projectServiceTypes}
+            value={equipment}
+            onChange={setEquipment}
+          />
           <Field label="Сортировка">
             <select value={sort} onChange={(e) => setSort(e.target.value)}>
               <option value="amount">Сумма ↓</option>
@@ -848,7 +977,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
             >
               Сбросить
             </button>
-            <button className="primary" onClick={() => setFiltersOpen(false)}>
+            <button className="primary pico-sheet-submit" onClick={() => setFiltersOpen(false)}>
               Показать ({list.length})
             </button>
           </div>
@@ -902,9 +1031,18 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
         {list.map((p) => (
           <details className="pico-project-row panel" key={p.id}>
             <summary>
-              <span className="pico-row-icon">
-                <Icon name="projects" />
-              </span>
+              {(() => {
+                const company = props.companies.find((c) => c.id === p.companyId),
+                  [icon, color] = industryIcon(
+                    company?.industry || p.data.objectType || '',
+                    company?.segment,
+                  );
+                return (
+                  <span className={'icon-badge badge-' + color}>
+                    <Icon name={icon} />
+                  </span>
+                );
+              })()}
               <span>
                 <strong>{p.data.name}</strong>
                 <small>{p.companyName}</small>
@@ -1017,6 +1155,46 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
     </>
   );
 }
+type PeriodKey = '7' | '30' | '90' | '365' | 'custom';
+function calendarRange(key: PeriodKey, anchor = today()) {
+  const d = new Date(anchor + 'T12:00:00'),
+    format = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  if (key === '7') {
+    const first = new Date(d);
+    first.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const last = new Date(first);
+    last.setDate(first.getDate() + 6);
+    return { from: format(first), to: format(last) };
+  }
+  if (key === '90') {
+    const current = new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1, 12),
+      first = new Date(current);
+    first.setMonth(first.getMonth() - 3);
+    const last = new Date(+current - 86400000);
+    return { from: format(first), to: format(last) };
+  }
+  if (key === '365') return { from: `${d.getFullYear()}-01-01`, to: `${d.getFullYear()}-12-31` };
+  const first = new Date(d);
+  first.setDate(first.getDate() - 29);
+  return { from: format(first), to: anchor };
+}
+const readableRange = (from: string, to: string) =>
+  [from, to]
+    .map((d) =>
+      new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
+    )
+    .join(' — ');
+const equipmentIcon = (key: string) =>
+  key === 'heat'
+    ? 'heat'
+    : key === 'services'
+      ? 'edit'
+      : key === 'cells'
+        ? 'server'
+        : key.startsWith('drives')
+          ? 'gear'
+          : 'chip';
 export function AnalyticsScreen({
   companies,
   user,
@@ -1026,30 +1204,52 @@ export function AnalyticsScreen({
   user: Actor;
   users: Actor[];
 }) {
-  const [period, setPeriod] = useState('30'),
-    [from, setFrom] = useState(''),
+  const [period, setPeriod] = useState<PeriodKey>('30'),
+    [from, setFrom] = useState(calendarRange('30').from),
     [to, setTo] = useState(today()),
     [periodOpen, setPeriodOpen] = useState(false),
-    [draftPeriod, setDraftPeriod] = useState('30'),
-    [draftFrom, setDraftFrom] = useState(''),
-    [draftTo, setDraftTo] = useState(today());
-  const start = new Date(today() + 'T00:00:00');
-  start.setDate(start.getDate() - Number(period) + 1);
-  const lower =
-      period === 'custom'
-        ? from
-        : `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,
-    upper = period === 'custom' ? to : today();
+    [draftPeriod, setDraftPeriod] = useState<PeriodKey>('30'),
+    [draftFrom, setDraftFrom] = useState(from),
+    [draftTo, setDraftTo] = useState(to),
+    [summary, setSummary] = useState<AnalyticsSummary | null>(null),
+    [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setError('');
+    setSummary(null);
+    api<AnalyticsSummary>(
+      `/analytics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    )
+      .then((s) => {
+        if (active) setSummary(s);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [from, to, companies]);
   const active = companies.filter((c) => !c.archived),
-    cohort = active.filter(
-      (c) => c.createdAt.slice(0, 10) >= lower && c.createdAt.slice(0, 10) <= upper,
-    ),
-    closed = cohort.filter((c) => c.stage === 'closed').length;
+    directions: readonly string[] = active.some((c) => c.divisions.drives != null)
+      ? [...primaryDivisions, 'drives']
+      : primaryDivisions;
+  const delta = (value: number | null, unit: string) =>
+    value == null ? (
+      <small className="muted">Нет данных для сравнения</small>
+    ) : (
+      <small className={value >= 0 ? 'pico-growth positive' : 'pico-growth negative'}>
+        {value >= 0 ? '↑ +' : '↓ '}
+        {Math.round(value * 10) / 10}
+        {unit} к предыдущему периоду
+      </small>
+    );
   return (
     <>
       <div className="section-head">
         <h1>Аналитика</h1>
         <button
+          className="pico-period-trigger"
           aria-label="Период аналитики"
           onClick={() => {
             setDraftPeriod(period);
@@ -1058,23 +1258,61 @@ export function AnalyticsScreen({
             setPeriodOpen(true);
           }}
         >
-          {period === 'custom' ? 'Свой период' : period + ' дней'}{' '}
-          <Icon name="chevron-down" size={16} />
+          {period === 'custom'
+            ? 'Свой период'
+            : period === '90'
+              ? 'Квартал'
+              : period === '365'
+                ? 'Год'
+                : period === '7'
+                  ? 'Неделя'
+                  : '30 дней'}{' '}
+          <Icon name="chevron-down" size={14} />
         </button>
       </div>
       {periodOpen && (
         <Modal title="Период" onClose={() => setPeriodOpen(false)}>
-          <Field label="Период аналитики">
-            <select value={draftPeriod} onChange={(e) => setDraftPeriod(e.target.value)}>
-              <option value="7">Неделя</option>
-              <option value="30">Месяц</option>
-              <option value="90">Квартал</option>
-              <option value="365">Год</option>
-              <option value="custom">Свой период</option>
-            </select>
-          </Field>
+          <div className="pico-period-options" role="radiogroup" aria-label="Период аналитики">
+            {(
+              [
+                ['7', 'Неделя'],
+                ['30', 'Месяц'],
+                ['90', 'Квартал'],
+                ['365', 'Год'],
+                ['custom', 'Свой период'],
+              ] as [PeriodKey, string][]
+            ).map(([key, title]) => {
+              const range = calendarRange(key);
+              return (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={draftPeriod === key}
+                  className="pico-period-option"
+                  key={key}
+                  onClick={() => {
+                    setDraftPeriod(key);
+                    if (key !== 'custom') {
+                      setDraftFrom(range.from);
+                      setDraftTo(range.to);
+                    }
+                  }}
+                >
+                  <span className={'pico-radio ' + (draftPeriod === key ? 'checked' : '')} />
+                  <strong>{title}</strong>
+                  <small>
+                    {key === 'custom'
+                      ? 'Выбрать даты'
+                      : key === '365'
+                        ? String(new Date().getFullYear())
+                        : readableRange(range.from, range.to)}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
           {draftPeriod === 'custom' && (
-            <div className="form-grid">
+            <div className="pico-form-two">
               <Field label="Начало периода">
                 <input
                   type="date"
@@ -1094,8 +1332,8 @@ export function AnalyticsScreen({
             </div>
           )}
           <button
-            className="primary"
-            disabled={draftPeriod === 'custom' && (!draftFrom || !draftTo || draftFrom > draftTo)}
+            className="primary pico-sheet-submit"
+            disabled={!draftFrom || !draftTo || draftFrom > draftTo}
             onClick={() => {
               setPeriod(draftPeriod);
               setFrom(draftFrom);
@@ -1107,61 +1345,125 @@ export function AnalyticsScreen({
           </button>
         </Modal>
       )}
-      {active.length > 0 && (
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      {!companies.length ? (
         <>
-          <section className="panel pico-funnel">
-            <h2>
-              <Icon name="filter" /> Воронка продаж
-            </h2>
-            <p className="muted">Текущие стадии клиентов, созданных за выбранный период</p>
-            {stages.map((s, i) => {
-              const count = cohort.filter((c) => c.stage === s).length;
-              return (
-                <div className="pico-funnel-row" key={s}>
-                  <span
-                    className={'pico-funnel-bar funnel-' + i}
-                    style={{ width: `${100 - i * 13}%` }}
-                  >
-                    {count}
-                  </span>
-                  <span>{labels[s]}</span>
-                  <strong>{count}</strong>
-                </div>
-              );
-            })}
+          <section className="pico-intro">
+            <h2>Как работает аналитика</h2>
+            <div className="pico-analytics-journey">
+              <span>
+                <Icon name="email" size={28} />
+                Вы пишете в чат
+              </span>
+              <Icon name="chevron-right" />
+              <span>
+                <Icon name="sparkles" size={28} />
+                Pico разбирает заметки
+              </span>
+              <Icon name="chevron-right" />
+              <span>
+                <Icon name="analytics" size={28} />
+                Видите итоги
+              </span>
+            </div>
+            <p>
+              Pico структурирует заметки по каждому клиенту и подсказывает, что ещё уточнить для
+              следующего шага.
+            </p>
           </section>
-          <div className="pico-analytics-metrics">
-            <section className="panel">
-              <small>Доля завершённых клиентов</small>
-              <strong>{cohort.length ? Math.round((closed / cohort.length) * 100) : 0}%</strong>
-              <small>Среди созданных за период</small>
-            </section>
-            <section className="panel">
-              <small>Активные клиенты</small>
-              <strong>{active.length}</strong>
-              <small>Все неархивные клиенты</small>
-            </section>
-          </div>
+          <ScreenGuide
+            title="Как считаются показатели"
+            items={[
+              ['funnel', 'Воронка продаж', 'Стадии клиентов, созданных за выбранный период'],
+              ['tasks', 'Конверсия', 'Доля завершённых клиентов среди созданных за период'],
+              ['potential', 'Потенциал', 'Годовой потенциал активных клиентов по направлениям'],
+            ]}
+          />
+        </>
+      ) : (
+        <>
+          {!summary && !error && <p role="status">Загрузка аналитики…</p>}
+          {summary && (
+            <>
+              <section className="panel pico-funnel">
+                <h2>
+                  <span className="pico-row-icon">
+                    <Icon name="funnel" />
+                  </span>
+                  Воронка продаж
+                </h2>
+                <p className="muted">По подтверждённым данным CRM за {readableRange(from, to)}</p>
+                {summary.funnel.map((stage, index) => (
+                  <div className="pico-funnel-row" key={stage.key}>
+                    <span
+                      className={'pico-funnel-bar funnel-' + index}
+                      style={{ width: `${100 - index * 13}%` }}
+                    >
+                      {stage.count}
+                    </span>
+                    <span>{stage.label}</span>
+                    <strong>{stage.count}</strong>
+                  </div>
+                ))}
+              </section>
+              <div className="pico-analytics-metrics">
+                <section className="panel">
+                  <small>
+                    <Icon name="tasks" size={15} /> Конверсия
+                  </small>
+                  <strong>
+                    {summary.conversion == null ? '—' : Math.round(summary.conversion) + '%'}
+                  </strong>
+                  {delta(summary.conversionDelta, ' п.п.')}
+                </section>
+                <section className="panel">
+                  <small>
+                    <Icon name="clients" size={15} /> Активные клиенты
+                  </small>
+                  <strong>{summary.activeClients}</strong>
+                  {delta(summary.activeDelta, '%')}
+                </section>
+              </div>
+              {summary.historyIncomplete > 0 && (
+                <p className="muted">
+                  Для части старых клиентов недостаточно данных для сравнения периодов.
+                </p>
+              )}
+            </>
+          )}
           <section className="panel pico-potential">
             <h2>
-              <Icon name="layers" /> Потенциал по направлениям
+              <span className="pico-row-icon">
+                <Icon name="potential" />
+              </span>
+              Потенциал по оборудованию
             </h2>
-            <p className="muted">Годовой потенциал всех активных клиентов</p>
-            {divisions.map((d) => {
-              const list = active.filter((c) => c.divisions[d] != null),
-                sum = list.reduce((s, c) => s + (c.divisions[d] || 0), 0);
+            {directions.map((direction) => {
+              const list = active.filter(
+                  (c) => c.divisions[direction as keyof Company['divisions']] != null,
+                ),
+                sum = list.reduce(
+                  (total, c) => total + (c.divisions[direction as keyof Company['divisions']] || 0),
+                  0,
+                );
               return (
-                <details key={d}>
+                <details key={direction}>
                   <summary>
-                    <Icon name="projects" size={18} />
-                    <span>{labels[d]}</span>
+                    <span className="pico-row-icon">
+                      <Icon name={equipmentIcon(direction)} size={16} />
+                    </span>
+                    <span>{divisionLabels[direction]}</span>
                     <strong>{list.length ? money(sum) : '—'}</strong>
                     <Icon name="chevron-down" size={16} />
                   </summary>
                   {list.map((c) => (
                     <div className="pico-potential-client" key={c.id}>
                       <span>{c.name}</span>
-                      <strong>{money(c.divisions[d])}</strong>
+                      <strong>{money(c.divisions[direction as keyof Company['divisions']])}</strong>
                     </div>
                   ))}
                   {!list.length && <p className="muted">Потенциал пока не указан</p>}
@@ -1169,27 +1471,6 @@ export function AnalyticsScreen({
               );
             })}
           </section>
-        </>
-      )}
-      {!active.length && (
-        <>
-          <section className="pico-intro">
-            <h2>Как работает аналитика</h2>
-            <p>Вы пишете в чат → Pico разбирает заметки → Вы видите итоги.</p>
-            <p>Подтвердите данные клиентов, чтобы увидеть стадии и годовой потенциал.</p>
-          </section>
-          <ScreenGuide
-            title="Как считаются показатели"
-            items={[
-              [
-                'funnel',
-                'Воронка продаж',
-                'Текущие стадии клиентов, созданных за выбранный период',
-              ],
-              ['tasks', 'Доля завершённых', 'Доля завершённых клиентов среди созданных за период'],
-              ['potential', 'Потенциал', 'Годовой потенциал активных клиентов по направлениям'],
-            ]}
-          />
         </>
       )}
       {user.role !== 'manager' && <CommercialReport users={users} />}

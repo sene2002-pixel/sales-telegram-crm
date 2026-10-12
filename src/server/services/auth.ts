@@ -72,11 +72,11 @@ export class AuthService {
     const actor = await this.byTelegram(user.id, user.name);
     return { token: this.issue(actor), user: actor };
   }
-  async byTelegram(id: string, name = 'Администратор', tx: Sql = this.db): Promise<Actor> {
+  async byTelegram(id: string, name?: string, tx: Sql = this.db): Promise<Actor> {
     if (id === this.config.adminTelegramId) {
       await tx.query(
         `INSERT INTO users(id,telegram_id,name,role) VALUES($1,$2,$3,'admin') ON CONFLICT(telegram_id) DO NOTHING`,
-        [randomUUID(), id, name],
+        [randomUUID(), id, name || 'Администратор'],
       );
     }
     const [user] = await tx.query<Actor>(
@@ -84,6 +84,14 @@ export class AuthService {
       [id],
     );
     requireCondition(user?.active, 403, 'Доступ не выдан. Обратитесь к администратору');
+    if (name?.trim() && user.name === `Telegram ID ${id}`) {
+      await tx.query('UPDATE users SET name=$2 WHERE id=$1 AND name=$3', [
+        user.id,
+        name.trim().slice(0, 200),
+        user.name,
+      ]);
+      user.name = name.trim().slice(0, 200);
+    }
     return user;
   }
   issue(actor: Actor) {
@@ -144,6 +152,40 @@ export class AuthService {
   async users(actor: Actor) {
     if (!isLeader(actor)) return [actor];
     return this.db.query<Actor>(`SELECT ${userProjection} FROM users ORDER BY name`);
+  }
+  async admitUser(actor: Actor, raw: unknown) {
+    requireCondition(actor.role === 'admin', 403, 'Только администратор управляет сотрудниками');
+    const { telegramId } = z
+      .object({
+        telegramId: z
+          .string()
+          .trim()
+          .regex(/^[1-9]\d{0,15}$/)
+          .refine(
+            (value) =>
+              /^[1-9]\d{0,15}$/.test(value) && BigInt(value) <= BigInt(Number.MAX_SAFE_INTEGER),
+            'ID пользователя слишком велик',
+          ),
+      })
+      .strict()
+      .parse(raw);
+    return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      const [existing] = await tx.query('SELECT id FROM users WHERE telegram_id=$1', [telegramId]);
+      requireCondition(
+        !existing,
+        409,
+        'Пользователь уже добавлен. Откройте его карточку для изменения доступа',
+      );
+      const id = randomUUID(),
+        name = `Telegram ID ${telegramId}`;
+      await tx.query(
+        "INSERT INTO users(id,telegram_id,name,role,active) VALUES($1,$2,$3,'manager',true)",
+        [id, telegramId, name],
+      );
+      await audit(tx, actor.id, 'user.admitted', id, null, { telegramId, role: 'manager' });
+      return { id, telegramId, name, role: 'manager', active: true, supervisorId: null };
+    });
   }
   async saveUser(actor: Actor, raw: unknown) {
     requireCondition(actor.role === 'admin', 403, 'Только администратор управляет сотрудниками');

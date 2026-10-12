@@ -1,4 +1,4 @@
-import { prepareDemoAuth } from './helpers';
+import { prepareDemoAuth, saveNewClientAndOpen } from './helpers';
 import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
 
@@ -39,14 +39,14 @@ for (const width of [375, 1440]) {
 
     await createCompany.click();
     await page.getByLabel('Название', { exact: true }).fill(`Pico ${width} ${Date.now()}`);
-    await page.getByRole('button', { name: 'Сохранить компанию' }).click();
+    await saveNewClientAndOpen(page);
     const dialog = page.getByRole('dialog');
     const composer = dialog.locator('.letter-composer');
     await expect(composer).not.toHaveClass(/inset/);
     await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
     await dialog.getByRole('button', { name: '+ Добавить', exact: true }).click();
     await page.getByLabel('Имя', { exact: true }).fill('Тестовый получатель');
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await page.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
     await composer.getByRole('button', { name: 'Создать письмо', exact: true }).click();
     await expect(
       composer.getByRole('combobox', { name: 'Моя подпись', exact: true }),

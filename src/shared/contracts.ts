@@ -1,5 +1,16 @@
 import { z } from 'zod';
 import { salesUpdateSchema, SalesUpdate } from './sales';
+import { segments, divisions, equipmentKeys, divisionLabels, segmentLabels } from './crm-taxonomy';
+export {
+  segments,
+  divisions,
+  primarySegments,
+  primaryDivisions,
+  projectSupplyTypes,
+  projectServiceTypes,
+  equipmentKeys,
+  divisionLabels,
+} from './crm-taxonomy';
 
 export const roles = ['manager', 'supervisor', 'admin'] as const;
 export type Role = (typeof roles)[number];
@@ -11,15 +22,7 @@ export interface Actor {
   active: boolean;
   supervisorId?: string | null;
 }
-export const segments = [
-  'shchitovik',
-  'oem',
-  'end_client',
-  'contractor',
-  'design_institute',
-] as const;
 export const stages = ['new', 'dialogue', 'proposal', 'supply', 'closed'] as const;
-export const divisions = ['lv', 'mv', 'drives', 'cells', 'heat', 'services'] as const;
 export const labels: Record<string, string> = {
   manager: 'Менеджер',
   supervisor: 'Руководитель',
@@ -51,6 +54,8 @@ export const labels: Record<string, string> = {
   brochure: 'Брошюра',
   ref: 'Референс',
   model: '3D модель',
+  ...segmentLabels,
+  ...divisionLabels,
 };
 export function validInn(value: string): boolean {
   if (!/^\d{10}$|^\d{12}$/.test(value)) return false;
@@ -127,7 +132,9 @@ export const projectSchema = z
     purchaseDate: dateSchema.nullable().default(null),
     equipment: z
       .array(
-        z.object({ division: z.enum(divisions), name: name, amount: money.nullable() }).strict(),
+        z
+          .object({ division: z.enum(equipmentKeys), name: name, amount: money.nullable() })
+          .strict(),
       )
       .max(30)
       .default([]),
@@ -203,7 +210,7 @@ export const extractionBlockSchema = z
     segment: z.enum(segments).nullable(),
     stage: z.enum(stages).nullable(),
     potential: money.nullable(),
-    divisions: z.array(z.object({ key: z.enum(divisions), amount: money })).max(6),
+    divisions: z.array(z.object({ key: z.enum(divisions), amount: money })).max(divisions.length),
     summary: text.min(1),
     occurredOn: dateSchema,
     sales: salesUpdateSchema.nullable().default(null),

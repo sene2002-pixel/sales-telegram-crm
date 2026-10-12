@@ -38,7 +38,8 @@ export async function openCompany(page: Page, name: string) {
   const row = page
     .locator('.pico-client-accordion')
     .filter({ has: page.locator('strong', { hasText: name }) });
-  await row.locator('.pico-client-row').click();
+  if ((await row.locator('.pico-client-row').getAttribute('aria-expanded')) !== 'true')
+    await row.locator('.pico-client-row').click();
   await row.getByRole('button', { name: 'Карточка клиента', exact: true }).click();
 }
 
@@ -49,4 +50,29 @@ export async function action(page: Page, name: string) {
     await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
     await page.locator('.pico-more-menu').getByRole('button', { name, exact: true }).click();
   }
+}
+
+export async function saveNewClientAndOpen(page: Page) {
+  const dialog = page.getByRole('dialog', { name: 'Новый клиент', exact: true });
+  const name = await dialog.getByLabel('Название', { exact: true }).inputValue();
+  await dialog.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await openCompany(page, name);
+}
+export async function pickInline(
+  page: Page,
+  dialog: import('@playwright/test').Locator,
+  label: string,
+  name: string,
+) {
+  const row = dialog.locator('.pico-picker-row').filter({
+    has: page.locator('.pico-picker-row-label', { hasText: new RegExp('^' + label + '$') }),
+  });
+  await row.getByRole('button').click();
+  await dialog
+    .locator('.pico-inline-picker, .pico-client-picker')
+    .getByRole('button')
+    .filter({ hasText: name })
+    .first()
+    .click();
 }

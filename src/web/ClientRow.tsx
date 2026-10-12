@@ -1,24 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Company,
   CompanyDetail as Detail,
   labels,
   divisions,
+  divisionLabels,
   CrmRecord,
 } from '../shared/contracts';
 import { api, download, money } from './api';
-import { CompanyForm, Modal, RecordForm } from './forms';
+import { CompanyForm, Modal, RecordForm, NewDirectionEditor } from './forms';
 import { Icon, industryIcon } from './Icons';
 export function ClientRow({
   company,
   onOpen,
   onChanged,
+  initiallyOpen = false,
 }: {
   company: Company;
+  initiallyOpen?: boolean;
   onChanged: () => Promise<void>;
   onOpen: (c: Company, tab?: string) => void;
 }) {
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initiallyOpen),
     [detail, setDetail] = useState<Detail | null>(null),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(false),
@@ -26,33 +29,42 @@ export function ClientRow({
     [editContact, setEditContact] = useState(false),
     [editing, setEditing] = useState(false),
     [confirmDelete, setConfirmDelete] = useState(false),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [newDirection, setNewDirection] = useState(false),
+    [notesOpen, setNotesOpen] = useState(false),
+    [notes, setNotes] = useState('');
+  const readSequence = useRef(0);
+  const currentCompany =
+    detail && detail.company.version >= company.version ? detail.company : company;
   async function refreshDetail() {
-    setDetail(await api<Detail>(`/companies/${company.id}`));
+    const sequence = ++readSequence.current;
+    const fresh = await api<Detail>(`/companies/${company.id}`);
+    if (sequence === readSequence.current) setDetail(fresh);
     await onChanged();
   }
   useEffect(() => {
     let current = true;
+    const sequence = ++readSequence.current;
     if (open) {
       setLoading(true);
       api<Detail>(`/companies/${company.id}`)
         .then((d) => {
-          if (current) {
+          if (current && sequence === readSequence.current) {
             setDetail(d);
             setError('');
           }
         })
         .catch((e) => {
-          if (current) setError(e.message);
+          if (current && sequence === readSequence.current) setError(e.message);
         })
         .finally(() => {
-          if (current) setLoading(false);
+          if (current && sequence === readSequence.current) setLoading(false);
         });
     }
     return () => {
       current = false;
     };
-  }, [open, company]);
+  }, [open, company.id, company.version]);
   const [icon, color] = industryIcon(company.industry, company.segment),
     contacts = detail?.records.filter((r) => r.kind === 'contact') || [],
     files = detail?.records.filter((r) => r.kind === 'file') || [];
@@ -70,20 +82,101 @@ export function ClientRow({
         </span>
         <span className="company-money">
           <small>Потенциал</small>
-          <strong>{money(company.potential)}</strong>
+          <strong>{money(currentCompany.potential)}</strong>
         </span>
         <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
       </button>
       {editing && (
         <Modal title="Редактировать клиента" onClose={() => setEditing(false)}>
           <CompanyForm
-            initial={company}
+            initial={currentCompany}
             onSave={async (data) => {
-              await api(`/companies/${company.id}`, 'PATCH', { version: company.version, data });
-              await refreshDetail();
+              const saved = await api<Company>(`/companies/${company.id}`, 'PATCH', {
+                version: currentCompany.version,
+                data,
+              });
+              ++readSequence.current;
+              setDetail((current) => (current ? { ...current, company: saved } : current));
+              try {
+                await refreshDetail();
+              } catch (e) {
+                setError(`Клиент сохранён, но обновление не удалось: ${(e as Error).message}`);
+              }
               setEditing(false);
             }}
           />
+        </Modal>
+      )}
+      {newDirection && (
+        <NewDirectionEditor
+          onClose={() => setNewDirection(false)}
+          onSave={async (value) => {
+            const divisions = { ...currentCompany.divisions, [value.division]: value.amount };
+            const { id, ownerId, ownerName, version, createdAt, updatedAt, ...base } =
+              currentCompany;
+            const saved = await api<Company>(`/companies/${company.id}`, 'PATCH', {
+              version: currentCompany.version,
+              data: {
+                ...base,
+                divisions,
+                potential: Object.values(divisions).reduce((sum, amount) => sum + (amount || 0), 0),
+              },
+            });
+            ++readSequence.current;
+            setDetail((current) => (current ? { ...current, company: saved } : current));
+            try {
+              await refreshDetail();
+            } catch (e) {
+              setError(`Направление сохранено, но обновление не удалось: ${(e as Error).message}`);
+            }
+          }}
+        />
+      )}
+      {notesOpen && (
+        <Modal title="Заметки" onClose={() => setNotesOpen(false)}>
+          <form
+            className="pico-compact-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError('');
+              try {
+                const { id, ownerId, ownerName, version, createdAt, updatedAt, ...base } =
+                  currentCompany;
+                const saved = await api<Company>(`/companies/${company.id}`, 'PATCH', {
+                  version: currentCompany.version,
+                  data: { ...base, notes },
+                });
+                ++readSequence.current;
+                setDetail((current) => (current ? { ...current, company: saved } : current));
+                try {
+                  await refreshDetail();
+                } catch (e) {
+                  setError(`Заметки сохранены, но обновление не удалось: ${(e as Error).message}`);
+                }
+                setNotesOpen(false);
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <textarea
+              aria-label="Заметки"
+              rows={4}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+            {error && (
+              <p role="alert" className="error">
+                {error}
+              </p>
+            )}
+            <button className="primary" disabled={busy}>
+              Сохранить заметки
+            </button>
+          </form>
         </Modal>
       )}
       {contact && (
@@ -120,6 +213,17 @@ export function ClientRow({
                         version: contact.version,
                         data,
                       });
+                ++readSequence.current;
+                setDetail((current) =>
+                  current
+                    ? {
+                        ...current,
+                        records: current.records.some((r) => r.id === saved.id)
+                          ? current.records.map((r) => (r.id === saved.id ? saved : r))
+                          : [...current.records, saved],
+                      }
+                    : current,
+                );
                 setContact(saved);
                 setEditContact(false);
                 try {
@@ -156,8 +260,23 @@ export function ClientRow({
                         setBusy(true);
                         try {
                           await api(`/contacts/${contact.id}`, 'DELETE');
-                          await refreshDetail();
+                          ++readSequence.current;
+                          setDetail((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  records: current.records.filter((r) => r.id !== contact.id),
+                                }
+                              : current,
+                          );
                           setContact(null);
+                          try {
+                            await refreshDetail();
+                          } catch (e) {
+                            setError(
+                              `Контакт удалён, но обновление не удалось: ${(e as Error).message}`,
+                            );
+                          }
                         } catch (e) {
                           setError((e as Error).message);
                         } finally {
@@ -189,7 +308,7 @@ export function ClientRow({
             <span className="stage">{labels[company.stage]}</span>
             <button onClick={() => onOpen(company)}>Карточка клиента</button>
           </div>
-          <section>
+          <section className="pico-client-contacts">
             <div className="section-head">
               <h3>Контакты</h3>
               <button
@@ -224,9 +343,9 @@ export function ClientRow({
             ))}
             {!loading && !contacts.length && <p className="muted">Контактов пока нет</p>}
           </section>
-          <section>
+          <section className="pico-client-potential">
             <div className="section-head">
-              <h3>Потенциал · {money(company.potential)}</h3>
+              <h3>Потенциал · {money(currentCompany.potential)}</h3>
               <button
                 aria-label={'Изменить потенциал · ' + company.name}
                 onClick={() => setEditing(true)}
@@ -235,15 +354,21 @@ export function ClientRow({
               </button>
             </div>
             {divisions
-              .filter((d) => company.divisions[d] != null)
+              .filter((d) => currentCompany.divisions[d] != null)
               .map((d) => (
                 <div className="pico-potential-client" key={d}>
-                  <span>{labels[d]}</span>
-                  <strong>{money(company.divisions[d])}</strong>
+                  <span>{divisionLabels[d] || labels[d]}</span>
+                  <strong>{money(currentCompany.divisions[d])}</strong>
                 </div>
               ))}
+            <button
+              className="pico-add-row pico-dashed pico-direction-add"
+              onClick={() => setNewDirection(true)}
+            >
+              <Icon name="plus" size={12} /> Добавить направление
+            </button>
           </section>
-          <section>
+          <section className="pico-client-files">
             <div className="section-head">
               <h3>Файлы</h3>
               <button onClick={() => onOpen(company, 'file')}>Добавить файл</button>
@@ -262,17 +387,20 @@ export function ClientRow({
             ))}
             {!loading && !files.length && <p className="muted">Файлов пока нет</p>}
           </section>
-          <section>
+          <section className="pico-client-notes">
             <div className="section-head">
               <h3>Заметки</h3>
               <button
                 aria-label={'Изменить заметки · ' + company.name}
-                onClick={() => setEditing(true)}
+                onClick={() => {
+                  setNotes(currentCompany.notes);
+                  setNotesOpen(true);
+                }}
               >
                 <Icon name="edit" size={16} />
               </button>
             </div>
-            <p>{company.notes || 'Заметок пока нет'}</p>
+            <p>{currentCompany.notes || 'Заметок пока нет'}</p>
           </section>
         </div>
       )}

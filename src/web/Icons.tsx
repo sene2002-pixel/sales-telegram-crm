@@ -213,6 +213,11 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   funnel: <path d="M3 3h18l-7 9v8l-4 2V12z" />,
+  helmet: (
+    <>
+      <path d="M3 17h18M5 17v-4a7 7 0 0 1 14 0v4M10 6V3h4v3M3 17v4h18v-4" />
+    </>
+  ),
   contact: (
     <>
       <circle cx="12" cy="7" r="4" />
@@ -268,6 +273,10 @@ export function industryIcon(industry: string, segment = ''): [string, string] {
   if (/электрон/.test(value)) return ['chip', 'purple'];
   if (/судо/.test(value)) return ['ship', 'teal'];
   if (/пищ|материал/.test(value)) return ['cube', 'pink'];
+  if (segment === 'general_contractor') return ['helmet', 'slate'];
+  if (segment === 'grid_company') return ['grid', 'teal'];
+  if (segment === 'commercial') return ['cart', 'green'];
+  if (segment === 'integrator') return ['server', 'blue'];
   if (segment === 'oem') return ['gear', 'purple'];
   if (segment === 'contractor') return ['tool', 'slate'];
   if (segment === 'design_institute') return ['edit', 'purple'];

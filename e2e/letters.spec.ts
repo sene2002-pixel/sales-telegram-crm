@@ -1,4 +1,4 @@
-import { prepareDemoAuth } from './helpers';
+import { prepareDemoAuth, saveNewClientAndOpen } from './helpers';
 import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
 
@@ -17,7 +17,7 @@ test('letter contact validation and editable signature', async ({ page }) => {
     await page.request.delete('/api/me/letter-signatures/' + s.id, { headers });
   await page.getByRole('button', { name: 'Добавить клиента', exact: true }).click();
   await page.getByLabel('Название', { exact: true }).fill('Письма ' + Date.now());
-  await page.getByRole('button', { name: 'Сохранить компанию' }).click();
+  await saveNewClientAndOpen(page);
   await expect(page.locator('.letter-composer')).not.toHaveClass(/inset/);
   await page.getByRole('button', { name: 'Создать письмо', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('необходимо добавить хотя бы один контакт');
@@ -25,7 +25,7 @@ test('letter contact validation and editable signature', async ({ page }) => {
   await page.getByRole('button', { name: '+ Добавить', exact: true }).click();
   await page.getByLabel('Имя', { exact: true }).fill('Иванов Иван Иванович');
   await page.getByLabel('Должность', { exact: true }).fill('Директор');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
   await page.route('**/api/me/letter-signature/recognize', (route) =>
     route.fulfill({
       json: {

@@ -1,13 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Actor, Company, CrmRecord, labels, segments, divisions, roles } from '../shared/contracts';
+import {
+  Actor,
+  Company,
+  CrmRecord,
+  labels,
+  segments,
+  divisions,
+  roles,
+  primarySegments,
+  primaryDivisions,
+} from '../shared/contracts';
 import { api, setToken, token, download } from './api';
-import { CompanyForm, Modal, Select } from './forms';
+import { CompanyForm, Modal, Select, Chips } from './forms';
 import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
 import { Team } from './Team';
 import { RoleGuide } from './RoleGuide';
 import { Profile } from './Profile';
+import { UsersScreen } from './Users';
 import { ClientRow } from './ClientRow';
 import { Icon } from './Icons';
 import {
@@ -61,23 +72,26 @@ function App() {
     [owner, setOwner] = useState(''),
     [archive, setArchive] = useState(false);
   const [files, setFiles] = useState<(CrmRecord & { companyName: string })[]>([]),
-    [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]);
+    [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]),
+    [contacts, setContacts] = useState<CrmRecord[]>([]);
   const [help, setHelp] = useState(false);
   const [more, setMore] = useState(false),
     [recordCreate, setRecordCreate] = useState<'task' | 'project' | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
     [clientStatus, setClientStatus] = useState('all'),
     [clientSort, setClientSort] = useState('name'),
-    [selectedTab, setSelectedTab] = useState('contact');
+    [selectedTab, setSelectedTab] = useState('contact'),
+    [createdClientId, setCreatedClientId] = useState('');
   const refreshSequence = useRef(0);
   async function refresh() {
     const sequence = ++refreshSequence.current;
-    const [c, u, t, f, p] = await Promise.all([
+    const [c, u, t, f, p, contacts] = await Promise.all([
       api<Company[]>('/companies'),
       api<Actor[]>('/users'),
       api<any[]>('/records/task'),
       api<any[]>('/records/file'),
       api<any[]>('/records/project'),
+      api<CrmRecord[]>('/records/contact'),
     ]);
     if (sequence !== refreshSequence.current) return;
     setCompanies(c);
@@ -85,6 +99,7 @@ function App() {
     setTasks(t);
     setFiles(f);
     setProjects(p);
+    setContacts(contacts);
   }
   async function login(role?: string) {
     setError('');
@@ -186,6 +201,7 @@ function App() {
     ['files', 'Файлы'],
     ['profile', 'Мой профиль'],
     ...(user.role !== 'manager' ? [['team', 'Команда']] : []),
+    ...(user.role === 'admin' ? [['users', 'Пользователи']] : []),
   ];
   const openCompany = (company: Company, nextTab = 'contact') => {
     setSelectedTab(nextTab);
@@ -204,7 +220,13 @@ function App() {
       c.archived === archive &&
       (clientStatus === 'all' ||
         (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
-      (!query || `${c.name} ${c.inn}`.toLowerCase().includes(query.toLowerCase())) &&
+      (!query ||
+        `${c.name} ${c.inn} ${contacts
+          .filter((contact) => contact.companyId === c.id)
+          .map((contact) => `${contact.data.name} ${contact.data.phone} ${contact.data.email}`)
+          .join(' ')}`
+          .toLowerCase()
+          .includes(query.toLowerCase())) &&
       (!city || c.city === city) &&
       (!segment || c.segment === segment) &&
       (!division || c.divisions[division as keyof typeof c.divisions] != null) &&
@@ -351,7 +373,7 @@ function App() {
               <Icon name="search" />
               <input
                 aria-label="Поиск компаний"
-                placeholder="Поиск клиента или ИНН"
+                placeholder="Поиск клиента, компании или контакта"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -383,17 +405,17 @@ function App() {
                     options={[...new Set(companies.map((c) => c.city).filter(Boolean))].sort()}
                     empty="Все города"
                   />
-                  <Select
+                  <Chips
+                    label="Категория клиента"
+                    options={primarySegments}
                     value={segment}
                     onChange={setSegment}
-                    options={segments}
-                    empty="Все сегменты"
                   />
-                  <Select
+                  <Chips
+                    label="Оборудование"
+                    options={primaryDivisions}
                     value={division}
                     onChange={setDivision}
-                    options={divisions}
-                    empty="Все направления"
                   />
                   {user.role !== 'manager' && (
                     <select
@@ -432,7 +454,10 @@ function App() {
                   >
                     Сбросить
                   </button>
-                  <button className="primary" onClick={() => setFiltersOpen(false)}>
+                  <button
+                    className="primary pico-sheet-submit"
+                    onClick={() => setFiltersOpen(false)}
+                  >
                     Показать ({visible.length})
                   </button>
                 </div>
@@ -448,7 +473,13 @@ function App() {
                       : a.name.localeCompare(b.name, 'ru'),
                 )
                 .map((c) => (
-                  <ClientRow key={c.id} company={c} onOpen={openCompany} onChanged={refresh} />
+                  <ClientRow
+                    key={c.id}
+                    company={c}
+                    onOpen={openCompany}
+                    onChanged={refresh}
+                    initiallyOpen={c.id === createdClientId}
+                  />
                 ))}
             </div>
             {!visible.length && (
@@ -476,6 +507,9 @@ function App() {
         )}
         {tab === 'reports' && <Reports companies={companies} onChanged={refresh} />}
         {tab === 'profile' && <Profile key={user.id} />}
+        {tab === 'users' && user.role === 'admin' && (
+          <UsersScreen users={users} user={user} onChanged={refresh} />
+        )}
         {tab === 'tasks' && (
           <TasksScreen {...screenProps} onCreate={() => setRecordCreate('task')} />
         )}
@@ -549,14 +583,27 @@ function App() {
       )}
       {help && <RoleGuide role={user.role} onClose={() => setHelp(false)} />}
       {create && (
-        <Modal title="Новая компания" onClose={() => setCreate(false)}>
+        <Modal title="Новый клиент" onClose={() => setCreate(false)}>
           <CompanyForm
             onSave={async (data) => {
-              const c = await api('/companies', 'POST', data);
+              const c = await api<Company>('/companies', 'POST', data);
+              ++refreshSequence.current;
+              setCompanies((current) => [c, ...current.filter((existing) => existing.id !== c.id)]);
+              setCreatedClientId(c.id);
+              setTab('companies');
+              setQuery('');
+              setCity('');
+              setSegment('');
+              setDivision('');
+              setOwner('');
+              setArchive(false);
+              setClientStatus('all');
               setCreate(false);
-              await refresh();
-              setSelectedTab('activity');
-              setSelected(c);
+              try {
+                await refresh();
+              } catch (e) {
+                setError(`Клиент создан, но обновление не удалось: ${(e as Error).message}`);
+              }
             }}
           />
         </Modal>

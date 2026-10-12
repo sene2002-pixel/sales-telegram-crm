@@ -95,7 +95,7 @@ export class CrmService {
       ownerId,
       JSON.stringify(data),
     ]);
-    await audit(tx, actor.id, 'company.created', id, id);
+    await audit(tx, actor.id, 'company.created', id, id, { after: data });
     return this.company(actor, id, tx);
   }
   async update(actor: Actor, id: string, raw: unknown) {
@@ -429,6 +429,53 @@ export class CrmService {
       });
       return mapRecord(updated);
     });
+  }
+  async taskAdvice(actor: Actor, id: string) {
+    const [task] = await this.db.query(
+      "SELECT * FROM records WHERE id=$1 AND kind='task' AND NOT deleted",
+      [idSchema.parse(id)],
+    );
+    requireCondition(task, 404, 'Задача не найдена');
+    await this.company(actor, task.company_id);
+    let projectName = '';
+    if (task.project_id) {
+      const [project] = await this.db.query(
+        "SELECT data FROM records WHERE id=$1 AND company_id=$2 AND kind='project' AND NOT deleted",
+        [task.project_id, task.company_id],
+      );
+      projectName = project?.data?.name || '';
+    }
+    const history = await this.salesHistory(actor, task.company_id);
+    const projection = projectSales(history);
+    const normal = (value: string) => value.trim().toLocaleLowerCase('ru');
+    const matches = projection.deals.filter(
+      (d) => !projectName || normal(d.deal.name || '') === normal(projectName),
+    );
+    const next = matches.length === 1 ? matches.find((d) => confirmed(d.deal.nextStep)) : undefined;
+    if (next) {
+      const step = confirmed(next.deal.nextStep),
+        blocker = confirmed(next.deal.blocker);
+      return {
+        text: [step, blocker ? `Обратите внимание: ${blocker}` : null]
+          .filter(Boolean)
+          .join('. ')
+          .slice(0, 1500),
+        source: 'confirmed_sales',
+        asOf: next.updatedOn,
+      };
+    }
+    const agreement = projection.current.agreements;
+    if (confirmed(agreement.nextStep))
+      return {
+        text: String(confirmed(agreement.nextStep)).slice(0, 1500),
+        source: 'confirmed_agreement',
+        asOf: history.at(-1)?.occurredOn || null,
+      };
+    return {
+      text: 'Уточните следующий шаг, срок и договорённости с клиентом. Подтвердите результат в чате Pico, чтобы он появился в CRM.',
+      source: 'guidance',
+      asOf: null,
+    };
   }
   async deleteTask(actor: Actor, id: string, raw: unknown) {
     const input = z.object({ version: z.number().int().positive() }).strict().parse(raw);

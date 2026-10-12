@@ -105,12 +105,18 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
   await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
   await page.getByRole('combobox', { name: 'Все города' }).selectOption('');
-  await page.getByRole('combobox', { name: 'Все сегменты' }).selectOption('contractor');
+  await page
+    .getByRole('group', { name: 'Категория клиента', exact: true })
+    .getByRole('button', { name: 'Подрядчик', exact: true })
+    .click();
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Казань');
-  await page.getByRole('combobox', { name: 'Все сегменты' }).selectOption('');
-  await page.getByRole('combobox', { name: 'Все направления' }).selectOption('lv');
+  await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
+  await page
+    .getByRole('group', { name: 'Оборудование', exact: true })
+    .getByRole('button', { name: 'Выключатели 0,4 кВ', exact: true })
+    .click();
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
-  await page.getByRole('combobox', { name: 'Все направления' }).selectOption('');
+  await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
   await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
   await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Архив');
@@ -172,17 +178,18 @@ test('[UI-03] contact/project/history forms and protected file download/archive'
   await dialog.getByRole('button', { name: '+ Добавить' }).click();
   await dialog.getByLabel('Имя', { exact: true }).fill('Иван');
   await dialog.getByLabel('Email', { exact: true }).fill('ivan@example.com');
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('ivan@example.com');
   await dialog.getByRole('button', { name: 'Изменить', exact: true }).click();
   await dialog.getByLabel('Имя', { exact: true }).fill('Пётр');
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('Пётр');
   await dialog.getByRole('button', { name: 'Проекты', exact: true }).click();
   await dialog.getByRole('button', { name: '+ Добавить' }).click();
   await dialog.getByLabel('Название проекта').fill('Поставка');
+  await dialog.getByText('Дополнительные поля', { exact: true }).click();
   await dialog.getByLabel('Сумма, ₽').fill('1200');
-  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить проект', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('Поставка');
   await dialog.getByRole('button', { name: 'История', exact: true }).click();
   await dialog.getByRole('button', { name: '+ Добавить' }).click();
@@ -257,14 +264,14 @@ test('[UI-05] admin creates a user, changes role, blocks and restores access', a
   await navigate(page, 'Команда');
   const name = unique(),
     telegramId = String(Date.now());
-  await expect(page.getByLabel('Telegram ID')).toHaveCount(0);
+  await expect(page.getByLabel('Telegram ID', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Добавить сотрудника', exact: true }).click();
-  await page.getByLabel('Telegram ID').fill(telegramId);
+  await page.getByLabel('Telegram ID', { exact: true }).fill(telegramId);
   await page.getByLabel('Имя сотрудника').fill(name);
   await page.getByRole('combobox', { name: 'Роль', exact: true }).selectOption('manager');
   await page.getByRole('button', { name: 'Создать сотрудника' }).click();
   await page.getByRole('button', { name: 'Редактировать ' + name, exact: true }).click();
-  await expect(page.getByLabel('Telegram ID')).toHaveAttribute('readonly', '');
+  await expect(page.getByLabel('Telegram ID', { exact: true })).toHaveAttribute('readonly', '');
   await page.getByRole('combobox', { name: 'Роль', exact: true }).selectOption('supervisor');
   await page.getByLabel('Доступ активен').uncheck();
   await page.getByRole('button', { name: 'Сохранить изменения' }).click();
@@ -277,14 +284,14 @@ test('[UI-05] admin creates a user, changes role, blocks and restores access', a
   await page.getByRole('button', { name: 'Сохранить изменения' }).click();
   await expect(page.locator('.employee-row').filter({ hasText: name })).toContainText('активен');
   await page.getByRole('button', { name: 'Добавить сотрудника', exact: true }).click();
-  await expect(page.getByLabel('Telegram ID')).toHaveValue('');
+  await expect(page.getByLabel('Telegram ID', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Имя сотрудника')).toHaveValue('');
-  await page.getByLabel('Telegram ID').fill(telegramId);
+  await page.getByLabel('Telegram ID', { exact: true }).fill(telegramId);
   await page.getByLabel('Имя сотрудника').fill('Попытка дубля');
   await page.getByRole('button', { name: 'Создать сотрудника' }).click();
   await expect(page.getByRole('alert')).toContainText('уже существует');
   await page.getByRole('button', { name: 'Отмена', exact: true }).click();
-  await expect(page.getByLabel('Telegram ID')).toHaveCount(0);
+  await expect(page.getByLabel('Telegram ID', { exact: true })).toHaveCount(0);
 });
 test('[UI-06] supervisor assigns company and filters by owner', async ({ page }) => {
   await login(page, 'Руководитель');

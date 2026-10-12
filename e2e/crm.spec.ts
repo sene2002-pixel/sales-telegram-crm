@@ -1,4 +1,4 @@
-import { prepareDemoAuth } from './helpers';
+import { prepareDemoAuth, saveNewClientAndOpen } from './helpers';
 import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
 
@@ -15,14 +15,15 @@ test('manager creates a company and task, then data survives reload', async ({
   const name = 'Электрострой ' + testInfo.project.name + ' ' + Date.now();
   await page.getByLabel('Название', { exact: true }).fill(name);
   await page.getByLabel('Город', { exact: true }).fill('Казань');
+  await page.getByText('Дополнительные поля', { exact: true }).click();
   await page.getByLabel('Потенциал, ₽', { exact: true }).fill('3000000');
-  await page.getByRole('button', { name: 'Сохранить компанию' }).click();
+  await saveNewClientAndOpen(page);
   await expect(page.getByRole('dialog')).toContainText(name);
   await page.getByRole('dialog').getByRole('button', { name: 'Задачи', exact: true }).click();
   await page.getByRole('button', { name: '+ Добавить', exact: true }).click();
   await page.getByLabel('Задача', { exact: true }).fill('Отправить предложение');
   await page.getByLabel('Срок', { exact: true }).fill('2026-09-20');
-  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить задачу', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Отправить предложение');
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.reload();
@@ -31,7 +32,7 @@ test('manager creates a company and task, then data survives reload', async ({
   await openCompany(page, name);
   await page.getByRole('button', { name: 'Редактировать компанию' }).click();
   await page.getByLabel('Город', { exact: true }).fill('Москва');
-  await page.getByRole('button', { name: 'Сохранить компанию' }).click();
+  await page.getByRole('button', { name: 'Сохранить клиента' }).click();
   await expect(page.getByRole('dialog')).toContainText('Москва');
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('crm.png'), fullPage: true });
