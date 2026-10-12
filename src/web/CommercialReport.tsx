@@ -36,6 +36,7 @@ export function CommercialReport({ users }: { users: Actor[] }) {
             </Field>
           </div>
           <button
+            className="pico-commercial-report-submit"
             disabled={busy || !from || !to || from > to}
             onClick={async () => {
               setBusy(true);
