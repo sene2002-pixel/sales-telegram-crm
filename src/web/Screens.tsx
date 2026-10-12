@@ -968,13 +968,17 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
             onChange={setEquipment}
           />
           <Field label="Сортировка">
-            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            <select
+              className="pico-filter-sort"
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+            >
               <option value="amount">Сумма ↓</option>
               <option value="due">Срок ↑</option>
               <option value="name">А–Я</option>
             </select>
           </Field>
-          <div className="actions">
+          <div className="actions pico-project-filter-actions">
             <button
               onClick={() => {
                 setEquipment('');

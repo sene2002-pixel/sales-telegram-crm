@@ -3229,3 +3229,28 @@ html[data-pico-portrait-required='true'] .pico-portrait-guard {
   font-size: 12px;
   white-space: nowrap;
 }
+
+select.pico-filter-sort {
+  min-height: 42px;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: #64738d;
+  background: white;
+  border-color: var(--line);
+}
+.pico-project-filter-actions {
+  justify-content: flex-end;
+}
+.pico-project-filter-actions > button:not(.primary) {
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--primary);
+  border-color: transparent;
+  background: transparent;
+  min-height: 40px;
+}
+@media (max-width: 760px), (pointer: coarse) {
+  select.pico-filter-sort {
+    font-size: 16px;
+  }
+}
