@@ -582,8 +582,7 @@ export function HomeScreen(
     todays = open.filter((t) => t.data.due === today());
   return (
     <div className="pico-home">
-      <div className="section-head">
-        <h1>Привет, {props.user.name.split(' ')[0]}!</h1>
+      <div className="pico-home-greeting">
         {props.user.role === 'admin' && (
           <button
             className="pico-admin-button"
@@ -593,10 +592,13 @@ export function HomeScreen(
             <Icon name="crown" />
           </button>
         )}
+        <div className="pico-home-welcome">
+          <h1>Привет, {props.user.name.split(' ')[0]}!</h1>
+          <p className="muted">
+            {active.length ? 'Вот что важно на сегодня' : 'Здесь пока пусто. Давайте начнём'}
+          </p>
+        </div>
       </div>
-      <p className="muted">
-        {active.length ? 'Вот что важно на сегодня' : 'Здесь пока пусто. Давайте начнём'}
-      </p>
       {active.length > 0 && (
         <div className="pico-summary">
           {[
@@ -1456,7 +1458,7 @@ export function AnalyticsScreen({
                     <span className="pico-row-icon">
                       <Icon name={equipmentIcon(direction)} size={16} />
                     </span>
-                    <span>{divisionLabels[direction]}</span>
+                    <span className="pico-equipment-label">{divisionLabels[direction]}</span>
                     <strong>{list.length ? money(sum) : '—'}</strong>
                     <Icon name="chevron-down" size={16} />
                   </summary>

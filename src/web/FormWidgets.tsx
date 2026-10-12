@@ -132,7 +132,7 @@ export function PickerRow({
       </span>
       {onClick ? (
         <button type="button" onClick={onClick}>
-          {value || 'Не выбран'}
+          <span className="pico-picker-value">{value || 'Не выбран'}</span>
           <Icon name="chevron-down" size={14} />
         </button>
       ) : (

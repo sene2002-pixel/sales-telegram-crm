@@ -34,7 +34,9 @@ for (const width of [375, 1440]) {
     expect(await noOverflow()).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath(`pico-companies-${width}.png`),
-      fullPage: true,
+      // The real fixture list can exceed Chromium's full-page bitmap limit at 3x DPR.
+      // DOM overflow assertions above cover the full document; capture the visible UI.
+      fullPage: false,
     });
 
     await createCompany.click();
@@ -66,7 +68,7 @@ for (const width of [375, 1440]) {
     expect(await noOverflow()).toBe(true);
     await page.screenshot({
       path: testInfo.outputPath(`pico-letter-${width}.png`),
-      fullPage: true,
+      fullPage: false,
     });
     await composer.getByRole('button', { name: 'Отмена', exact: true }).click();
     await expect(composer).not.toHaveClass(/inset/);

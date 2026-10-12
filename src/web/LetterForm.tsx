@@ -151,12 +151,19 @@ export function LetterForm({
                     'POST',
                     { contactId, signatureId, confirmedIndustry, confirmedActivity },
                   );
-                  await onCreated();
                   setOpen(false);
                   setMessage(
                     'Письмо сохранено в разделе «Файлы» компании.' +
                       (result.referenceWarning ? ` ${result.referenceWarning}` : ''),
                   );
+                  try {
+                    await onCreated();
+                  } catch (e) {
+                    setError(
+                      'Письмо сохранено, но не удалось обновить список файлов: ' +
+                        (e as Error).message,
+                    );
+                  }
                 })
               }
             >

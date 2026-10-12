@@ -11,7 +11,7 @@ import {
   primarySegments,
   primaryDivisions,
 } from '../shared/contracts';
-import { api, setToken, token, download } from './api';
+import { api, ApiError, setToken, token, download } from './api';
 import { CompanyForm, Modal, Select, Chips } from './forms';
 import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
@@ -83,8 +83,80 @@ function App() {
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState('');
   const refreshSequence = useRef(0);
-  async function refresh() {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const dismiss = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !moreMenuRef.current?.contains(event.target) &&
+        !moreButtonRef.current?.contains(event.target)
+      )
+        setMore(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMore(false);
+        moreButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [more]);
+  function clearAccountData() {
+    setCompanies([]);
+    setUsers([]);
+    setTasks([]);
+    setFiles([]);
+    setProjects([]);
+    setContacts([]);
+    setSelected(null);
+    setCreate(false);
+    setRecordCreate(null);
+    setFiltersOpen(false);
+    setHelp(false);
+    setMore(false);
+    setQuery('');
+    setCity('');
+    setSegment('');
+    setDivision('');
+    setOwner('');
+    setArchive(false);
+    setClientStatus('all');
+    setClientSort('name');
+    setSelectedTab('contact');
+    setCreatedClientId('');
+    setTab('home');
+  }
+  function logout() {
+    ++refreshSequence.current;
+    setToken('');
+    setUser(null);
+    clearAccountData();
+    setError('');
+  }
+  async function refreshActor() {
     const sequence = ++refreshSequence.current;
+    let actor: Actor;
+    try {
+      actor = await api<Actor>('/me');
+    } catch (e) {
+      if (
+        sequence === refreshSequence.current &&
+        e instanceof ApiError &&
+        (e.status === 401 || e.status === 403)
+      )
+        logout();
+      throw e;
+    }
+    if (sequence !== refreshSequence.current) return;
+    if (user && (user.id !== actor.id || user.role !== actor.role)) clearAccountData();
+    setUser((current) => (current ? actor : current));
     const [c, u, t, f, p, contacts] = await Promise.all([
       api<Company[]>('/companies'),
       api<Actor[]>('/users'),
@@ -96,11 +168,24 @@ function App() {
     if (sequence !== refreshSequence.current) return;
     setCompanies(c);
     setUsers(u);
+    setUser((current) => (current ? actor : current));
     setTasks(t);
     setFiles(f);
     setProjects(p);
     setContacts(contacts);
+    return actor;
   }
+  async function refresh() {
+    await refreshActor();
+  }
+  useEffect(() => {
+    if (
+      (tab === 'users' && user?.role !== 'admin') ||
+      (tab === 'team' && user?.role === 'manager')
+    ) {
+      setTab('home');
+    }
+  }, [user?.role, tab]);
   async function login(role?: string) {
     setError('');
     setLoading(true);
@@ -111,8 +196,8 @@ function App() {
             initData: window.Telegram?.WebApp?.initData || '',
           });
       setToken(result.token);
-      setUser(result.user);
-      await refresh();
+      const actor = await refreshActor();
+      if (actor) setUser(actor);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -268,13 +353,7 @@ function App() {
             <strong>{user.name}</strong>
             <small>{labels[user.role]}</small>
           </div>
-          <button
-            title="Выйти"
-            onClick={() => {
-              setToken('');
-              setUser(null);
-            }}
-          >
+          <button title="Выйти" onClick={logout}>
             ↗
           </button>
         </div>
@@ -297,6 +376,7 @@ function App() {
             </button>
           </div>
           <button
+            ref={moreButtonRef}
             className="pico-more-button"
             aria-label="Дополнительное меню"
             aria-expanded={more}
@@ -305,7 +385,7 @@ function App() {
             <Icon name="more" />
           </button>
           {more && (
-            <div className="pico-more-menu">
+            <div ref={moreMenuRef} className="pico-more-menu">
               <button
                 onClick={() => {
                   setMore(false);
@@ -333,6 +413,7 @@ function App() {
                   {label}
                 </button>
               ))}
+              <button onClick={logout}>Выйти</button>
             </div>
           )}
           <div className="connection-state">
@@ -528,9 +609,9 @@ function App() {
           <>
             <p className="eyebrow">ВСЁ ПОД РУКОЙ</p>
             <h1>Документы</h1>
-            <div className="list">
+            <div className="list pico-files-list">
               {files.map((f) => (
-                <article className="task-row" key={f.id}>
+                <article className="task-row pico-file-row" key={f.id}>
                   <div className="task-text">
                     <strong>{f.data.name}</strong>
                     <small>

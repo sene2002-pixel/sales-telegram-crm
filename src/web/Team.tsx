@@ -180,7 +180,7 @@ export function Team({
           </tbody>
         </table>
       </div>
-      <section className="panel">
+      <section className="panel pico-team-inactive">
         <h3>Нет контакта 14 дней</h3>
         {stats.flatMap((s) =>
           s.inactiveCompanies.map((c: any) => (
@@ -194,7 +194,7 @@ export function Team({
         )}
       </section>
       {user.role === 'admin' && (
-        <section className="panel">
+        <section className="panel pico-team-access">
           <h3>Доступ сотрудников</h3>
           <p className="muted">
             Добавьте сотрудника по числовому Telegram ID, затем он сможет открыть бота.

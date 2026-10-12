@@ -4,6 +4,15 @@ export function setToken(value: string) {
   if (value) sessionStorage.setItem('crm-session', value);
   else sessionStorage.removeItem('crm-session');
 }
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 export async function api<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch('/api' + path, {
     method,
@@ -16,7 +25,7 @@ export async function api<T = any>(path: string, method = 'GET', body?: unknown)
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({ message: 'Сервер недоступен' }));
-    throw new Error(data.message || 'Ошибка запроса');
+    throw new ApiError(data.message || 'Ошибка запроса', response.status);
   }
   return response.json();
 }

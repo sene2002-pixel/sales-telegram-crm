@@ -1,25 +1,43 @@
-import { prepareDemoAuth } from './helpers';
-import { clients, navigate, openCompany } from './helpers';
+import { createHmac } from 'node:crypto';
+import { navigate, prepareDemoAuth } from './helpers';
 import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
-// Reuse the demo session within this worker to respect the real login rate limit.
-let demoSession: any;
+// Use a real numeric local actor: authoritative /me must not trust altered dev-auth UI data.
+let csvSession = '';
 test.beforeEach(async ({ page }) => {
   await page.route('https://telegram.org/js/telegram-web-app.js*', (route) =>
     route.fulfill({ body: '', contentType: 'application/javascript' }),
   );
-  await page.route('**/api/auth/dev', async (route) => {
-    if (!demoSession) {
-      const response = await route.fetch();
-      demoSession = await response.json();
-      demoSession.user.telegramId = '123456';
-    }
-    await route.fulfill({ json: demoSession });
-  });
   await page.goto('/');
   await page.getByRole('button', { name: 'Администратор', exact: true }).click();
+  await expect(page.locator('.app-shell')).toBeVisible();
+  if (!csvSession) {
+    const token = await page.evaluate(() => sessionStorage.getItem('crm-session'));
+    const response = await page.request.post('/api/users', {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        telegramId: String(Date.now()) + String(Math.floor(Math.random() * 100)),
+        name: 'CSV Аудит',
+        role: 'admin',
+        active: true,
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+    const actor = await response.json();
+    const payload = Buffer.from(
+      JSON.stringify({ sub: actor.id, exp: Math.floor(Date.now() / 1000) + 3600 }),
+    ).toString('base64url');
+    csvSession =
+      payload +
+      '.' +
+      createHmac('sha256', 'e2e-local-secret-not-a-production-secret')
+        .update(payload)
+        .digest('base64url');
+  }
+  await page.evaluate((value) => sessionStorage.setItem('crm-session', value), csvSession);
+  await page.reload();
   await navigate(page, 'Команда');
 });
 
