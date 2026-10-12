@@ -47,12 +47,18 @@ export function SignatureManager({
     };
   }, []);
   return (
-    <section>
-      <h2>Подписи для писем</h2>
-      <p>
-        Можно отправить боту голосовое: «Добавь подпись», затем ФИО, телефоны и email. Черновик
-        появится здесь для проверки.
-      </p>
+    <section className="pico-signature-manager">
+      <div className="pico-signature-intro">
+        <h2>Подписи для писем</h2>
+        <p className="muted">Добавьте контакты для подписи. Они доступны только вам.</p>
+        <details>
+          <summary>Как добавить подпись голосом</summary>
+          <p>
+            Отправьте боту «Добавь подпись», затем ФИО, телефоны и email. Проверьте черновик здесь
+            перед сохранением.
+          </p>
+        </details>
+      </div>
       {onBack && editing === undefined && (
         <button disabled={busy} onClick={onBack}>
           Вернуться к письму
@@ -127,12 +133,11 @@ export function SignatureManager({
               </button>
             </article>
           ))}
-          <p>
-            Сохранено {items.length} из {maxSignatures}. Подписи доступны только вам.
-          </p>
-          <p>
-            Для писем по запросу в Telegram выберите подпись по умолчанию. Если подпись одна, она
-            используется автоматически.
+          <p className="muted">
+            Сохранено {items.length} из {maxSignatures}.{' '}
+            {items.length
+              ? 'Выберите подпись по умолчанию для писем.'
+              : 'Создайте первую подпись для писем.'}
           </p>
           {items.map((s) => (
             <article className="inset" key={s.id}>
@@ -206,6 +211,7 @@ export function SignatureManager({
           ))}
           {items.length < maxSignatures ? (
             <button
+              className="primary"
               disabled={busy}
               onClick={() => {
                 setMessage('');

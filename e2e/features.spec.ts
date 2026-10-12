@@ -1,3 +1,4 @@
+import { openCompanySection } from './helpers';
 import { prepareDemoAuth } from './helpers';
 import { action, clients, navigate, openCompany } from './helpers';
 import { test, expect, Page } from '@playwright/test';
@@ -130,11 +131,14 @@ test('Company archive and restore buttons require confirmation and preserve cont
   await reload(page);
   await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
+  await openCompanySection(page, 'actions');
   await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
   const confirmation = page.getByRole('alertdialog');
   await expect(confirmation).toContainText('Контакты, задачи и файлы сохранятся');
   await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await openCompanySection(page, 'actions');
   await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
+  await openCompanySection(page, 'actions');
   await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
   await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
   await expect(
@@ -148,8 +152,10 @@ test('Company archive and restore buttons require confirmation and preserve cont
     .getByRole('button', { name: /^Показать/ })
     .click();
   await openCompany(page, c.name);
+  await openCompanySection(page, 'actions');
   await dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();
   await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await openCompanySection(page, 'actions');
   await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
   await expect(dialog).toContainText('Сохранённый контакт');
@@ -160,9 +166,11 @@ test('Company archive controls are unavailable to managers', async ({ page }) =>
   await reload(page);
   await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
+  await openCompanySection(page, 'actions');
   await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toHaveCount(
     0,
   );
+  await openCompanySection(page, 'actions');
   await dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();
   await expect(dialog.getByLabel('В архиве', { exact: true })).toHaveCount(0);
 });
@@ -316,11 +324,12 @@ test('[UI-06] supervisor assigns company and filters by owner', async ({ page })
   await reload(page);
   await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
+  await openCompanySection(page, 'actions');
   await dialog.getByLabel('Передать компанию').selectOption(id);
   await dialog.getByRole('button', { name: 'Назначить', exact: true }).click();
   await expect(dialog).toContainText(managerName);
   await dialog.getByRole('button', { name: 'Изменения', exact: true }).click();
-  await expect(dialog.locator('.records')).toContainText('company.assigned');
+  await expect(dialog.locator('.records')).toContainText('Ответственный изменён');
   await dialog.getByRole('button', { name: 'Закрыть' }).click();
   await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
   await page.getByLabel('Ответственный', { exact: true }).selectOption(id);

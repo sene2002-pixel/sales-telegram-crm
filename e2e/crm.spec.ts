@@ -1,3 +1,4 @@
+import { openCompanySection } from './helpers';
 import { prepareDemoAuth, saveNewClientAndOpen } from './helpers';
 import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
@@ -30,6 +31,7 @@ test('manager creates a company and task, then data survives reload', async ({
   await clients(page);
   await expect(page.locator('.pico-client-row').filter({ hasText: name })).toBeVisible();
   await openCompany(page, name);
+  await openCompanySection(page, 'actions');
   await page.getByRole('button', { name: 'Редактировать компанию' }).click();
   await page.getByLabel('Город', { exact: true }).fill('Москва');
   await page.getByRole('button', { name: 'Сохранить клиента' }).click();

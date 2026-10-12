@@ -363,6 +363,11 @@ for (const width of [360, 390, 1440]) {
     await capture(page, 'long-client-list');
     await openCompany(page, name);
     const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('.company-detail-actions')).not.toHaveAttribute('open', '');
+    await expect(dialog.locator('.company-detail-summary')).not.toHaveAttribute('open', '');
+    await capture(page, 'company-detail-collapsed');
+    await dialog.locator('.company-detail-actions > summary').click();
+    await dialog.locator('.company-detail-summary > summary').click();
     await expect(dialog.getByRole('button', { name: 'Создать письмо', exact: true })).toBeVisible();
     await capture(page, 'company-detail');
     await dialog.getByRole('button', { name: 'Создать письмо', exact: true }).click();
@@ -439,6 +444,7 @@ test('UI audit gaps: remove direction, refresh menu, project client handoff and 
   await clients(page);
   await openCompany(page, company.name);
   const dialog = page.getByRole('dialog');
+  await dialog.locator('.company-detail-actions > summary').click();
   await dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();
   await dialog
     .getByRole('button', { name: 'Убрать направление Выключатели 0,4 кВ', exact: true })
@@ -455,13 +461,13 @@ test('UI audit gaps: remove direction, refresh menu, project client handoff and 
     .getByRole('button', { name: 'Открыть клиента · ' + company.name, exact: true })
     .click();
   await expect(dialog).toContainText(company.name);
+  await dialog.locator('.company-detail-summary > summary').click();
   await dialog.getByText('История пяти блоков (1)', { exact: true }).click();
-  const history = dialog
-    .locator('details')
-    .filter({ has: page.getByText('История пяти блоков (1)', { exact: true }) })
-    .first();
+  const history = dialog.locator('details').filter({
+    has: page.locator(':scope > summary').filter({ hasText: 'История пяти блоков (1)' }),
+  });
   await expect(history).toHaveAttribute('open', '');
-  await history.locator('details > summary').click();
+  await history.locator(':scope > details > summary').click();
   await expect(history).toContainText('Источник: запись');
   await capture(page, 'gap-sales-history-expanded');
   await dialog.getByRole('button', { name: 'Задачи', exact: true }).click();

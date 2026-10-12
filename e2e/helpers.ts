@@ -76,3 +76,11 @@ export async function pickInline(
     .first()
     .click();
 }
+
+export async function openCompanySection(page: Page, section: 'summary' | 'actions') {
+  const disclosure = page
+    .getByRole('dialog')
+    .locator(section === 'summary' ? '.company-detail-summary' : '.company-detail-actions');
+  if ((await disclosure.getAttribute('open')) === null)
+    await disclosure.locator(':scope > summary').click();
+}

@@ -1081,7 +1081,7 @@ export function RecordForm({
           <section className="pico-form-section">
             <div className="section-head">
               <h3>Участники</h3>
-              <small>Меняйте порядок, хватайте мышью</small>
+              <small>Измените порядок участников</small>
             </div>
             {data.participants.map((item: any, index: number) => (
               <div

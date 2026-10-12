@@ -1,3 +1,4 @@
+import { FileUpload } from './FileUpload';
 import { useState } from 'react';
 import { Signature, SavedSignature } from '../shared/letters';
 import { api } from './api';
@@ -89,8 +90,8 @@ export function SignatureEditor({
           }}
         >
           <Field label="Фото визитки · JPEG или PNG, до 10 МБ">
-            <input
-              type="file"
+            <FileUpload
+              label="Фото визитки · JPEG или PNG, до 10 МБ"
               accept="image/jpeg,image/png"
               disabled={busy}
               onChange={(e) => {

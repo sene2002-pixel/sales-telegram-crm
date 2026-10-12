@@ -484,7 +484,7 @@ function ReportEditor({
               </button>
             </section>
           ))}
-          <div className="actions sticky">
+          <div className="actions report-confirm-actions">
             <button
               disabled={busy}
               className="primary"
@@ -501,6 +501,7 @@ function ReportEditor({
               Подтвердить и сохранить
             </button>
             <button
+              className="text-button"
               disabled={busy}
               onClick={() =>
                 run(() => api(`/reports/${id}`, 'PATCH', { version: report.version, draft }))

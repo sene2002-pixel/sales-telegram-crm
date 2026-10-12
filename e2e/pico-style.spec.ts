@@ -1,3 +1,4 @@
+import { openCompanySection } from './helpers';
 import { prepareDemoAuth, saveNewClientAndOpen } from './helpers';
 import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
@@ -62,6 +63,7 @@ for (const width of [375, 1440]) {
     await dialog.getByRole('button', { name: '+ Добавить', exact: true }).click();
     await page.getByLabel('Имя', { exact: true }).fill('Тестовый получатель');
     await page.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
+    await openCompanySection(page, 'actions');
     await composer.getByRole('button', { name: 'Создать письмо', exact: true }).click();
     await expect(
       composer.getByRole('combobox', { name: 'Моя подпись', exact: true }),

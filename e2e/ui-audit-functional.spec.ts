@@ -1,3 +1,4 @@
+import { openCompanySection } from './helpers';
 import { createHmac } from 'node:crypto';
 import { expect, Page, test } from '@playwright/test';
 import { action, navigate, openCompany, prepareDemoAuth } from './helpers';
@@ -114,6 +115,7 @@ test('UI audit: saved letter stays saved when refreshing fails and cannot submit
   await navigate(page, 'Клиенты');
   await openCompany(page, company.name);
   const composer = page.getByRole('dialog').locator('.letter-composer');
+  await openCompanySection(page, 'actions');
   await composer.getByRole('button', { name: 'Создать письмо', exact: true }).click();
   await composer
     .getByLabel('Подтвердите отрасль компании')
@@ -528,6 +530,9 @@ test('UI audit: deterministic report review edits rows, retains a rejected save 
   expect(writes[1].draft.blocks[0].contacts).toHaveLength(1);
   expect(writes[1].draft.blocks[0].tasks).toHaveLength(1);
   expect(writes[1].draft.blocks[0].divisions).toHaveLength(1);
+  expect(
+    await dialog.locator('.report-confirm-actions').evaluate((el) => getComputedStyle(el).position),
+  ).toBe('static');
   await dialog.getByRole('button', { name: 'Подтвердить и сохранить', exact: true }).click();
   await expect(dialog).toContainText('Отчёт сохранён');
   await expect(
@@ -874,4 +879,94 @@ test('UI audit: deterministic voice draft rejection retains the draft on error a
   await expect(
     page.getByRole('button', { name: 'Проверить голосовую подпись', exact: true }),
   ).toHaveCount(0);
+});
+
+test('UI polish: compact client disclosure, Russian upload status and readable audit preserve real actions', async ({
+  page,
+}, info) => {
+  if (info.project.name === 'desktop') await page.setViewportSize({ width: 1440, height: 900 });
+  await isolatedActor(page, 'manager');
+  const company = await api(page, '/companies', { name: 'Полировка ' + Date.now() });
+  await api(page, `/companies/${company.id}/records/contact`, {
+    data: { name: 'Длинныйконтакт'.repeat(8), email: 'long'.repeat(20) + '@example.test' },
+  });
+  await page.reload();
+  await navigate(page, 'Клиенты');
+  await openCompany(page, company.name);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.company-detail-summary')).not.toHaveAttribute('open');
+  await expect(dialog.locator('.company-detail-actions')).not.toHaveAttribute('open');
+  const tabBounds = await dialog.locator('.company-detail-tabs button').evaluateAll((elements) =>
+    elements.map((el) => {
+      const box = el.getBoundingClientRect();
+      const parent = el.parentElement!.getBoundingClientRect();
+      return (
+        box.left >= parent.left - 1 &&
+        box.right <= parent.right + 1 &&
+        box.height >= 36 &&
+        el.scrollWidth <= el.clientWidth + 1
+      );
+    }),
+  );
+  expect(tabBounds).toHaveLength(6);
+  expect(tabBounds.every(Boolean)).toBeTruthy();
+  if (info.project.name === 'desktop') {
+    const rows = await dialog
+      .locator('.company-detail-tabs button')
+      .evaluateAll((elements) => elements.map((el) => el.getBoundingClientRect().top));
+    expect(Math.max(...rows) - Math.min(...rows)).toBeLessThan(1);
+  }
+  await expect(dialog.getByRole('button', { name: 'Контакты', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
+  const textBounds = await dialog
+    .locator('.company-record-title, .company-contact-values')
+    .evaluateAll((elements) =>
+      elements.map((el) => {
+        const r = el.getBoundingClientRect();
+        const p = el.closest('article')!.getBoundingClientRect();
+        return { fits: r.right <= p.right + 1, scrollFits: el.scrollWidth <= el.clientWidth + 1 };
+      }),
+    );
+  expect(textBounds.length).toBeGreaterThan(0);
+  expect(textBounds.every((value) => value.fits && value.scrollFits)).toBeTruthy();
+  await openCompanySection(page, 'actions');
+  await expect(
+    dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(dialog.getByLabel('Передать компанию')).toHaveCount(0);
+  await dialog.locator('.company-detail-actions > summary').click();
+  await expect(
+    dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }),
+  ).toBeHidden();
+  await dialog.getByRole('button', { name: 'Файлы', exact: true }).click();
+  await expect(dialog.locator('.pico-file-picker-name')).toHaveText('Файл не выбран');
+  await expect(dialog.locator('.pico-file-picker-button')).toContainText('Выбрать файл');
+  const filename = 'Документ-проверки.txt';
+  await dialog.getByLabel('Загрузить файл · до 10 МБ', { exact: true }).setInputFiles({
+    name: filename,
+    mimeType: 'text/plain',
+    buffer: Buffer.from('Local presentation regression'),
+  });
+  await expect(dialog.locator('.pico-file-picker-name')).toHaveText(filename);
+  await expect(dialog.locator('.records')).toContainText(filename);
+  const persisted = await api(page, `/companies/${company.id}`, undefined, 'GET');
+  expect(
+    persisted.records.some(
+      (record: any) => record.kind === 'file' && record.data.name === filename,
+    ),
+  ).toBeTruthy();
+  await dialog.getByRole('button', { name: 'Изменения', exact: true }).click();
+  await expect(dialog.locator('.records')).toContainText('Клиент добавлен');
+  await expect(dialog.locator('.records')).toContainText('Файл добавлен');
+  const titles = await dialog.locator('.records article > strong').allTextContents();
+  expect(titles.every((title) => !/\b[a-z]+\.[a-z_]+\b/.test(title))).toBeTruthy();
+  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await navigate(page, 'Мой профиль');
+  const profileTitle = page.getByRole('heading', { name: 'Мой профиль', exact: true });
+  await expect(profileTitle).toBeVisible();
+  const position = await profileTitle.boundingBox();
+  expect(position!.y).toBeLessThan(180);
 });

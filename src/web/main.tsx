@@ -336,7 +336,7 @@ function App() {
           {nav.map(([key, label, icon]) => (
             <button
               key={key}
-              className={tab === key ? 'active' : ''}
+              className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
               onClick={() => {
                 setTab(key!);
                 setError('');
@@ -349,7 +349,11 @@ function App() {
         </nav>
         <div className="pico-secondary-nav">
           {secondary.map(([key, label]) => (
-            <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key!)}>
+            <button
+              key={key}
+              className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
+              onClick={() => setTab(key!)}
+            >
               {label}
             </button>
           ))}
@@ -466,9 +470,6 @@ function App() {
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <button className="pico-add-row" onClick={() => setCreate(true)}>
-              <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
-            </button>
             <div className="tabs pico-chips">
               {[
                 ['all', 'Все'],
@@ -484,6 +485,9 @@ function App() {
                 </button>
               ))}
             </div>
+            <button className="pico-add-row" onClick={() => setCreate(true)}>
+              <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
+            </button>
             {filtersOpen && (
               <Modal title="Фильтры клиентов" onClose={() => setFiltersOpen(false)}>
                 <div className="filters">
@@ -649,7 +653,7 @@ function App() {
         {nav.map(([key, label, icon]) => (
           <button
             key={key}
-            className={tab === key ? 'active' : ''}
+            className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
             onClick={() => {
               setTab(key!);
               setError('');

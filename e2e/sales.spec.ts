@@ -1,3 +1,4 @@
+import { openCompanySection } from './helpers';
 import { prepareDemoAuth } from './helpers';
 import { action, clients, navigate, openCompany } from './helpers';
 import { test, expect, Page } from '@playwright/test';
@@ -57,6 +58,7 @@ test('SALES-UI-01 five blocks, accessible six-point indicator and dated history'
   await page.getByRole('textbox', { name: 'Поиск компаний' }).fill(name);
   await openCompany(page, name);
   const dialog = page.getByRole('dialog', { name });
+  await openCompanySection(page, 'summary');
   await expect(dialog.getByRole('region', { name: 'Пять блоков CRM' })).toBeVisible();
   for (const h of [
     '1. Клиент',
