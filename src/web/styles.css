@@ -3340,3 +3340,68 @@ select.pico-filter-sort {
     font-size: 16px;
   }
 }
+
+/* Compact home: one employee picker and counters beneath the greeting. */
+.pico-home-overview {
+  max-width: 700px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.pico-home-overview .pico-employee-filter {
+  max-width: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.pico-home-overview .pico-summary {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.pico-home-greeting {
+  padding-right: 44px;
+  margin-bottom: 16px;
+}
+.pico-home-greeting .pico-admin-button {
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 3px;
+  margin-left: 2px;
+  border-radius: 8px;
+}
+.pico-home-welcome > .muted {
+  margin-top: 4px;
+}
+.pico-more-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+}
+@media (max-width: 760px) {
+  .pico-home-workspace > header {
+    height: 0;
+    min-height: 0;
+    margin-bottom: 0;
+    overflow: visible;
+  }
+  .pico-home-workspace > header .header-leading {
+    display: none;
+  }
+  .pico-home-workspace .pico-more-button {
+    position: absolute;
+    right: 0;
+    top: 0;
+    z-index: 7;
+  }
+}

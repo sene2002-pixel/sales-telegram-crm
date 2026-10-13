@@ -533,7 +533,7 @@ function App() {
           </button>
         </div>
       </aside>
-      <main className="workspace">
+      <main className={`workspace ${tab === 'home' ? 'pico-home-workspace' : ''}`}>
         <header>
           <div className="header-leading">
             <div className="mobile-brand" aria-label="Pico CRM">
@@ -557,7 +557,7 @@ function App() {
             aria-expanded={more}
             onClick={() => setMore(!more)}
           >
-            <Icon name="more" />
+            <Icon name="settings" />
           </button>
           {more && (
             <div ref={moreMenuRef} className="pico-more-menu">
@@ -602,16 +602,56 @@ function App() {
             </button>
           </div>
         </header>
-        {user.role !== 'manager' && !['profile', 'users', 'team'].includes(tab) && (
-          <EmployeeFilter
-            options={employeeOptions}
-            value={employeeId}
-            onChange={(id) => void changeEmployee(id)}
-            loading={optionsLoading && employeeOptions.length === 0}
-            busy={scopeBusy}
-            error={employeeError}
-            onRetry={() => void refresh().catch((e) => setError(e.message))}
-          />
+        {tab === 'home' && (
+          <>
+            <div className="pico-home-greeting">
+              <div className="pico-home-welcome">
+                <h1>
+                  Привет, {user.name.split(' ')[0]}!
+                  {user.role === 'admin' && (
+                    <>
+                      {' '}
+                      <button
+                        className="pico-admin-button"
+                        aria-label="Управление пользователями"
+                        onClick={() => setTab('users')}
+                      >
+                        <Icon name="crown" size={18} />
+                      </button>
+                    </>
+                  )}
+                </h1>
+                <p className="muted">Вот что важно на сегодня</p>
+              </div>
+            </div>
+            <div className="pico-home-overview">
+              {user.role !== 'manager' && (
+                <EmployeeFilter
+                  options={employeeOptions}
+                  value={employeeId}
+                  onChange={(id) => void changeEmployee(id)}
+                  loading={optionsLoading && employeeOptions.length === 0}
+                  busy={scopeBusy}
+                  error={employeeError}
+                  onRetry={() => void refresh().catch((e) => setError(e.message))}
+                />
+              )}
+              {!scopeBusy && !scopeFailed && (
+                <div className="pico-summary">
+                  {[
+                    ['Клиенты', companies.filter((c) => !c.archived).length, 'companies'],
+                    ['Проекты', projects.length, 'projects'],
+                    ['Задачи', tasks.filter((t) => !t.data.done).length, 'tasks'],
+                  ].map(([label, count, route]) => (
+                    <button key={label} onClick={() => setTab(String(route))}>
+                      <strong>{count}</strong>
+                      <small>{label}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         )}
         {scopeBusy && scopeScreen && (
           <p role="status" className="pico-scope-loading">

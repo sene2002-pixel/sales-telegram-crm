@@ -594,37 +594,6 @@ export function HomeScreen(
     todays = open.filter((t) => t.data.due === today());
   return (
     <div className="pico-home">
-      <div className="pico-home-greeting">
-        {props.user.role === 'admin' && (
-          <button
-            className="pico-admin-button"
-            aria-label="Управление пользователями"
-            onClick={() => props.onNavigate('users')}
-          >
-            <Icon name="crown" />
-          </button>
-        )}
-        <div className="pico-home-welcome">
-          <h1>Привет, {props.user.name.split(' ')[0]}!</h1>
-          <p className="muted">
-            {active.length ? 'Вот что важно на сегодня' : 'Здесь пока пусто. Давайте начнём'}
-          </p>
-        </div>
-      </div>
-      {active.length > 0 && (
-        <div className="pico-summary">
-          {[
-            ['Клиенты', active.length, 'companies'],
-            ['Проекты', props.projects.length, 'projects'],
-            ['Задачи', open.length, 'tasks'],
-          ].map(([label, count, tab]) => (
-            <button key={label} onClick={() => props.onNavigate(String(tab))}>
-              <strong>{count}</strong>
-              <small>{label}</small>
-            </button>
-          ))}
-        </div>
-      )}
       {!active.length && (
         <>
           <section className="pico-intro">

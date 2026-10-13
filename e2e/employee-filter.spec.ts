@@ -135,9 +135,33 @@ function selection(page: Page) {
 function client(page: Page, name: string) {
   return page.locator('.pico-client-accordion').filter({ hasText: name });
 }
-async function choose(page: Page, id: string) {
+async function currentRoute(page: Page) {
+  const heading = page.locator('.workspace h1').first();
+  const title = (await heading.count())
+    ? (await heading.textContent()) || ''
+    : (await page
+        .locator('nav:visible button.active, .pico-secondary-nav:visible button.active')
+        .first()
+        .textContent()) || '';
+  return title.startsWith('Привет') ? 'Главная' : title;
+}
+async function selectScope(page: Page, id: string, wait = false) {
+  const route = await currentRoute(page);
+  await navigate(page, 'Главная');
   await selection(page).selectOption(id);
-  await expect(page.locator('.pico-scoped-content')).toBeVisible();
+  if (wait) await expect(page.locator('.pico-scoped-content')).toBeVisible();
+  if (route && route !== 'Главная') await navigate(page, route);
+}
+async function choose(page: Page, id: string) {
+  await selectScope(page, id, true);
+}
+async function storedScope(page: Page) {
+  return page.evaluate(() => {
+    const token = sessionStorage.getItem('crm-session');
+    if (!token) return '';
+    const id = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))).sub;
+    return sessionStorage.getItem(`pico-employee-filter:${id}`) || '';
+  });
 }
 async function refresh(page: Page) {
   if (await page.locator('.connection-state:visible').count())
@@ -161,6 +185,7 @@ test('Employee filter: supervisor options preserve base ACL and task assignee di
   await enter(page, f.supervisor.token);
   await navigate(page, 'Клиенты');
   await expect(client(page, f.outside.name)).toBeVisible();
+  await navigate(page, 'Главная');
   const values = await selection(page)
     .locator('option')
     .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
@@ -168,6 +193,7 @@ test('Employee filter: supervisor options preserve base ACL and task assignee di
   expect(values).not.toContain(f.outsider.id);
   expect(values).not.toContain(f.inactive.id);
   expect(values).not.toContain(f.admin.id);
+  await navigate(page, 'Клиенты');
   await choose(page, f.a.id);
   await expect(client(page, f.ca.name)).toBeVisible();
   await expect(client(page, f.cb.name)).toHaveCount(0);
@@ -208,6 +234,7 @@ test('Employee filter: admin persistence, unaffected account pages and creation 
   const f = await fixture(page);
   await page.reload();
   await navigate(page, 'Клиенты');
+  await navigate(page, 'Главная');
   const adminOptions = await selection(page)
     .locator('option')
     .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
@@ -216,12 +243,14 @@ test('Employee filter: admin persistence, unaffected account pages and creation 
   );
   expect(adminOptions).not.toContain(f.inactive.id);
   await choose(page, f.a.id);
-  await expect(client(page, f.ca.name)).toBeVisible();
   const panel = page.locator('.pico-employee-filter'),
     header = (await page.locator('.workspace > header').boundingBox())!,
     box = (await panel.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(header.y + header.height);
-  expect(box.width).toBeLessThanOrEqual(421);
+  const card = (await page.locator('.pico-home-overview').boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(card.x);
+  expect(box.y).toBeGreaterThanOrEqual(card.y);
+  expect(box.width).toBeLessThanOrEqual(card.width);
   if (info.project.name === 'mobile')
     expect(
       await selection(page).evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
@@ -237,23 +266,25 @@ test('Employee filter: admin persistence, unaffected account pages and creation 
     await expect(selection(page)).toHaveCount(0);
   }
   await navigate(page, 'Клиенты');
-  await expect(selection(page)).toHaveValue(f.a.id);
+  await expect.poll(() => storedScope(page)).toBe(f.a.id);
   await page.reload();
-  await expect(selection(page)).toHaveValue(f.a.id);
+  await expect.poll(() => storedScope(page)).toBe(f.a.id);
   await navigate(page, 'Клиенты');
   await expect(client(page, f.ca.name)).toBeVisible();
+  await navigate(page, 'Клиенты');
   await page.getByRole('button', { name: 'Добавить клиента', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Новый клиент', exact: true });
   await expect(dialog).toContainText('Фильтр не меняет ответственного');
   const name = 'СозданФактическим-' + f.tag;
   await dialog.getByLabel('Название', { exact: true }).fill(name);
   await dialog.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
-  await expect(selection(page)).toHaveValue('');
+  await expect.poll(() => storedScope(page)).toBe('');
   const stored = (await api(page, '/companies', f.adminToken)).find((c: any) => c.name === name);
   expect(stored.ownerId).toBe(f.admin.id);
   await choose(page, f.b.id);
+  await navigate(page, 'Главная');
   await page.getByRole('button', { name: 'Сбросить фильтр сотрудника', exact: true }).click();
-  await expect(selection(page)).toHaveValue('');
+  await expect.poll(() => storedScope(page)).toBe('');
 });
 
 test('Employee filter: delayed A responses cannot replace B during navigation or a later login', async ({
@@ -278,16 +309,17 @@ test('Employee filter: delayed A responses cannot replace B during navigation or
       new URL(r.url()).pathname === '/api/companies' &&
       new URL(r.url()).searchParams.get('employeeId') === f.a.id,
   );
-  await selection(page).selectOption(f.a.id);
+  await selectScope(page, f.a.id);
   await started;
   await expect(page.locator('.pico-client-accordion')).toHaveCount(0);
-  await selection(page).selectOption(f.b.id);
+  await page.screenshot({ path: test.info().outputPath('selected-loading.png') });
+  await selectScope(page, f.b.id);
   await expect(client(page, f.cb.name)).toBeVisible();
   await navigate(page, 'Проекты');
   await expect(page.locator('.pico-project-row').filter({ hasText: f.pb.data.name })).toBeVisible();
   release();
   await oldResponse;
-  await expect(selection(page)).toHaveValue(f.b.id);
+  await expect.poll(() => storedScope(page)).toBe(f.b.id);
   await expect(page.locator('.pico-project-row').filter({ hasText: f.pa.data.name })).toHaveCount(
     0,
   );
@@ -311,11 +343,11 @@ test('Employee filter: delayed A responses cannot replace B during navigation or
   await choose(page, f.a.id);
   await navigate(page, 'Отчёты');
   await reportStarted;
-  await selection(page).selectOption(f.b.id);
+  await selectScope(page, f.b.id);
   await expect(page.locator('.report-row')).toContainText([f.b.name]);
   finish();
   await staleReport;
-  await expect(selection(page)).toHaveValue(f.b.id);
+  await expect.poll(() => storedScope(page)).toBe(f.b.id);
   await expect(page.locator('.report-row').filter({ hasText: f.a.name })).toHaveCount(0);
   await navigate(page, 'Клиенты');
   await choose(page, f.a.id);
@@ -335,7 +367,7 @@ test('Employee filter: delayed A responses cannot replace B during navigation or
       new URL(r.url()).pathname === '/api/companies' &&
       new URL(r.url()).searchParams.get('employeeId') === f.b.id,
   );
-  await selection(page).selectOption(f.b.id);
+  await selectScope(page, f.b.id);
   await logoutStarted;
   const desktopLogout = page.getByTitle('Выйти', { exact: true });
   if (await desktopLogout.isVisible()) await desktopLogout.click();
@@ -364,19 +396,25 @@ test('Employee filter: employee revocation resets scope and errors never retain 
     supervisorId: f.supervisor.id,
   });
   await refresh(page);
-  await expect(selection(page)).toHaveValue('');
+  await expect.poll(() => storedScope(page)).toBe('');
   await expect(page.getByRole('alert')).toContainText('сотрудник больше недоступен');
-  await expect(selection(page).locator(`option[value="${f.a.id}"]`)).toHaveCount(0);
+  expect(
+    (await api(page, '/employee-filter/options', f.supervisor.token)).map((o: any) => o.id),
+  ).not.toContain(f.a.id);
   await page.route('**/api/companies?employeeId=*', (route) =>
     new URL(route.request().url()).searchParams.get('employeeId') === f.b.id
       ? route.fulfill({ status: 503, json: { message: 'Синтетическая ошибка scoped данных' } })
       : route.continue(),
   );
+  await navigate(page, 'Главная');
   await selection(page).selectOption(f.b.id);
   await expect(page.getByRole('alert')).toContainText('Синтетическая ошибка scoped данных');
+  await page.screenshot({ path: test.info().outputPath('selected-error.png') });
   await expect(page.locator('.pico-client-accordion')).toHaveCount(0);
   await page.unroute('**/api/companies?employeeId=*');
   await refresh(page);
+  await expect(page.locator('.pico-scoped-content')).toBeVisible();
+  await navigate(page, 'Клиенты');
   await expect(client(page, f.cb.name)).toBeVisible();
   await expect(page.getByText('Синтетическая ошибка scoped данных', { exact: true })).toHaveCount(
     0,
@@ -464,8 +502,10 @@ for (const child of ['analytics', 'commercial'] as const) {
     if (child === 'analytics') await navigate(page, 'Аналитика');
     else await page.getByRole('button', { name: 'Сформировать коммерческий отчёт' }).click();
     await expect(page.getByRole('alert')).toContainText('Синтетический отказ дочернего scope');
-    await expect(selection(page)).toHaveValue(f.a.id);
-    await expect(selection(page).locator(`option[value="${f.a.id}"]`)).toHaveCount(1);
+    await expect.poll(() => storedScope(page)).toBe(f.a.id);
+    expect(
+      (await api(page, '/employee-filter/options', f.supervisor.token)).map((o: any) => o.id),
+    ).toContain(f.a.id);
     await expect(page.locator('.pico-scoped-content')).toHaveCount(0);
     await expect(page.locator('.pico-potential')).toHaveCount(0);
     await expect(page.locator('pre.commercial-report')).toHaveCount(0);
@@ -491,7 +531,7 @@ test('Employee filter: initial unavailable options block data until a successful
   await page.evaluate((token) => sessionStorage.setItem('crm-session', token), f.supervisor.token);
   await page.goto('/');
   await expect(selection(page)).toBeDisabled();
-  await expect(selection(page)).toHaveValue('');
+  await expect.poll(() => storedScope(page)).toBe('');
   await expect(selection(page).locator('option:checked')).toHaveText(
     'Список сотрудников недоступен',
   );
@@ -514,4 +554,88 @@ test('Employee filter: initial unavailable options block data until a successful
   ).toHaveCount(0);
   await navigate(page, 'Клиенты');
   await expect(client(page, f.ca.name)).toBeVisible();
+});
+
+test('Employee filter: Home shared card, inline crown and settings stay usable at every width', async ({
+  page,
+}, info) => {
+  const f = await fixture(page);
+  if (info.project.name === 'mobile')
+    await page.addInitScript(() => {
+      Object.defineProperties(screen, {
+        width: { configurable: true, value: 1440 },
+        height: { configurable: true, value: 2560 },
+      });
+      Object.defineProperties(screen.orientation, {
+        type: { configurable: true, value: 'portrait-primary' },
+        angle: { configurable: true, value: 0 },
+      });
+    });
+  for (const width of [360, 390, 1440]) {
+    await page.setViewportSize({ width, height: width < 500 ? 844 : 1000 });
+    await enter(page, f.adminToken);
+    const greeting = page.locator('.pico-home-greeting'),
+      card = page.locator('.pico-home-overview');
+    await expect(selection(page)).toHaveCount(1);
+    await expect(card.locator('.pico-summary > button')).toHaveCount(3);
+    const title = (await greeting.locator('h1').boundingBox())!,
+      panel = (await card.boundingBox())!;
+    expect(panel.y).toBeGreaterThan(title.y + title.height);
+    const crown = (await page
+      .getByRole('button', { name: 'Управление пользователями' })
+      .boundingBox())!;
+    expect(crown.y).toBeLessThan(title.y + title.height);
+    expect(crown.width).toBeLessThanOrEqual(30);
+    const subtitle = (await greeting.locator('p').boundingBox())!;
+    expect(subtitle.y - title.y - title.height).toBeGreaterThanOrEqual(3);
+    expect(subtitle.y - title.y - title.height).toBeLessThanOrEqual(5);
+    await choose(page, f.a.id);
+    await page.screenshot({ path: info.outputPath(`home-${width}.png`) });
+    await navigate(page, 'Клиенты');
+    await expect(selection(page)).toHaveCount(0);
+    await expect(client(page, f.ca.name)).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`clients-${width}.png`) });
+    await navigate(page, 'Главная');
+    await expect(selection(page)).toHaveValue(f.a.id);
+    if (width < 500) {
+      const gear = page.getByRole('button', { name: 'Дополнительное меню', exact: true });
+      const box = (await gear.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      await gear.click();
+      await expect(page.locator('.pico-more-menu')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.pico-more-menu')).toHaveCount(0);
+    }
+  }
+  await page.addInitScript(() => {
+    Object.defineProperty(window.screen, 'width', { configurable: true, value: 390 });
+    Object.defineProperty(window.screen, 'height', { configurable: true, value: 844 });
+    Object.defineProperty(window.screen.orientation, 'type', {
+      configurable: true,
+      value: 'portrait-primary',
+    });
+    Object.defineProperty(window.screen.orientation, 'angle', { configurable: true, value: 0 });
+    window.Telegram = {
+      WebApp: {
+        initData: 'qa-native-header',
+        platform: 'android',
+        version: '8.0',
+        ready() {},
+        expand() {},
+        isVersionAtLeast() {
+          return true;
+        },
+      },
+    } as any;
+  });
+  await page.route('**/api/auth/telegram', (route) =>
+    route.fulfill({ json: { token: f.adminToken } }),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.locator('.app-shell.telegram-native-header')).toBeVisible();
+  await expect(page.locator('.mobile-brand')).toBeHidden();
+  await expect(selection(page)).toHaveValue(f.a.id);
+  await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
+  await expect(page.locator('.pico-more-menu')).toBeVisible();
 });

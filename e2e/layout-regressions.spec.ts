@@ -42,23 +42,24 @@ for (const width of [360, 390, 1440]) {
     await page.reload();
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
     const crown = page.getByRole('button', { name: 'Управление пользователями', exact: true });
-    const heading = page.locator('.pico-home h1');
+    const heading = page.locator('.pico-home-greeting h1');
     const subtitle = page.locator('.pico-home-welcome > .muted');
     const [crownBox, headingBox, subtitleBox] = await Promise.all([
       crown.boundingBox(),
       heading.boundingBox(),
       subtitle.boundingBox(),
     ]);
-    expect(crownBox!.x + crownBox!.width).toBeLessThan(headingBox!.x);
+    expect(crownBox!.x).toBeGreaterThan(headingBox!.x);
+    expect(crownBox!.x + crownBox!.width).toBeLessThanOrEqual(
+      headingBox!.x + headingBox!.width + 1,
+    );
+    expect(crownBox!.width).toBeLessThanOrEqual(30);
+    expect(crownBox!.y).toBeLessThan(headingBox!.y + headingBox!.height);
     expect(Math.abs(subtitleBox!.x - headingBox!.x)).toBeLessThan(1);
-    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeGreaterThanOrEqual(6);
-    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeLessThanOrEqual(10);
+    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeGreaterThanOrEqual(3);
+    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeLessThanOrEqual(5);
     if (width <= 760) {
-      const brand = page.locator('.mobile-brand');
-      await expect(brand).toHaveText('Pico Bot');
-      await expect(brand.locator('.brand-mark')).toBeHidden();
-      const box = await brand.boundingBox();
-      expect(Math.abs(box!.x + box!.width / 2 - width / 2)).toBeLessThan(1);
+      await expect(page.locator('.mobile-brand')).toBeHidden();
     } else {
       const brand = page.locator('.brand-mark:visible').first();
       await expect(brand).toHaveAttribute('src', '/brand/pico-avatar.png');
@@ -70,6 +71,12 @@ for (const width of [360, 390, 1440]) {
     await crown.click();
     await expect(page.getByRole('heading', { name: 'Пользователи', exact: true })).toBeVisible();
     await navigate(page, 'Аналитика');
+    if (width <= 760) {
+      const brand = page.locator('.mobile-brand');
+      await expect(brand).toHaveText('Pico Bot');
+      const box = (await brand.boundingBox())!;
+      expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThan(1);
+    }
     const badges = page.locator('.pico-potential summary .pico-row-icon');
     await expect(badges).toHaveCount(7);
     const boxes = await badges.evaluateAll((elements) =>
