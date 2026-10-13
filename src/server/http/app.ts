@@ -1,3 +1,4 @@
+import { employeeFilterOptions } from '../services/employee-filter';
 import 'reflect-metadata';
 import {
   Body,
@@ -334,8 +335,11 @@ class CrmController {
   @Post('users/admit') admitUser(@Req() r: AuthedRequest, @Body() body: unknown) {
     return this.s.auth.admitUser(r.actor, body);
   }
-  @Get('companies') companies(@Req() r: AuthedRequest) {
-    return this.s.crm.list(r.actor);
+  @Get('employee-filter/options') employeeOptions(@Req() r: AuthedRequest) {
+    return employeeFilterOptions(this.s.crm.db, r.actor);
+  }
+  @Get('companies') companies(@Req() r: AuthedRequest, @Query('employeeId') employeeId?: unknown) {
+    return this.s.crm.list(r.actor, employeeId);
   }
   @Post('companies') create(@Req() r: AuthedRequest, @Body() b: any) {
     return this.s.crm.create(r.actor, b);
@@ -369,10 +373,15 @@ class CrmController {
       .parse(b);
     return this.s.crm.setArchived(r.actor, id, input.archived, input.version);
   }
-  @Get('records/:kind') records(@Req() r: AuthedRequest, @Param('kind') kind: string) {
+  @Get('records/:kind') records(
+    @Req() r: AuthedRequest,
+    @Param('kind') kind: string,
+    @Query('employeeId') employeeId?: unknown,
+  ) {
     return this.s.crm.records(
       r.actor,
       z.enum(['contact', 'project', 'task', 'activity', 'file']).parse(kind),
+      employeeId,
     );
   }
   @Post('companies/:id/records/:kind') record(
@@ -410,8 +419,8 @@ class CrmController {
   @Get('tasks/:id/advice') taskAdvice(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.taskAdvice(r.actor, id);
   }
-  @Get('reports') reports(@Req() r: AuthedRequest) {
-    return this.s.reports.list(r.actor);
+  @Get('reports') reports(@Req() r: AuthedRequest, @Query('employeeId') employeeId?: unknown) {
+    return this.s.reports.list(r.actor, employeeId);
   }
   @Get('reports/:id') async report(@Req() r: AuthedRequest, @Param('id') id: string) {
     const report = await this.s.reports.get(r.actor, id);
@@ -462,16 +471,18 @@ class CrmController {
     @Req() r: AuthedRequest,
     @Query('from') from: string,
     @Query('to') to: string,
+    @Query('employeeId') employeeId?: unknown,
   ) {
-    return this.s.dashboard.analytics(r.actor, from, to);
+    return this.s.dashboard.analytics(r.actor, from, to, employeeId);
   }
   @Get('dashboard/commercial') commercial(
     @Req() r: AuthedRequest,
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('authorId') authorId?: string,
+    @Query('employeeId') employeeId?: unknown,
   ) {
-    return this.s.commercial.generate(r.actor, from, to, authorId);
+    return this.s.commercial.generate(r.actor, from, to, authorId, employeeId);
   }
   @Get('dashboard/export') async csv(
     @Req() r: AuthedRequest,

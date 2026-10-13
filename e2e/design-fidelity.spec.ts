@@ -338,7 +338,10 @@ test('Design fidelity: each filter sheet and postpone keeps its full-width actio
   const project = await api(page, `/companies/${company.id}/records/project`, {
     data: { name: 'Контекст проекта ' + company.name },
   });
-  const due = await page.evaluate(() => new Date().toISOString().slice(0, 10));
+  const due = await page.evaluate(() => {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
   await api(page, `/companies/${company.id}/records/task`, {
     projectId: project.id,
     data: { text: 'Перенос ' + company.name, type: 'call', due, time: '12:00' },

@@ -1,3 +1,4 @@
+import { resolveEmployeeFilter } from './employee-filter';
 import { Actor, dateSchema } from '../../shared/contracts';
 import { Database } from '../infra/database';
 import { requireCondition } from '../domain/errors';
@@ -8,7 +9,8 @@ export class DashboardService {
     private db: Database,
     private timezone: string,
   ) {}
-  async analytics(actor: Actor, from: string, to: string) {
+  async analytics(actor: Actor, from: string, to: string, employeeId?: unknown) {
+    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
     dateSchema.parse(from);
     dateSchema.parse(to);
     requireCondition(from <= to, 400, 'Неверный период');
@@ -18,12 +20,12 @@ export class DashboardService {
       'Период не должен превышать десять лет',
     );
     const companies = await this.db.query(
-      'SELECT id,data,created_at,updated_at FROM companies WHERE ($1::boolean OR owner_id=$2)',
-      [isLeader(actor), actor.id],
+      'SELECT id,data,created_at,updated_at FROM companies WHERE ($1::boolean OR owner_id=$2) AND ($3::uuid IS NULL OR owner_id=$3)',
+      [isLeader(actor), actor.id, employee],
     );
     const events = await this.db.query(
-      "SELECT a.company_id,a.action,a.details,a.created_at FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND a.action IN ('company.created','company.updated','company.sales_updated','company.archived','company.restored') ORDER BY a.created_at,a.id",
-      [isLeader(actor), actor.id],
+      "SELECT a.company_id,a.action,a.details,a.created_at FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND ($3::uuid IS NULL OR c.owner_id=$3) AND a.action IN ('company.created','company.updated','company.sales_updated','company.archived','company.restored') ORDER BY a.created_at,a.id",
+      [isLeader(actor), actor.id, employee],
     );
     return summarizeAnalytics(companies as any, events as any, from, to, this.timezone);
   }

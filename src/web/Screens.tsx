@@ -13,15 +13,16 @@ import {
   labels,
   stages,
   taskSchema,
+  dateSchema,
   taskTypeLabels,
 } from '../shared/contracts';
-import { api, money, today } from './api';
+import { api, ApiError, money, today } from './api';
 import { Field, Modal, RecordForm, TaskComposer, Chips, ClientPicker } from './forms';
 import { Icon, industryIcon } from './Icons';
 import { PickerRow } from './FormWidgets';
 import { AnalyticsSummary } from '../shared/analytics';
 import { CommercialReport } from './CommercialReport';
-export type NamedRecord = CrmRecord & { companyName: string };
+export type NamedRecord = CrmRecord & { companyName: string; projectName?: string | null };
 type Common = {
   companies: Company[];
   projects: NamedRecord[];
@@ -351,6 +352,7 @@ export function TaskList({
               <strong className={t.data.done ? 'done' : ''}>{t.data.text}</strong>
               <small>
                 {props.projects.find((p) => p.id === t.projectId)?.data.name ||
+                  t.projectName ||
                   companyDisplayName(t.companyName)}
                 {t.data.due
                   ? ' · ' +
@@ -509,6 +511,7 @@ export function TaskList({
                 <dt>Проект</dt>
                 <dd>
                   {props.projects.find((p) => p.id === selected.projectId)?.data.name ||
+                    selected.projectName ||
                     'Не выбран'}
                 </dd>
                 <dt>Контакт</dt>
@@ -536,10 +539,17 @@ export function TaskList({
                   {selected.data.done ? 'Вернуть задачу' : 'Выполнено'}
                 </button>
                 <button
-                  onClick={() => {
-                    const c = props.companies.find((c) => c.id === selected.companyId);
-                    if (c) props.onCompany(c);
-                    setSelected(null);
+                  onClick={async () => {
+                    try {
+                      const c =
+                        props.companies.find((c) => c.id === selected.companyId) ||
+                        (await api<{ company: Company }>(`/companies/${selected.companyId}`))
+                          .company;
+                      props.onCompany(c);
+                      setSelected(null);
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
                   }}
                 >
                   Открыть клиента
@@ -725,7 +735,7 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
     [type, setType] = useState(''),
     [filtersOpen, setFiltersOpen] = useState(false);
   const search = props.tasks.filter((t) =>
-    `${t.data.text} ${t.companyName} ${companyDisplayName(t.companyName)} ${props.projects.find((p) => p.id === t.projectId)?.data.name || ''}`
+    `${t.data.text} ${t.companyName} ${companyDisplayName(t.companyName)} ${props.projects.find((p) => p.id === t.projectId)?.data.name || t.projectName || ''}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
@@ -897,7 +907,7 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
     </>
   );
 }
-export function ProjectsScreen(props: Common & { onCreate: () => void }) {
+export function ProjectsScreen(props: Common & { onCreate: () => void; employeeId?: string }) {
   const [query, setQuery] = useState(''),
     [filter, setFilter] = useState('all'),
     [filtersOpen, setFiltersOpen] = useState(false),
@@ -943,6 +953,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void }) {
     <>
       <div className="section-head">
         <h1>Проекты</h1>
+        {props.employeeId && <p className="pico-employee-context">Проекты клиентов сотрудника</p>}
         <button aria-label="Фильтры проектов" onClick={() => setFiltersOpen(true)}>
           <Icon name="filter" />
         </button>
@@ -1190,6 +1201,23 @@ function calendarRange(key: PeriodKey, anchor = today()) {
   first.setDate(first.getDate() - 29);
   return { from: format(first), to: anchor };
 }
+function analyticsPeriodStorageKey(actorId: string) {
+  return `pico-analytics-period:${actorId}`;
+}
+function readAnalyticsPeriod(actorId: string): { period: PeriodKey; from: string; to: string } {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(analyticsPeriodStorageKey(actorId)) || 'null');
+    if (
+      saved &&
+      ['7', '30', '90', '365', 'custom'].includes(saved.period) &&
+      dateSchema.safeParse(saved.from).success &&
+      dateSchema.safeParse(saved.to).success &&
+      saved.from <= saved.to
+    )
+      return { period: saved.period, from: saved.from, to: saved.to };
+  } catch {}
+  return { period: '30', ...calendarRange('30') };
+}
 const readableRange = (from: string, to: string) =>
   [from, to]
     .map((d) =>
@@ -1210,37 +1238,53 @@ export function AnalyticsScreen({
   companies,
   user,
   users,
+  employeeId = '',
+  onScopeDenied,
 }: {
+  employeeId?: string;
+  onScopeDenied?: (error: Error) => void;
   companies: Company[];
   user: Actor;
   users: Actor[];
 }) {
-  const [period, setPeriod] = useState<PeriodKey>('30'),
-    [from, setFrom] = useState(calendarRange('30').from),
-    [to, setTo] = useState(today()),
+  const [initialPeriod] = useState(() => readAnalyticsPeriod(user.id));
+  const [period, setPeriod] = useState<PeriodKey>(initialPeriod.period),
+    [from, setFrom] = useState(initialPeriod.from),
+    [to, setTo] = useState(initialPeriod.to),
     [periodOpen, setPeriodOpen] = useState(false),
-    [draftPeriod, setDraftPeriod] = useState<PeriodKey>('30'),
+    [draftPeriod, setDraftPeriod] = useState<PeriodKey>(initialPeriod.period),
     [draftFrom, setDraftFrom] = useState(from),
     [draftTo, setDraftTo] = useState(to),
     [summary, setSummary] = useState<AnalyticsSummary | null>(null),
     [error, setError] = useState('');
   useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        analyticsPeriodStorageKey(user.id),
+        JSON.stringify({ period, from, to }),
+      );
+    } catch {}
+  }, [user.id, period, from, to]);
+  useEffect(() => {
     let active = true;
     setError('');
     setSummary(null);
     api<AnalyticsSummary>(
-      `/analytics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      `/analytics?${new URLSearchParams({ from, to, ...(employeeId ? { employeeId } : {}) })}`,
     )
       .then((s) => {
         if (active) setSummary(s);
       })
       .catch((e) => {
-        if (active) setError(e.message);
+        if (active) {
+          setError(e.message);
+          if (e instanceof ApiError && (e.status === 401 || e.status === 403)) onScopeDenied?.(e);
+        }
       });
     return () => {
       active = false;
     };
-  }, [from, to, companies]);
+  }, [from, to, companies, employeeId]);
   const active = companies.filter((c) => !c.archived),
     directions: readonly string[] = active.some((c) => c.divisions.drives != null)
       ? [...primaryDivisions, 'drives']
@@ -1488,7 +1532,14 @@ export function AnalyticsScreen({
           </section>
         </>
       )}
-      {user.role !== 'manager' && <CommercialReport users={users} />}
+      {user.role !== 'manager' && (
+        <CommercialReport
+          users={users}
+          employeeId={employeeId}
+          initialPeriod={{ from, to }}
+          onScopeDenied={onScopeDenied}
+        />
+      )}
     </>
   );
 }

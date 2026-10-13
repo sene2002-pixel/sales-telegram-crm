@@ -1,5 +1,5 @@
 import { companyDisplayName } from '../shared/company-display-name';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Company,
   Extraction,
@@ -9,7 +9,7 @@ import {
   segments,
   stages,
 } from '../shared/contracts';
-import { api } from './api';
+import { api, ApiError } from './api';
 import { Field, Modal, Select } from './forms';
 import { SalesBlocks } from './SalesCard';
 import { salesUpdateSchema } from '../shared/sales';
@@ -17,25 +17,60 @@ import { salesUpdateSchema } from '../shared/sales';
 export function Reports({
   companies,
   onChanged,
+  employeeId = '',
+  initialReportId = null,
+  allowLinkedReport = true,
+  onOwnRecordCreated,
+  onScopeDenied,
 }: {
+  onScopeDenied?: (error: Error) => void;
   companies: Company[];
+  employeeId?: string;
+  initialReportId?: string | null;
+  allowLinkedReport?: boolean;
+  onOwnRecordCreated?: (id: string) => Promise<void>;
   onChanged: () => Promise<void>;
 }) {
   const [reports, setReports] = useState<Report[]>([]),
     [selected, setSelected] = useState<string | null>(
-      new URLSearchParams(location.search).get('report'),
+      initialReportId ||
+        (allowLinkedReport ? new URLSearchParams(location.search).get('report') : null),
     );
   const [text, setText] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const sequence = useRef(0);
   async function refresh() {
-    setReports(await api('/reports'));
+    const current = ++sequence.current;
+    try {
+      const rows = await api<Report[]>(
+        employeeId ? `/reports?${new URLSearchParams({ employeeId })}` : '/reports',
+      );
+      if (current === sequence.current) {
+        setReports(rows);
+        setError('');
+      }
+    } catch (e) {
+      if (current !== sequence.current) return;
+      setError((e as Error).message);
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        setReports([]);
+        setSelected(null);
+        onScopeDenied?.(e);
+      }
+    }
   }
   useEffect(() => {
-    void refresh().catch((e) => setError(e.message));
-    const timer = setInterval(() => refresh().catch(() => {}), 5000);
-    return () => clearInterval(timer);
-  }, []);
+    void refresh();
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => {
+      ++sequence.current;
+      clearInterval(timer);
+    };
+  }, [employeeId]);
+  useEffect(() => {
+    if (initialReportId) setSelected(initialReportId);
+  }, [initialReportId]);
   return (
     <>
       <div className="section-head">
@@ -46,6 +81,11 @@ export function Reports({
         <span className="count">{reports.length}</span>
       </div>
       <section className="panel">
+        {employeeId && (
+          <p className="muted">
+            Фильтр влияет на список. Новый отчёт будет создан от вашего имени.
+          </p>
+        )}
         <h3>Зафиксировать результат разговора</h3>
         <p className="muted">
           Надиктуйте боту или отправьте текст здесь. Сначала вы получите черновик для проверки.
@@ -58,8 +98,12 @@ export function Reports({
             try {
               const r = await api('/reports', 'POST', { text, requestId: crypto.randomUUID() });
               setText('');
-              setSelected(r.id);
-              await refresh();
+              if (employeeId && onOwnRecordCreated) {
+                await onOwnRecordCreated(r.id);
+              } else {
+                setSelected(r.id);
+                await refresh();
+              }
             } catch (e) {
               setError((e as Error).message);
             } finally {
@@ -107,6 +151,7 @@ export function Reports({
       {selected && (
         <ReportEditor
           id={selected}
+          employeeId={employeeId}
           companies={companies}
           onClose={() => setSelected(null)}
           onChanged={async () => {
@@ -123,8 +168,10 @@ function ReportEditor({
   companies,
   onClose,
   onChanged,
+  employeeId,
 }: {
   id: string;
+  employeeId: string;
   companies: Company[];
   onClose: () => void;
   onChanged: () => Promise<void>;
@@ -135,8 +182,18 @@ function ReportEditor({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const readSequence = useRef(0);
+  function checkAuthor(r: Report) {
+    if (employeeId && r.authorId !== employeeId)
+      throw new Error(
+        'Этот отчёт не относится к выбранному сотруднику. Сбросьте фильтр, чтобы открыть его.',
+      );
+  }
   async function load() {
+    const sequence = ++readSequence.current;
     const r = await api<Report & { candidates: string[][]; feedback: string }>(`/reports/${id}`);
+    if (sequence !== readSequence.current) return r;
+    checkAuthor(r);
     setFeedback(r.feedback);
     setReport(r);
     setDraft(r.draft);
@@ -152,6 +209,7 @@ function ReportEditor({
           `/reports/${id}`,
         );
         if (!alive) return;
+        checkAuthor(r);
         setReport(r);
         setFeedback(r.feedback);
         setDraft(r.draft);
@@ -164,9 +222,10 @@ function ReportEditor({
     void poll();
     return () => {
       alive = false;
+      ++readSequence.current;
       clearTimeout(timer);
     };
-  }, [id]);
+  }, [id, employeeId]);
   async function run(fn: () => Promise<any>) {
     setBusy(true);
     setError('');

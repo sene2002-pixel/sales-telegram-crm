@@ -263,7 +263,12 @@ test('analytics endpoint validates ranges and scopes managers to their own compa
   const own = await s.crm.create(manager, { name: 'Своя аналитика' });
   const theirs = await s.crm.create(foreign, { name: 'Чужая аналитика' });
   assert.notEqual(own.id, theirs.id);
-  const day = new Date().toISOString().slice(0, 10),
+  const day = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Moscow',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date()),
     path = `/analytics?from=${day}&to=${day}`;
   await request(app.getHttpServer())
     .get('/api' + path)

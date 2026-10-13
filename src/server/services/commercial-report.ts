@@ -1,3 +1,4 @@
+import { resolveEmployeeFilter } from './employee-filter';
 import { companyDisplayName } from '../../shared/company-display-name';
 import { Actor, dateSchema, idSchema } from '../../shared/contracts';
 import {
@@ -33,7 +34,16 @@ const clean = (s: string) =>
     .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '');
 export class CommercialReportService {
   constructor(private db: Database) {}
-  async generate(actor: Actor, from: string, to: string, authorId?: string) {
+  async generate(actor: Actor, from: string, to: string, authorId?: string, employeeId?: unknown) {
+    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
+    if (employee) {
+      requireCondition(
+        !authorId || authorId === employee,
+        400,
+        'Выбранный автор не соответствует фильтру сотрудника',
+      );
+      authorId = employee;
+    }
     requireCondition(
       isLeader(actor),
       403,

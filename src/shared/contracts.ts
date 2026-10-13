@@ -22,6 +22,7 @@ export interface Actor {
   active: boolean;
   supervisorId?: string | null;
 }
+export type EmployeeFilterOption = Pick<Actor, 'id' | 'name' | 'role'>;
 export const stages = ['new', 'dialogue', 'proposal', 'supply', 'closed'] as const;
 export const labels: Record<string, string> = {
   manager: 'Менеджер',

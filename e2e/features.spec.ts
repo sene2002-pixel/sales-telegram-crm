@@ -331,12 +331,7 @@ test('[UI-06] supervisor assigns company and filters by owner', async ({ page })
   await dialog.getByRole('button', { name: 'Изменения', exact: true }).click();
   await expect(dialog.locator('.records')).toContainText('Ответственный изменён');
   await dialog.getByRole('button', { name: 'Закрыть' }).click();
-  await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
-  await page.getByLabel('Ответственный', { exact: true }).selectOption(id);
-  await page
-    .getByRole('dialog', { name: 'Фильтры клиентов' })
-    .getByRole('button', { name: /^Показать/ })
-    .click();
+  await page.getByRole('combobox', { name: 'Данные сотрудника', exact: true }).selectOption(id);
   await page.getByLabel('Поиск компаний').fill(c.name);
   await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
 });

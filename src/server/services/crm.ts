@@ -1,3 +1,4 @@
+import { resolveEmployeeFilter } from './employee-filter';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -65,10 +66,11 @@ export class CrmService {
     );
     return mapCompany(row);
   }
-  async list(actor: Actor) {
+  async list(actor: Actor, employeeId?: unknown) {
+    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
     const rows = await this.db.query(
-      `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id WHERE ($1::boolean OR c.owner_id=$2) ORDER BY c.updated_at DESC`,
-      [isLeader(actor), actor.id],
+      `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id WHERE ($1::boolean OR c.owner_id=$2) AND ($3::uuid IS NULL OR c.owner_id=$3) ORDER BY c.updated_at DESC`,
+      [isLeader(actor), actor.id, employee],
     );
     return rows.map(mapCompany);
   }
@@ -207,12 +209,17 @@ export class CrmService {
     await audit(tx, actor.id, archived ? 'company.archived' : 'company.restored', id, id);
     return this.company(actor, id, tx);
   }
-  async records(actor: Actor, kind: RecordKind) {
+  async records(actor: Actor, kind: RecordKind, employeeId?: unknown) {
+    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
     const rows = await this.db.query(
-      `SELECT r.*,u.name AS author_name,c.data->>'name' AS company_name FROM records r JOIN companies c ON c.id=r.company_id JOIN users u ON u.id=r.author_id WHERE r.kind=$1 AND NOT r.deleted AND ($2::boolean OR c.owner_id=$3) ORDER BY r.created_at DESC`,
-      [kind, isLeader(actor), actor.id],
+      `SELECT r.*,u.name AS author_name,c.data->>'name' AS company_name,p.data->>'name' AS project_name FROM records r JOIN companies c ON c.id=r.company_id JOIN users u ON u.id=r.author_id LEFT JOIN records p ON p.id=r.project_id AND p.company_id=r.company_id AND p.kind='project' AND NOT p.deleted WHERE r.kind=$1 AND NOT r.deleted AND ($2::boolean OR c.owner_id=$3) AND ($4::uuid IS NULL OR CASE WHEN r.kind='task' THEN r.assignee_id ELSE c.owner_id END=$4) ORDER BY r.created_at DESC`,
+      [kind, isLeader(actor), actor.id, employee],
     );
-    return rows.map((r) => ({ ...mapRecord(r), companyName: r.company_name }));
+    return rows.map((r) => ({
+      ...mapRecord(r),
+      companyName: r.company_name,
+      projectName: r.project_name || null,
+    }));
   }
   async salesHistory(actor: Actor, companyId: string, tx: Sql = this.db): Promise<SalesEvent[]> {
     await this.company(actor, companyId, tx);

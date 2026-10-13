@@ -970,3 +970,25 @@ test('UI polish: compact client disclosure, Russian upload status and readable a
   const position = await profileTitle.boundingBox();
   expect(position!.y).toBeLessThan(180);
 });
+
+test('UI audit: restored session never restores an actor after the second authoritative identity read denies access', async ({
+  page,
+}) => {
+  await isolatedActor(page, 'supervisor');
+  let calls = 0;
+  await page.route('**/api/me', async (route) => {
+    calls++;
+    if (calls === 1) await route.continue();
+    else
+      await route.fulfill({ status: 403, json: { message: 'Локальный отзыв доступа при старте' } });
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Администратор', exact: true })).toBeVisible();
+  await expect(page.locator('.app-shell')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('Локальный отзыв доступа');
+  expect(calls).toBeGreaterThanOrEqual(2);
+  expect(await page.evaluate(() => sessionStorage.getItem('crm-session'))).toBeNull();
+  await expect(
+    page.locator('.pico-client-accordion, .pico-task-row, .pico-scoped-content'),
+  ).toHaveCount(0);
+});

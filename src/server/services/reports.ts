@@ -1,3 +1,4 @@
+import { resolveEmployeeFilter } from './employee-filter';
 import { companyDisplayName } from '../../shared/company-display-name';
 import { randomUUID } from 'node:crypto';
 import { DiagnosticLog } from '../infra/diagnostic-log';
@@ -181,11 +182,12 @@ export class ReportService {
       JSON.stringify(taskKey ? [taskKey] : this.messages.keys(payload, processingKey)),
     ]);
   }
-  async list(actor: Actor) {
+  async list(actor: Actor, employeeId?: unknown) {
+    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
     return (
       await this.db.query(
-        `SELECT r.*,u.name AS author_name FROM reports r JOIN users u ON u.id=r.author_id WHERE ($1::boolean OR r.author_id=$2) AND r.purpose='report' ORDER BY r.created_at DESC LIMIT 200`,
-        [isLeader(actor), actor.id],
+        `SELECT r.*,u.name AS author_name FROM reports r JOIN users u ON u.id=r.author_id WHERE ($1::boolean OR r.author_id=$2) AND r.purpose='report' AND ($3::uuid IS NULL OR r.author_id=$3) ORDER BY r.created_at DESC LIMIT 200`,
+        [isLeader(actor), actor.id, employee],
       )
     ).map(mapReport);
   }
