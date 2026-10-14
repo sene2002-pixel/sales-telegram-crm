@@ -286,6 +286,10 @@ for (const width of [360, 390, 1440]) {
   test(`UI audit: long client, every detail tab, nested forms, letter and failures at ${width}px`, async ({
     page,
   }, info) => {
+    // This scenario captures dozens of states; keep individual actions bounded on slower CI.
+    test.setTimeout(90_000);
+    page.setDefaultTimeout(30_000);
+    page.setDefaultNavigationTimeout(30_000);
     await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
     if (info.project.name === 'mobile' && width === 1440) await portraitTablet(page);
     await login(page);
