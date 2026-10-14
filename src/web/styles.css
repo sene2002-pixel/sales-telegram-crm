@@ -3405,3 +3405,385 @@ select.pico-filter-sort {
     z-index: 7;
   }
 }
+
+/* Final supplied Pico screen references: compact counters, chip filters and event dots. */
+:root {
+  --primary: #1f7aea;
+  --primary-hover: #1764c2;
+  --soft: #e4effd;
+}
+.pico-more-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.pico-more-button > svg {
+  width: 26px;
+  height: 26px;
+}
+.pico-home-greeting {
+  margin-bottom: 14px;
+}
+.pico-home-welcome h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  margin: 0;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+.pico-home-welcome > .muted {
+  margin: 0;
+  font-size: 14px;
+  line-height: 19px;
+  font-weight: 500;
+}
+.pico-home-greeting .pico-admin-button {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #f6d68a;
+  border-radius: 9px;
+  background: #fff3db;
+}
+.pico-home-overview {
+  border-radius: 20px;
+  margin: 0 0 20px;
+}
+.pico-home-overview .pico-employee-filter {
+  padding: 0 16px;
+}
+.pico-home-overview .pico-employee-filter-control {
+  min-height: 52px;
+  gap: 12px;
+}
+.pico-home-overview .pico-employee-filter-control label {
+  position: relative;
+}
+.pico-home-overview .pico-employee-filter-control label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.pico-home-overview .pico-employee-filter-control select {
+  font-size: 16px;
+  line-height: 21px;
+  font-weight: 700;
+  height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.pico-employee-notebook {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #e4effd;
+  color: #1f7aea;
+  flex: 0 0 36px;
+}
+.pico-home-overview .pico-summary {
+  height: 64px;
+  padding: 0;
+  align-items: center;
+}
+.pico-home-overview .pico-summary button {
+  min-height: 0;
+  height: 44px;
+  gap: 2px;
+  padding: 0 8px;
+  background: white;
+}
+.pico-home-overview .pico-summary strong {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 800;
+}
+.pico-home-overview .pico-summary small {
+  font-size: 12.5px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.pico-home > h2 {
+  margin: 20px 0 8px;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+.pico-home .pico-empty {
+  padding: 16px 20px 18px;
+  border-radius: 20px;
+}
+.pico-home .pico-empty-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  margin-bottom: 0;
+}
+.pico-home .pico-empty-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.pico-home .pico-empty h3 {
+  margin: 10px 0 3px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
+}
+.pico-home .pico-empty p {
+  max-width: 290px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.pico-home .pico-add-row {
+  margin-top: 10px;
+  min-height: 44px;
+  border-radius: 16px;
+}
+.pico-home-start {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #64738d;
+}
+.pico-home-start > summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  color: var(--primary);
+}
+.pico-filter-chip-row.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 10px 0 12px;
+}
+.workspace .pico-filter-chip-row > button {
+  flex: 0 0 auto;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  border-radius: 15px;
+  white-space: nowrap;
+}
+.workspace .pico-filter-chip-row > .pico-filter-chip {
+  width: 60px;
+  height: 30px;
+  padding: 0;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.pico-filter-chip > svg {
+  width: 16px;
+  height: 16px;
+}
+.pico-search {
+  min-height: 44px;
+  border-radius: 14px;
+  padding: 0 14px;
+  margin-bottom: 0;
+}
+.pico-search input {
+  min-width: 0;
+}
+.pico-calendar {
+  padding: 10px 12px 8px;
+  border-radius: 20px;
+  margin: 12px 0;
+}
+.pico-calendar > .section-head {
+  height: 28px;
+  margin: 0;
+}
+.pico-calendar .section-head strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+.pico-calendar input[type='month'] {
+  top: 8px;
+  height: 28px;
+}
+.pico-calendar .calendar {
+  gap: 0;
+  margin-top: 2px;
+}
+.pico-calendar .calendar > small {
+  font-size: 11px;
+  line-height: 16px;
+  margin: 0;
+}
+.pico-calendar .calendar button,
+.pico-calendar .calendar button.selected {
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  gap: 0;
+}
+.pico-calendar .calendar button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-radius: 16px;
+}
+.pico-calendar .calendar .pico-calendar-day {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #1a2151;
+}
+.pico-calendar .calendar button strong {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+}
+.pico-calendar .calendar .selected .pico-calendar-day {
+  background: var(--primary);
+  color: #fff;
+}
+.pico-calendar .calendar .selected strong {
+  background: none;
+  color: #fff;
+}
+.pico-calendar .calendar .pico-calendar-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1px;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+.pico-calendar-dots i {
+  width: 4px;
+  height: 4px;
+  display: block;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.pico-calendar .selected .pico-calendar-dots {
+  bottom: 3px;
+}
+.pico-calendar .selected .pico-calendar-dots i {
+  width: 3px;
+  height: 3px;
+  background: #fff;
+}
+.pico-client-row {
+  min-height: 84px;
+  padding: 14px;
+  gap: 10px;
+}
+.pico-client-row > .icon-badge {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 12px;
+}
+.pico-client-row .company-money {
+  flex: 0 0 76px;
+  min-width: 0;
+  padding: 0;
+}
+.pico-client-row .company-money small {
+  font-size: 12px;
+  line-height: 16px;
+}
+.pico-client-row .company-money strong {
+  font-size: 14px;
+  line-height: 19px;
+}
+.pico-client-row > span:not(.icon-badge):not(.company-money) > strong {
+  font-size: 16px;
+  line-height: 21px;
+  font-weight: 800;
+}
+.pico-client-row > span:not(.icon-badge):not(.company-money) > small {
+  font-size: 13px;
+  line-height: 18px;
+}
+@media (max-width: 360px) {
+  .workspace .pico-filter-chip-row > button {
+    padding: 0 10px;
+  }
+  .workspace .pico-filter-chip-row > .pico-filter-chip {
+    width: 60px;
+    padding: 0;
+  }
+}
+@media (max-width: 760px) {
+  .workspace .pico-scoped-content > .section-head:has(> h1),
+  .workspace .pico-scoped-content > .pico-home .section-head:has(> h1) {
+    min-height: 40px;
+  }
+  .workspace .pico-scoped-content > .section-head > h1 {
+    font-size: 24px;
+    line-height: 30px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+  }
+}
+.pico-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pico-project-row > summary strong {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
+}
+.pico-project-row > summary small {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.pico-client-row .company-money {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.pico-client-row .company-money strong {
+  white-space: nowrap;
+}

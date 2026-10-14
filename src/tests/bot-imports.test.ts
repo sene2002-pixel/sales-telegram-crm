@@ -1,0 +1,240 @@
+import { before, beforeEach, after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import request from 'supertest';
+import dns from 'node:dns/promises';
+import { Actor } from '../shared/contracts';
+import { makeConfig } from '../server/config';
+import { createApp, Services } from '../server/http/app';
+import { companyImportLimits } from '../server/services/company-import-parser';
+let app: any, db: any, services: Services, dir: string, actor: Actor, foreign: Actor;
+let input = Buffer.from(''),
+  downloads = 0,
+  sequence = 100;
+const replies: { method: string; payload: any }[] = [];
+const secret = 'synthetic-import-webhook-secret';
+before(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'bot-import-tests-'));
+  const built = await createApp(
+    makeConfig({
+      NODE_ENV: 'test',
+      DEV_AUTH: 'true',
+      WORKER_ENABLED: 'false',
+      DATA_DIR: dir,
+      DATABASE_URL: '',
+      BOT_TOKEN: 'synthetic-import-token',
+      TELEGRAM_WEBHOOK_SECRET: secret,
+      OPENAI_API_KEY: '',
+      SESSION_SECRET: 'local-import-test-secret-at-least-32-characters',
+    }),
+  );
+  app = built.app;
+  db = built.db;
+  services = built.services;
+  const admin = (await services.auth.dev('admin', '127.0.0.1')).user;
+  actor = await services.auth.saveUser(admin, {
+    telegramId: '992001',
+    name: 'Импортирующий менеджер',
+    role: 'manager',
+    active: true,
+  });
+  foreign = await services.auth.saveUser(admin, {
+    telegramId: '992002',
+    name: 'Другой менеджер',
+    role: 'manager',
+    active: true,
+  });
+  const telegram = (services.bot as any).telegram;
+  telegram.call = async (method: string, payload: any) => {
+    replies.push({ method, payload });
+    return { message_id: ++sequence };
+  };
+  telegram.download = async (_id: string, limit: number) => {
+    downloads++;
+    assert.equal(limit, companyImportLimits.bytes);
+    return input;
+  };
+});
+beforeEach(async () => {
+  await db.query(
+    'TRUNCATE company_imports,outbox,reports,records,companies,audit,error_logs CASCADE',
+  );
+  await db.query('UPDATE users SET active=true WHERE id=ANY($1::uuid[])', [[actor.id, foreign.id]]);
+  replies.length = 0;
+  downloads = 0;
+  input = Buffer.from('Название;ИНН;Город\nНовый импортированный клиент;1234567894;Казань');
+});
+after(async () => {
+  await app?.close();
+  await db?.close();
+  if (dir) await rm(dir, { recursive: true, force: true });
+});
+function document(who = actor, extra: object = {}) {
+  const id = ++sequence;
+  return {
+    update_id: id,
+    message: {
+      message_id: id,
+      date: Math.floor(Date.now() / 1000),
+      from: { id: Number(who.telegramId), first_name: who.name },
+      chat: { id: Number(who.telegramId), type: 'private' },
+      document: {
+        file_id: 'local-fixture',
+        file_name: 'companies.csv',
+        mime_type: 'text/csv',
+        file_size: input.length,
+        ...extra,
+      },
+    },
+  };
+}
+function callback(data: string, who = actor) {
+  return {
+    update_id: ++sequence,
+    callback_query: {
+      id: 'callback-' + sequence,
+      from: { id: Number(who.telegramId), first_name: who.name },
+      message: { chat: { id: Number(who.telegramId), type: 'private' } },
+      data,
+    },
+  };
+}
+function webhook(body: object, authorized = true) {
+  const r = request(app.getHttpServer()).post('/api/telegram/webhook');
+  return (authorized ? r.set('X-Telegram-Bot-Api-Secret-Token', secret) : r).send(body);
+}
+async function rows(table: string) {
+  return db.query('SELECT * FROM ' + table);
+}
+function confirmData() {
+  const reply = replies.findLast((r) =>
+    r.payload.reply_markup?.inline_keyboard?.some((row: any[]) =>
+      row.some((button) => button.callback_data?.startsWith('ic:')),
+    ),
+  );
+  assert.ok(
+    reply,
+    'Explicit import confirmation is shown: ' + JSON.stringify(replies.map((r) => r.payload.text)),
+  );
+  return reply.payload.reply_markup.inline_keyboard[0][0].callback_data as string;
+}
+
+test('Bot CSV webhook prepares a draft, denies foreign confirmation and saves once only after its author confirms', async () => {
+  input = Buffer.from(
+    'Название;ИНН;Город;Тип;Стадия\nНовый импортированный клиент;1234567894;Казань;;\nКлиент с указанным типом;;Москва;oem;proposal',
+  );
+  const uploaded = document();
+  await webhook(uploaded).expect(201);
+  assert.equal(downloads, 1);
+  assert.equal((await rows('companies')).length, 0);
+  assert.ok(
+    replies.some((r) => /Пока ничего не сохранено/.test(r.payload.text || '')),
+    JSON.stringify(replies.map((r) => r.payload.text)),
+  );
+  const previewText = replies.map((r) => r.payload.text || '').join('\n');
+  assert.equal((previewText.match(/Стадия в источнике не указана/g) || []).length, 1);
+  assert.ok(previewText.includes('Тип: OEM'));
+  assert.ok(previewText.includes('Стадия: Предложение'));
+  const data = confirmData();
+  await webhook(callback(data, foreign)).expect(201);
+  assert.equal((await rows('companies')).length, 0);
+  assert.ok(
+    replies.some(
+      (r) =>
+        r.method === 'answerCallbackQuery' &&
+        r.payload.show_alert &&
+        /Импорт недоступен/.test(r.payload.text),
+    ),
+  );
+  assert.ok((await rows('error_logs')).some((r: any) => r.status === 403));
+  await webhook(callback(data)).expect(201);
+  await webhook(callback(data)).expect(201);
+  const companies = await rows('companies');
+  assert.equal(companies.length, 2);
+  assert.ok(companies.every((company: any) => company.owner_id === actor.id));
+  const unknown = companies.find(
+    (company: any) => company.data.name === 'Новый импортированный клиент',
+  );
+  const known = companies.find((company: any) => company.data.name === 'Клиент с указанным типом');
+  assert.equal(unknown.data.inn, '1234567894');
+  assert.equal(unknown.data.city, 'Казань');
+  assert.equal(unknown.data.segment, 'unknown');
+  assert.equal(unknown.data.stage, 'new');
+  assert.equal(known.data.segment, 'oem');
+  assert.equal(known.data.stage, 'proposal');
+  assert.equal((await rows('company_imports'))[0].status, 'saved');
+  const manual = await services.crm.create(actor, { name: 'Добавлен вручную' });
+  assert.equal(manual.segment, 'end_client');
+});
+
+test('Bot import transport requires webhook authentication and a matching sender in a private chat', async () => {
+  await webhook(document(), false).expect(401);
+  assert.equal(downloads, 0);
+  const group = document();
+  group.message.chat.type = 'group';
+  await webhook(group).expect(201);
+  const mismatch = document();
+  mismatch.message.chat.id = Number(foreign.telegramId);
+  await webhook(mismatch).expect(201);
+  assert.equal(downloads, 0);
+  assert.equal((await rows('company_imports')).length, 0);
+  assert.equal((await rows('companies')).length, 0);
+});
+
+test('Bot imports reject oversized, unsupported and private data without persisting a draft or company', async () => {
+  await webhook(document(actor, { file_size: companyImportLimits.bytes + 1 })).expect(201);
+  assert.equal(downloads, 0);
+  assert.ok(replies.some((r) => /2 МБ/.test(r.payload.text || '')));
+  await webhook(
+    document(actor, { file_name: 'unsupported.pdf', mime_type: 'application/pdf' }),
+  ).expect(201);
+  assert.equal(downloads, 0);
+  input = Buffer.from('Название;Город\nПриватный клиент;person@example.test');
+  await webhook(document()).expect(201);
+  assert.equal(downloads, 1);
+  assert.ok(replies.some((r) => /без личных контактов и секретов/.test(r.payload.text || '')));
+  assert.equal((await rows('company_imports')).length, 0);
+  assert.equal((await rows('companies')).length, 0);
+  assert.equal((await rows('reports')).length, 0);
+});
+
+test('Bot pending import cannot create a company after actor access revocation', async () => {
+  await webhook(document()).expect(201);
+  const data = confirmData();
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actor.id]);
+  await webhook(callback(data)).expect(201);
+  assert.equal((await rows('companies')).length, 0);
+  assert.equal((await rows('company_imports'))[0].status, 'pending');
+  assert.ok(replies.some((r) => r.method === 'answerCallbackQuery' && r.payload.show_alert));
+});
+
+test('Bot Google document import rejects unexpected URL query before DNS or remote download', async () => {
+  const lookup = dns.lookup;
+  let networkAttempts = 0;
+  dns.lookup = (async () => {
+    networkAttempts++;
+    throw new Error('Unexpected network in local test');
+  }) as typeof dns.lookup;
+  try {
+    const id = ++sequence;
+    await webhook({
+      update_id: id,
+      message: {
+        message_id: id,
+        date: Math.floor(Date.now() / 1000),
+        from: { id: Number(actor.telegramId), first_name: actor.name },
+        chat: { id: Number(actor.telegramId), type: 'private' },
+        text: 'https://docs.google.com/document/d/1234567894abcdef/edit?redirect=http://127.0.0.1',
+      },
+    }).expect(201);
+    assert.equal(networkAttempts, 0);
+    assert.equal(downloads, 0);
+    assert.equal((await rows('company_imports')).length, 0);
+    assert.equal((await rows('companies')).length, 0);
+    assert.ok(replies.some((r) => r.payload.text || r.payload.show_alert));
+  } finally {
+    dns.lookup = lookup;
+  }
+});

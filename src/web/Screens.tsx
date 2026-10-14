@@ -1,3 +1,4 @@
+import { compactMoney, fullMoney } from './api';
 import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useState } from 'react';
 import {
@@ -585,6 +586,7 @@ export function HomeScreen(
   props: Common & {
     user: Actor;
     onNavigate: (tab: string) => void;
+    onOverdue?: () => void;
     onCreateCompany: () => void;
     onCreateRecord: (kind: 'task' | 'project') => void;
   },
@@ -595,7 +597,8 @@ export function HomeScreen(
   return (
     <div className="pico-home">
       {!active.length && (
-        <>
+        <details className="pico-home-start">
+          <summary>С чего начать</summary>
           <section className="pico-intro">
             <h2>Как работает Pico</h2>
             <p>
@@ -649,45 +652,46 @@ export function HomeScreen(
               </button>
             ))}
           </div>
-        </>
+        </details>
       )}
-      {active.length > 0 && (
-        <>
-          <h2>Сегодня</h2>
-          {todays.some((t) => t.data.type !== 'meeting') ? (
-            <TaskList
-              inlineActions
-              {...props}
-              list={todays.filter((t) => t.data.type !== 'meeting')}
-            />
-          ) : (
-            <Empty
-              icon="calendar"
-              title="На сегодня задач нет"
-              text="Хорошее время, чтобы запланировать следующий контакт с клиентами."
-            />
-          )}
-          <h2>Встречи</h2>
-          {open.some((t) => t.data.type === 'meeting') ? (
-            <TaskList
-              {...props}
-              list={open
-                .filter((t) => t.data.type === 'meeting')
-                .sort((a, b) =>
-                  String(a.data.due || '9999').localeCompare(String(b.data.due || '9999')),
-                )}
-            />
-          ) : (
-            <Empty
-              icon="clients"
-              title="Встреч пока нет"
-              text="Создайте задачу типа «Встреча», чтобы запланировать общение с клиентом."
-            />
-          )}
-        </>
-      )}
+      <>
+        <h2>Сегодня</h2>
+        {todays.some((t) => t.data.type !== 'meeting') ? (
+          <TaskList
+            inlineActions
+            {...props}
+            list={todays.filter((t) => t.data.type !== 'meeting')}
+          />
+        ) : (
+          <Empty
+            icon="today-calendar"
+            title="На сегодня задач нет"
+            text="Хорошее время, чтобы запланировать следующий контакт с клиентами."
+          />
+        )}
+        <h2>Встречи</h2>
+        {open.some((t) => t.data.type === 'meeting') ? (
+          <TaskList
+            {...props}
+            list={open
+              .filter((t) => t.data.type === 'meeting')
+              .sort((a, b) =>
+                String(a.data.due || '9999').localeCompare(String(b.data.due || '9999')),
+              )}
+          />
+        ) : (
+          <Empty
+            icon="handshake"
+            title="Встреч не запланировано"
+            text="Каждая встреча приближает сделку. Назначьте первую, это займёт минуту."
+          />
+        )}
+      </>
       {open.some((t) => t.data.due && t.data.due < today()) && (
-        <button className="pico-add-row" onClick={() => props.onNavigate('tasks')}>
+        <button
+          className="pico-add-row"
+          onClick={() => (props.onOverdue ? props.onOverdue() : props.onNavigate('tasks'))}
+        >
           Просроченные задачи · {open.filter((t) => t.data.due && t.data.due < today()).length}
           <Icon name="chevron-right" size={16} />
         </button>
@@ -695,9 +699,15 @@ export function HomeScreen(
     </div>
   );
 }
-export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: () => void }) {
+export function TasksScreen(
+  props: Common & {
+    calendarOnly?: boolean;
+    onCreate: () => void;
+    initialFilter?: 'open' | 'overdue';
+  },
+) {
   const [query, setQuery] = useState(''),
-    [filter, setFilter] = useState('open'),
+    [filter, setFilter] = useState<string>(props.initialFilter || 'open'),
     [month, setMonth] = useState(today().slice(0, 7)),
     [date, setDate] = useState(today()),
     [byDate, setByDate] = useState(!!props.calendarOnly),
@@ -727,9 +737,6 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
     <>
       <div className="section-head">
         <h1>{props.calendarOnly ? 'Календарь' : 'Задачи'}</h1>
-        <button aria-label="Фильтры задач" onClick={() => setFiltersOpen(true)}>
-          <Icon name="filter" />
-        </button>
       </div>
       <div className="pico-search">
         <Icon name="search" />
@@ -739,6 +746,33 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+      </div>
+      <div className="tabs pico-chips pico-filter-chip-row">
+        <button
+          aria-pressed={!byDate}
+          className={!byDate ? 'active' : ''}
+          onClick={() => setByDate(false)}
+        >
+          Все даты
+        </button>
+        <button
+          aria-pressed={byDate && date === today()}
+          className={byDate && date === today() ? 'active' : ''}
+          onClick={() => {
+            setDate(today());
+            setMonth(today().slice(0, 7));
+            setByDate(true);
+          }}
+        >
+          Сегодня
+        </button>
+        <button
+          className="pico-filter-chip"
+          aria-label="Фильтры задач"
+          onClick={() => setFiltersOpen(true)}
+        >
+          <Icon name="filter" size={16} />
+        </button>
       </div>
       <div className="pico-calendar panel">
         <div className="section-head">
@@ -778,14 +812,23 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
                   key={day}
                   aria-label={`${day}${count ? `, открытых задач: ${count}` : ''}`}
                   aria-pressed={byDate && date === day}
-                  className={byDate && date === day ? 'selected' : ''}
+                  className={(byDate ? date === day : day === today()) ? 'selected' : ''}
+                  aria-current={day === today() ? 'date' : undefined}
                   onClick={() => {
                     setDate(day);
                     setByDate(true);
                   }}
                 >
-                  <strong>{i + 1}</strong>
-                  {count > 0 && <span className="calendar-count">{count}</span>}
+                  <span className="pico-calendar-day">
+                    <strong>{i + 1}</strong>
+                    {count > 0 && (
+                      <span className="pico-calendar-dots" aria-hidden="true">
+                        {Array.from({ length: Math.min(count, 3) }, (_, index) => (
+                          <i key={index} />
+                        ))}
+                      </span>
+                    )}
+                  </span>
                 </button>
               );
             },
@@ -804,7 +847,12 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
               ['overdue', 'Просроченные'],
               ['done', 'Выполненные'],
             ].map(([k, l]) => (
-              <button key={k} className={filter === k ? 'active' : ''} onClick={() => setFilter(k)}>
+              <button
+                key={k}
+                aria-pressed={filter === k}
+                className={filter === k ? 'active' : ''}
+                onClick={() => setFilter(k)}
+              >
                 {l}
               </button>
             ))}
@@ -824,7 +872,11 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
             ))}
           </div>
           <div className="actions">
-            <button className={!byDate ? 'active' : ''} onClick={() => setByDate(false)}>
+            <button
+              aria-pressed={!byDate}
+              className={!byDate ? 'active' : ''}
+              onClick={() => setByDate(false)}
+            >
               Все даты
             </button>
             <button
@@ -851,22 +903,34 @@ export function TasksScreen(props: Common & { calendarOnly?: boolean; onCreate: 
           </div>
         </Modal>
       )}
-      <div className="tabs pico-chips">
-        <button className={!byDate ? 'active' : ''} onClick={() => setByDate(false)}>
-          Все даты
-        </button>
-        <button
-          onClick={() => {
-            setDate(today());
-            setMonth(today().slice(0, 7));
-            setByDate(true);
-          }}
-        >
-          Сегодня
-        </button>
-      </div>
-      {byDate && <p className="muted">{date}</p>}
-      <TaskList {...props} list={list} />
+      {byDate && (
+        <span className="pico-visually-hidden" role="status">
+          Дата задач: {date}
+        </span>
+      )}
+      {list.length ? (
+        <TaskList {...props} list={list} />
+      ) : byDate && !props.tasks.some((t) => !t.data.done && t.data.due === date) ? (
+        <Empty
+          icon="task-empty-calendar"
+          title="Этот день пока свободен"
+          text="Кто планирует день, быстрее приходит к результату. Добавьте первую задачу."
+        />
+      ) : (
+        <Empty
+          icon="task-empty-calendar"
+          title={
+            query || type || filter !== 'open'
+              ? 'Нет задач по выбранным фильтрам'
+              : 'Задач пока нет'
+          }
+          text={
+            query || type || filter !== 'open'
+              ? 'Измените поиск или фильтры.'
+              : 'Создайте задачу или отправьте отчёт в чат Pico.'
+          }
+        />
+      )}
       {props.calendarOnly && (
         <>
           <h3>Без срока</h3>
@@ -923,9 +987,6 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
       <div className="section-head">
         <h1>Проекты</h1>
         {props.employeeId && <p className="pico-employee-context">Проекты клиентов сотрудника</p>}
-        <button aria-label="Фильтры проектов" onClick={() => setFiltersOpen(true)}>
-          <Icon name="filter" />
-        </button>
       </div>
       {filtersOpen && (
         <Modal title="Фильтры проектов" onClose={() => setFiltersOpen(false)}>
@@ -982,16 +1043,28 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div className="tabs pico-chips">
+      <div className="tabs pico-chips pico-filter-chip-row">
         {[
           ['all', 'Все'],
           ['open', 'В работе'],
           ['closed', 'Закрытые'],
         ].map(([k, l]) => (
-          <button key={k} className={filter === k ? 'active' : ''} onClick={() => setFilter(k)}>
+          <button
+            key={k}
+            aria-pressed={filter === k}
+            className={filter === k ? 'active' : ''}
+            onClick={() => setFilter(k)}
+          >
             {l}
           </button>
         ))}
+        <button
+          className="pico-filter-chip"
+          aria-label="Фильтры проектов"
+          onClick={() => setFiltersOpen(true)}
+        >
+          <Icon name="filter" size={16} />
+        </button>
       </div>
       <button className="pico-add-row" onClick={props.onCreate}>
         <Icon name="plus" /> Добавить проект <Icon name="chevron-right" size={16} />
@@ -1029,7 +1102,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
                   );
                 return (
                   <span className={'icon-badge badge-' + color}>
-                    <Icon name={icon} />
+                    <Icon name={icon === 'factory' ? 'project-factory' : icon} />
                   </span>
                 );
               })()}
@@ -1037,7 +1110,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
                 <strong>{p.data.name}</strong>
                 <small>{companyDisplayName(p.companyName)}</small>
                 <small>
-                  Сумма: <b>{money(p.data.amount)}</b>
+                  Сумма: <b title={fullMoney(p.data.amount)}>{compactMoney(p.data.amount)}</b>
                 </small>
               </span>
               <Icon name="chevron-down" size={16} />

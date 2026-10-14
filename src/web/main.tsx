@@ -84,7 +84,8 @@ function App() {
     [clientStatus, setClientStatus] = useState('all'),
     [clientSort, setClientSort] = useState('name'),
     [selectedTab, setSelectedTab] = useState('contact'),
-    [createdClientId, setCreatedClientId] = useState('');
+    [createdClientId, setCreatedClientId] = useState(''),
+    [taskView, setTaskView] = useState<'open' | 'overdue'>('open');
   const [employeeId, setEmployeeId] = useState(''),
     [employeeOptions, setEmployeeOptions] = useState<EmployeeFilterOption[]>([]),
     [employeeError, setEmployeeError] = useState(''),
@@ -104,6 +105,7 @@ function App() {
     } catch {}
   }
   function clearScopeData() {
+    setTaskView('open');
     ++scopeGeneration.current;
     setCompanies([]);
     setTasks([]);
@@ -169,6 +171,7 @@ function App() {
     };
   }, [more]);
   function clearAccountData() {
+    setTaskView('open');
     setCompanies([]);
     setUsers([]);
     setTasks([]);
@@ -502,6 +505,7 @@ function App() {
               key={key}
               className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
               onClick={() => {
+                if (key === 'tasks') setTaskView('open');
                 setTab(key!);
                 setError('');
               }}
@@ -557,7 +561,7 @@ function App() {
             aria-expanded={more}
             onClick={() => setMore(!more)}
           >
-            <Icon name="settings" />
+            <Icon name="settings" size={26} />
           </button>
           {more && (
             <div ref={moreMenuRef} className="pico-more-menu">
@@ -606,7 +610,7 @@ function App() {
           <>
             <div className="pico-home-greeting">
               <div className="pico-home-welcome">
-                <h1>
+                <h1 aria-label={`Привет, ${user.name.split(' ')[0]}!`}>
                   Привет, {user.name.split(' ')[0]}!
                   {user.role === 'admin' && (
                     <>
@@ -616,7 +620,7 @@ function App() {
                         aria-label="Управление пользователями"
                         onClick={() => setTab('users')}
                       >
-                        <Icon name="crown" size={18} />
+                        <Icon name="crown" size={16} />
                       </button>
                     </>
                   )}
@@ -678,6 +682,10 @@ function App() {
                 {...screenProps}
                 user={user}
                 onNavigate={setTab}
+                onOverdue={() => {
+                  setTaskView('overdue');
+                  setTab('tasks');
+                }}
                 onCreateCompany={() => setCreate(true)}
                 onCreateRecord={setRecordCreate}
               />
@@ -695,12 +703,6 @@ function App() {
               <>
                 <div className="section-head">
                   <h1>Клиенты</h1>
-                  <button
-                    aria-label="Фильтры клиентов"
-                    onClick={() => setFiltersOpen(!filtersOpen)}
-                  >
-                    <Icon name="filter" />
-                  </button>
                 </div>
                 <div className="pico-search">
                   <Icon name="search" />
@@ -711,7 +713,7 @@ function App() {
                     onChange={(e) => setQuery(e.target.value)}
                   />
                 </div>
-                <div className="tabs pico-chips">
+                <div className="tabs pico-chips pico-filter-chip-row">
                   {[
                     ['all', 'Все'],
                     ['open', 'В работе'],
@@ -719,12 +721,20 @@ function App() {
                   ].map(([key, label]) => (
                     <button
                       key={key}
+                      aria-pressed={clientStatus === key}
                       className={clientStatus === key ? 'active' : ''}
                       onClick={() => setClientStatus(key)}
                     >
                       {label}
                     </button>
                   ))}
+                  <button
+                    className="pico-filter-chip"
+                    aria-label="Фильтры клиентов"
+                    onClick={() => setFiltersOpen(true)}
+                  >
+                    <Icon name="filter" size={16} />
+                  </button>
                 </div>
                 <button className="pico-add-row" onClick={() => setCreate(true)}>
                   <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
@@ -864,7 +874,11 @@ function App() {
               <UsersScreen users={users} user={user} onChanged={refresh} />
             )}
             {tab === 'tasks' && (
-              <TasksScreen {...screenProps} onCreate={() => setRecordCreate('task')} />
+              <TasksScreen
+                {...screenProps}
+                initialFilter={taskView}
+                onCreate={() => setRecordCreate('task')}
+              />
             )}
             {tab === 'calendar' && (
               <TasksScreen
@@ -922,6 +936,7 @@ function App() {
             key={key}
             className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
             onClick={() => {
+              if (key === 'tasks') setTaskView('open');
               setTab(key!);
               setError('');
             }}

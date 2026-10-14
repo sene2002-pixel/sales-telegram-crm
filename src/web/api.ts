@@ -68,3 +68,22 @@ export const money = (n: number | null | undefined) => {
   if (Math.abs(n) >= 1_000) return formatter.format(n / 1_000) + ' тыс. ₽';
   return formatter.format(n) + ' ₽';
 };
+
+export const compactMoney = (n: number | null | undefined) =>
+  n == null
+    ? '—'
+    : new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        notation: 'compact',
+        maximumFractionDigits: 1,
+      }).format(n);
+
+export const fullMoney = (n: number | null | undefined) =>
+  n == null
+    ? '—'
+    : new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        maximumFractionDigits: 2,
+      }).format(n);

@@ -172,8 +172,8 @@ test('Viewport visual: Telegram portrait safe content protects header/footer and
   await login(page);
   await capture(page, 'telegram-portrait-' + width);
   await footer(page, width, 72, 20, height);
-  const brand = (await page.locator('.workspace .mobile-brand:visible').first().boundingBox())!;
-  expect(brand.y).toBeGreaterThanOrEqual(71);
+  const greeting = (await page.locator('.pico-home-greeting:visible').boundingBox())!;
+  expect(greeting.y).toBeGreaterThanOrEqual(71);
   await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
   await capture(page, 'telegram-menu-' + width);
   await page.keyboard.press('Escape');

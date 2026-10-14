@@ -35,6 +35,11 @@ export class Database implements Sql {
           await tx.query(statement);
         await tx.query('INSERT INTO schema_migrations(version) VALUES(1)');
       }
+      await tx.query(`CREATE TABLE IF NOT EXISTS company_imports (
+        id uuid PRIMARY KEY, author_id uuid NOT NULL REFERENCES users(id), source_key text UNIQUE NOT NULL,
+        source_label text NOT NULL, draft jsonb NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','saved','cancelled')),
+        version integer NOT NULL DEFAULT 1, expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+      )`);
       await tx.query(`CREATE TABLE IF NOT EXISTS csv_downloads (
         token_hash text PRIMARY KEY,
         owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,

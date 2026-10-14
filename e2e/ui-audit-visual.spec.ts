@@ -515,6 +515,7 @@ test('UI audit gaps: home onboarding task cancellation and hour/week postponemen
     route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.continue(),
   );
   await page.reload();
+  await page.locator('.pico-home-start > summary').click();
   await page.getByRole('button', { name: /^Поставить задачу/ }).click();
   await expect(page.getByRole('dialog', { name: 'Новая задача', exact: true })).toBeVisible();
   await page.getByLabel('Задача', { exact: true }).fill('Отменённая из onboarding');

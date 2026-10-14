@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { prepareDemoAuth } from './helpers';
+import { navigate, prepareDemoAuth } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await prepareDemoAuth(page);
@@ -128,6 +128,9 @@ test('Telegram header: ordinary browser title centers without overlapping menu a
   await expect(page.locator('.app-shell')).toBeVisible();
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: 844 });
+    await navigate(page, 'Главная');
+    await expect(page.locator('.mobile-brand')).toBeHidden();
+    await navigate(page, 'Клиенты');
     const brand = page.locator('.mobile-brand');
     await expect(brand).toBeVisible();
     await expect(brand).toHaveText('Pico Bot');

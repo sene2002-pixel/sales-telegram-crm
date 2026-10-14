@@ -1,5 +1,33 @@
 import { ReactNode } from 'react';
 const paths: Record<string, ReactNode> = {
+  notebook: (
+    <g strokeWidth="2">
+      <rect x="4.5" y="2.5" width="15" height="19" rx="2.5" />
+      <path d="M2.5 7h4M2.5 12h4M2.5 17h4M10 8h5.5M10 12h5.5M10 16h3.5" />
+    </g>
+  ),
+  handshake: (
+    <g strokeWidth="1.9">
+      <path d="M11 17l2 2a1 1 0 1 0 3-3M14 14l2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4M21 3l1 11h-2M3 3L2 14l6.5 6.5a1 1 0 1 0 3-3M3 4h8" />
+    </g>
+  ),
+  'today-calendar': (
+    <g strokeWidth="2">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
+      <path d="M3.5 10h17M8 3v4M16 3v4M8 14h4M8 17h7" />
+    </g>
+  ),
+  'task-empty-calendar': (
+    <g strokeWidth="1.9">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
+      <path d="M8 3v4M16 3v4M3.5 10h17M8 14h3M13 14h3M8 17.2h3" />
+    </g>
+  ),
+  'project-factory': (
+    <g strokeWidth="1.9">
+      <path d="M3 21V10l5 3V10l5 3V6h4l1 15M3 21h18M8 17h2M13 17h2" />
+    </g>
+  ),
   phone: (
     <>
       <rect x="6" y="2" width="12" height="20" rx="2" />
@@ -18,7 +46,7 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   settings: (
-    <g stroke="#000000" strokeWidth="1.1">
+    <g stroke="#000000" strokeWidth="1.4">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
     </g>
@@ -35,24 +63,22 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   clients: (
-    <>
+    <g strokeWidth="1.9">
       <circle cx="9" cy="8" r="3.6" />
-      <path d="M2.5 20.5v-.8a5.7 5.7 0 0 1 5.7-5.7h1.6a5.7 5.7 0 0 1 5.7 5.7v.8z" />
-      <path d="M15.5 4.6a3.6 3.6 0 0 1 0 6.8" />
-      <path d="M18.5 14.4a5.6 5.6 0 0 1 3 4.9v1.2h-2.7" />
-    </>
+      <path d="M2.5 20.5v-.8a5.7 5.7 0 0 1 5.7-5.7h1.6a5.7 5.7 0 0 1 5.7 5.7v.8zM15.5 4.6a3.6 3.6 0 0 1 0 6.8M18.5 14.4a5.6 5.6 0 0 1 3 4.9v1.2h-2.7" />
+    </g>
   ),
   projects: (
-    <>
-      <rect x="3" y="7" width="18" height="14" rx="3" />
-      <path d="M8 7V4h8v3M3 12h18m-11 0v3h4v-3" />
-    </>
+    <g strokeWidth="1.9">
+      <rect x="3" y="7" width="18" height="13" rx="3" />
+      <path d="M8.5 7V5.5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2V7M3 12.5h18M10 12.5v2h4v-2" />
+    </g>
   ),
   tasks: (
-    <>
+    <g strokeWidth="1.9">
       <circle cx="12" cy="12" r="9" />
-      <path d="m8 12 3 3 5-6" />
-    </>
+      <path d="M8 12.3l2.7 2.7 5.2-5.6" />
+    </g>
   ),
   analytics: <path d="M5 20v-8m7 8V4m7 16V8" />,
   calendar: (
@@ -83,9 +109,9 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   reminder: (
-    <>
-      <path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 21h4" />
-    </>
+    <g strokeWidth="1.9">
+      <path d="M18 9.5a6 6 0 0 0-12 0c0 6.5-2.5 8-2.5 8h17s-2.5-1.5-2.5-8M10.2 20.5a2 2 0 0 0 3.6 0" />
+    </g>
   ),
   search: (
     <>
@@ -94,11 +120,11 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   filter: (
-    <>
-      <path d="M3 7h18M3 17h18" />
-      <circle cx="9" cy="7" r="2" />
-      <circle cx="15" cy="17" r="2" />
-    </>
+    <g strokeWidth="2">
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
+    </g>
   ),
   plus: <path d="M12 4v16M4 12h16" />,
   chevron: <path d="m9 5 7 7-7 7" />,
@@ -129,7 +155,9 @@ const paths: Record<string, ReactNode> = {
       <path d="M8 16c0-3-3-4-3-8a7 7 0 0 1 14 0c0 4-3 5-3 8zM9 20h6m-5 3h4" />
     </>
   ),
-  crown: <path d="m3 7 4 3 5-7 5 7 4-3-2 13H5z" />,
+  crown: (
+    <path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z" fill="#FFD978" stroke="#D98A00" strokeWidth="2" />
+  ),
   sparkles: (
     <>
       <path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z" />

@@ -1,3 +1,5 @@
+import { CompanyImports } from '../services/company-imports';
+import { assertImportPrivacy } from '../services/company-import-parser';
 import { employeeFilterOptions } from '../services/employee-filter';
 import 'reflect-metadata';
 import {
@@ -126,6 +128,7 @@ export class Services {
       this.diagnostics,
       this.voiceContacts,
       this.dialogue,
+      new CompanyImports(db, this.crm, assertImportPrivacy),
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.commercial = new CommercialReportService(db);

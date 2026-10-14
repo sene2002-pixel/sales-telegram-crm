@@ -31,7 +31,9 @@ export function EmployeeFilter({
   return (
     <section className="pico-employee-filter" aria-label="Фильтр сотрудника" aria-busy={busy}>
       <div className="pico-employee-filter-control">
-        <Icon name="clients" size={20} />
+        <span className="pico-employee-notebook">
+          <Icon name="notebook" size={20} />
+        </span>
         <label>
           <span>Данные сотрудника</span>
           <select

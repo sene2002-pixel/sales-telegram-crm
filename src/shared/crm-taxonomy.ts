@@ -9,6 +9,7 @@ export const segments = [
   'grid_company',
   'commercial',
   'integrator',
+  'unknown',
 ] as const;
 export const primarySegments = [
   'end_client',
@@ -60,6 +61,7 @@ export const divisionLabels: Record<string, string> = {
   maintenance: 'Сервисное обслуживание',
 };
 export const segmentLabels: Record<string, string> = {
+  unknown: 'Тип не указан',
   shchitovik: 'Щитовик',
   oem: 'OEM',
   end_client: 'Заказчик',

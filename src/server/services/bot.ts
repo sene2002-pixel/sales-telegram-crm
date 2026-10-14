@@ -1,3 +1,5 @@
+import { CompanyImports } from './company-imports';
+import { companyImportLimits } from './company-import-parser';
 import { companyDisplayName } from '../../shared/company-display-name';
 import { timingSafeEqual } from 'node:crypto';
 import { Config } from '../config';
@@ -47,6 +49,7 @@ const updateSchema = z.object({
       document: z
         .object({
           file_id: z.string(),
+          file_name: z.string().max(255).optional(),
           mime_type: z.string().optional(),
           file_size: z.number().optional(),
         })
@@ -79,6 +82,7 @@ export class BotService {
     private diagnostics?: DiagnosticLog,
     private voiceContacts?: VoiceContacts,
     private dialogue?: DialogueService,
+    private imports?: CompanyImports,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -160,6 +164,75 @@ export class BotService {
           characters: msg?.text?.length,
         });
         await this.telegram.send(chatId, { text });
+        return { ok: true };
+      }
+      if (callback && /^(ic|ix):/.test(callback.data || '') && this.imports) {
+        const [action, id, version] = (callback.data || '').split(':');
+        if (action === 'ic') {
+          const result = await this.imports.confirm(actor, id || '', Number(version));
+          await this.telegram.send(chatId, {
+            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}.`,
+            reply_markup: this.telegram.appButton(),
+          });
+        } else await this.imports.cancel(actor, id || '', Number(version));
+        await this.telegram.call('answerCallbackQuery', {
+          callback_query_id: callback.id,
+          text: action === 'ic' ? 'Импорт завершён' : 'Импорт отменён',
+        });
+        return { ok: true };
+      }
+      if (!callback && msg?.document && this.imports) {
+        const extension = /\.(xlsx|csv|txt)$/i
+          .exec(msg.document.file_name || '')?.[1]
+          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | undefined;
+        const mimeFormat = (
+          {
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+            'text/csv': 'csv',
+            'text/plain': 'txt',
+          } as const
+        )[msg.document.mime_type as 'text/csv'];
+        const format = extension || mimeFormat;
+        if (format) {
+          requireCondition(
+            (msg.document.file_size || 0) <= companyImportLimits.bytes,
+            413,
+            'Файл должен быть не больше 2 МБ',
+          );
+          const bytes = await this.telegram.download(
+            msg.document.file_id,
+            companyImportLimits.bytes,
+          );
+          const preview = await this.imports.prepare(actor, {
+            sourceKey: `telegram:${update.update_id}`,
+            bytes,
+            format,
+          });
+          for (let index = 0; index < preview.messages.length; index++)
+            await this.telegram.send(chatId, {
+              text: preview.messages[index],
+              ...(index === preview.messages.length - 1
+                ? { reply_markup: preview.replyMarkup }
+                : {}),
+            });
+          return { ok: true };
+        }
+      }
+      const googleDocument =
+        msg?.text &&
+        /^(?:импорт(?:ировать)?\s+)?(https:\/\/docs\.google\.com\/document\/[^\s]+)$/i.exec(
+          msg.text.trim(),
+        );
+      if (!callback && googleDocument && this.imports) {
+        const preview = await this.imports.prepareGoogle(actor, {
+          sourceKey: `telegram:${update.update_id}`,
+          url: googleDocument[1]!,
+        });
+        for (let index = 0; index < preview.messages.length; index++)
+          await this.telegram.send(chatId, {
+            text: preview.messages[index],
+            ...(index === preview.messages.length - 1 ? { reply_markup: preview.replyMarkup } : {}),
+          });
         return { ok: true };
       }
       if (callback) {

@@ -8,7 +8,7 @@ import {
   divisionLabels,
   CrmRecord,
 } from '../shared/contracts';
-import { api, download, money } from './api';
+import { api, download, money, compactMoney, fullMoney } from './api';
 import { CompanyForm, Modal, RecordForm, NewDirectionEditor } from './forms';
 import { Icon, industryIcon } from './Icons';
 export function ClientRow({
@@ -83,7 +83,9 @@ export function ClientRow({
         </span>
         <span className="company-money">
           <small>Потенциал</small>
-          <strong>{money(currentCompany.potential)}</strong>
+          <strong title={fullMoney(currentCompany.potential)}>
+            {compactMoney(currentCompany.potential)}
+          </strong>
         </span>
         <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
       </button>

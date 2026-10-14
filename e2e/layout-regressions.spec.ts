@@ -56,8 +56,8 @@ for (const width of [360, 390, 1440]) {
     expect(crownBox!.width).toBeLessThanOrEqual(30);
     expect(crownBox!.y).toBeLessThan(headingBox!.y + headingBox!.height);
     expect(Math.abs(subtitleBox!.x - headingBox!.x)).toBeLessThan(1);
-    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeGreaterThanOrEqual(3);
-    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeLessThanOrEqual(5);
+    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeGreaterThanOrEqual(0);
+    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeLessThanOrEqual(1);
     if (width <= 760) {
       await expect(page.locator('.mobile-brand')).toBeHidden();
     } else {

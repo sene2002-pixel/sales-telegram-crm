@@ -77,7 +77,9 @@ test('SALES-01 strict schema, legacy compatibility and valid dates', () => {
   const s = sales();
   s.deals[0]!.due = fact('2026-02-30');
   assert.throws(() => salesUpdateSchema.parse(s));
-  const city=emptySales();city.client.city=fact('x'.repeat(151));assert.throws(()=>salesUpdateSchema.parse(city));
+  const city = emptySales();
+  city.client.city = fact('x'.repeat(151));
+  assert.throws(() => salesUpdateSchema.parse(city));
   const check = (node: any) => {
     if (!node || typeof node !== 'object') return;
     if (node.type === 'object') {
@@ -222,7 +224,7 @@ test('SALES-07 known CRM data suppresses questions and missing deadlines are req
   d.quoteSent = fact(true);
   d.competitorQuoteReceived = fact(false);
   d.nextStep = fact('Созвон');
-  assert.ok(salesQuestions(s).some((q) => q.includes('в какой срок')));
+  assert.ok(salesQuestions(s).some((q) => /в какой срок/i.test(q)));
   s.agreements.nextStep = fact('Созвон');
   s.agreements.due = fact('2026-10-10');
   d.nextStep = null;
@@ -238,10 +240,12 @@ test('SALES-10 next steps stay scoped to the original project', () => {
   const p = projectSales([event('1', a), event('2', b, '2026-10-02')]);
   assert.equal(confirmed(p.deals[0]!.deal.nextStep), 'Отправить КП для А');
   assert.equal(p.deals[1]!.deal.nextStep, null);
-  const next=sales('А');next.agreements.nextStep=fact('Получить конкурентное предложение');next.agreements.due=fact('2026-10-12');
-  const updated=projectSales([event('1',a),event('2',next,'2026-10-02')]);
-  assert.equal(confirmed(updated.deals[0]!.deal.nextStep),'Получить конкурентное предложение');
-  assert.equal(confirmed(updated.deals[0]!.deal.nextDue),'2026-10-12');
+  const next = sales('А');
+  next.agreements.nextStep = fact('Получить конкурентное предложение');
+  next.agreements.due = fact('2026-10-12');
+  const updated = projectSales([event('1', a), event('2', next, '2026-10-02')]);
+  assert.equal(confirmed(updated.deals[0]!.deal.nextStep), 'Получить конкурентное предложение');
+  assert.equal(confirmed(updated.deals[0]!.deal.nextDue), '2026-10-12');
 });
 test('SALES-11 report preserves historical identity, result-only updates and independent amounts', async () => {
   const a = sales('Одинаковый', 2000000);
@@ -329,8 +333,8 @@ test('SALES-08 integration: confirm/history/ACL/commercial period and no duplica
         volume: fact('in_work'),
       },
     ];
-    async function apply(update: SalesUpdate, day = '2026-10-01', targetCompany=c) {
-      const draft = extraction(update,targetCompany.name);
+    async function apply(update: SalesUpdate, day = '2026-10-01', targetCompany = c) {
+      const draft = extraction(update, targetCompany.name);
       draft.blocks[0]!.occurredOn = day;
       const r = await s.reports.enqueue(manager.user, {
         text: 'Сообщение',
@@ -346,12 +350,20 @@ test('SALES-08 integration: confirm/history/ACL/commercial period and no duplica
       return r;
     }
     const r = await apply(data);
-    const lifecycleCompany=await s.crm.create(manager.user,{name:'Клиент с историей'});
-    const currentClient=sales();currentClient.client.city=fact('Казань');currentClient.client.segment=fact('design_institute');
-    await apply(currentClient,'2026-08-04',lifecycleCompany);
-    const backdated=sales();backdated.client.city=fact('Москва');backdated.client.segment=fact('oem');
-    await apply(backdated,'2026-08-03',lifecycleCompany);
-    assert.equal((await s.crm.company(manager.user,lifecycleCompany.id)).city,'Казань');assert.equal((await s.crm.company(manager.user,lifecycleCompany.id)).segment,'design_institute');
+    const lifecycleCompany = await s.crm.create(manager.user, { name: 'Клиент с историей' });
+    const currentClient = sales();
+    currentClient.client.city = fact('Казань');
+    currentClient.client.segment = fact('design_institute');
+    await apply(currentClient, '2026-08-04', lifecycleCompany);
+    const backdated = sales();
+    backdated.client.city = fact('Москва');
+    backdated.client.segment = fact('oem');
+    await apply(backdated, '2026-08-03', lifecycleCompany);
+    assert.equal((await s.crm.company(manager.user, lifecycleCompany.id)).city, 'Казань');
+    assert.equal(
+      (await s.crm.company(manager.user, lifecycleCompany.id)).segment,
+      'design_institute',
+    );
     assert.equal((await s.crm.salesHistory(manager.user, c.id)).length, 1);
     assert.equal((await s.crm.company(manager.user, c.id)).potential, 99);
     const legacy = await s.crm.createRecord(manager.user, c.id, 'project', {
