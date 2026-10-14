@@ -16,7 +16,7 @@ import {
 import dns from 'node:dns/promises';
 import https from 'node:https';
 import { EventEmitter } from 'node:events';
-import { Actor } from '../shared/contracts';
+import { Actor, divisions } from '../shared/contracts';
 import { DomainError } from '../server/domain/errors';
 const bytes = (s: string) => Buffer.from(s);
 const status = (n: number) => (e: unknown) => e instanceof DomainError && e.status === n;
@@ -445,4 +445,89 @@ test('name-only import persists unknown category, while supplied type and manual
   assert.equal(existing.company.stage, 'dialogue');
   const manual = await crm.create(actor, { name: 'Ручное создание' });
   assert.equal(manual.segment, 'end_client');
+});
+
+test('labeled TXT preserves per-company units, every division, missing facts and source blocks', async () => {
+  const millionLines = divisions.map((division, index) => `${division} млн руб: ${index + 1}`);
+  const input = [
+    'Название: Альфа',
+    'Потенциал млн руб: 20',
+    'Выручка млн руб: 2,5',
+    ...millionLines,
+    '',
+    'Название: Бета',
+    'Потенциал руб: 20',
+    'Выручка руб: 2,5',
+    ...divisions.map((division, index) => `${division} руб: ${(index + 1) * 10}`),
+  ].join('\n');
+  const parsed = await parseCompanyImport(bytes(input), 'txt', assertImportPrivacy);
+  assert.equal(parsed.length, 2);
+  assert.deepEqual(parsed[0]!.data, {
+    name: 'Альфа',
+    potential: 20000000,
+    revenue: 2500000,
+    divisions: Object.fromEntries(
+      divisions.map((division, index) => [division, (index + 1) * 1000000]),
+    ),
+  });
+  assert.deepEqual(parsed[1]!.data, {
+    name: 'Бета',
+    potential: 20,
+    revenue: 2.5,
+    divisions: Object.fromEntries(divisions.map((division, index) => [division, (index + 1) * 10])),
+  });
+  assert.equal(parsed[0]!.source, 'Документ · блок 1');
+  assert.equal(parsed[1]!.source, 'Документ · блок 2');
+  assert.ok(parsed[0]!.missing.includes('Отрасль'));
+  assert.ok(parsed[0]!.missing.includes('Тип'));
+  assert.ok(!parsed[0]!.missing.includes('Потенциал'));
+  assert.ok(!parsed[0]!.missing.includes('Выручка'));
+  assert.equal(Object.hasOwn(parsed[0]!.data, 'stage'), false);
+  assert.equal(Object.hasOwn(parsed[0]!.data, 'segment'), false);
+  assert.equal(Object.hasOwn(parsed[0]!.data, 'industry'), false);
+  await assert.rejects(
+    parseCompanyImport(
+      bytes('Название: Альфа\nПотенциал: 20\nПотенциал млн руб: 2'),
+      'txt',
+      assertImportPrivacy,
+    ),
+    status(400),
+  );
+});
+
+test('prototype-named unknown headers remain ignored safely in CSV, TXT and XLSX', async () => {
+  const headers = ['Название', 'constructor', '__proto__', 'toString', 'hasOwnProperty'];
+  const values = ['Альфа', 'ignored', 'ignored', 'ignored', 'ignored'];
+  const csvInput = headers.join(';') + '\n' + values.join(';');
+  const txtInput = headers.map((header, index) => `${header}: ${values[index]}`).join('\n');
+  const sheet = `<row r="1">${headers.map((header, index) => cell(String.fromCharCode(65 + index) + '1', header)).join('')}</row><row r="2">${values.map((value, index) => cell(String.fromCharCode(65 + index) + '2', value)).join('')}</row>`;
+  for (const [input, format] of [
+    [bytes(csvInput), 'csv'],
+    [bytes(txtInput), 'txt'],
+    [xlsx(sheet), 'xlsx'],
+  ] as const) {
+    const [company] = await parseCompanyImport(input, format, assertImportPrivacy);
+    assert.deepEqual(company!.data, { name: 'Альфа' });
+    assert.deepEqual(company!.warnings, ['Не импортированы колонки: 4']);
+    assert.ok(company!.missing.includes('Потенциал'));
+    assert.ok(!Object.hasOwn(company!.data, 'constructor'));
+    assert.ok(!Object.hasOwn(company!.data, '__proto__'));
+  }
+  await assert.rejects(
+    parseCompanyImport(bytes('constructor\nignored'), 'csv', assertImportPrivacy),
+    status(400),
+  );
+  await assert.rejects(
+    parseCompanyImport(bytes('__proto__: ignored'), 'txt', assertImportPrivacy),
+    status(400),
+  );
+  await assert.rejects(
+    parseCompanyImport(
+      xlsx(`<row>${cell('A1', 'constructor')}</row><row>${cell('A2', 'ignored')}</row>`),
+      'xlsx',
+      assertImportPrivacy,
+    ),
+    status(400),
+  );
+  assert.equal(({} as Record<string, unknown>).ignored, undefined);
 });

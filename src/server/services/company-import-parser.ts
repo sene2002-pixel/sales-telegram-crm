@@ -51,13 +51,13 @@ const baseFields = [
   'notes',
 ] as const;
 type Field = (typeof baseFields)[number] | `division:${(typeof divisions)[number]}`;
-const fields: Field[] = [...baseFields, ...divisions.map((d) => `division:${d}` as const)];
-const aliases: Record<string, Field> = {
+const aliases: Record<string, Field> = Object.assign(Object.create(null), {
   stage: 'stage',
   стадия: 'stage',
   этап: 'stage',
   revenue: 'revenue',
   выручка: 'revenue',
+  'выручка руб': 'revenue',
   'выручка млн руб': 'revenue',
   'выручка млн': 'revenue',
   notes: 'notes',
@@ -85,7 +85,7 @@ const aliases: Record<string, Field> = {
   'потенциал руб': 'potential',
   'потенциал млн руб': 'potential',
   'потенциал млн': 'potential',
-};
+});
 const normalize = (s: string) =>
   s
     .replace(/^\uFEFF/, '')
@@ -430,11 +430,18 @@ export async function parseCompanyImport(
         'Документ',
         privacy,
       );
-    const blocks = text.trim().split(/\r?\n\s*\r?\n/),
-      rows: string[][] = [...[]];
-    rows.push([...fields]);
-    for (const block of blocks) {
-      const data: Record<string, string> = {};
+    const blocks = text.trim().split(/\r?\n\s*\r?\n/);
+    requireCondition(
+      blocks.length <= companyImportLimits.rows,
+      400,
+      'Документ должен содержать до 100 компаний',
+    );
+    const companies: ImportedCompany[] = [];
+    for (const [index, block] of blocks.entries()) {
+      // Retain each original header: it carries monetary units and division identity.
+      // A block is normalized separately because another company may use different units.
+      const headers: string[] = [],
+        values: string[] = [];
       for (const line of block.split(/\r?\n/)) {
         const match = /^([^:]{1,80}):\s*(.*)$/.exec(line);
         requireCondition(
@@ -442,15 +449,15 @@ export async function parseCompanyImport(
           400,
           'Google Docs: используйте строки «Название: …», «ИНН: …» и пустую строку между компаниями',
         );
-        const field = aliases[normalize(match[1]!)];
-        if (field) {
-          requireCondition(!data[field], 400, 'Повторяющееся поле компании');
-          data[field] = match[2]!;
-        }
+        headers.push(match[1]!);
+        values.push(match[2]!);
       }
-      rows.push(fields.map((f) => data[f] || ''));
+      const parsed = parseCompanyTable([headers, values], 'Документ', privacy);
+      companies.push(
+        ...parsed.map((company) => ({ ...company, source: `Документ · блок ${index + 1}` })),
+      );
     }
-    return parseCompanyTable(rows, 'Документ', privacy);
+    return companies;
   }
   const parts = await unzip(Buffer.from(bytes));
   const shared = arr(xml(parts.get('xl/sharedStrings.xml') || '<sst/>').sst?.si).map(textNode);
