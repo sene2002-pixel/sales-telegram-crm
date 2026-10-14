@@ -157,22 +157,128 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   const renderedFonts = await cdp.send('CSS.getPlatformFontsForNode', { nodeId: node.nodeId });
   expect(renderedFonts.fonts).toEqual([
     expect.objectContaining({
-      postScriptName: 'Manrope-ExtraBold',
+      familyName: expect.stringMatching(/^Manrope(?: |$)/),
+      postScriptName: expect.stringMatching(/^Manrope-/),
       isCustomFont: true,
       glyphCount: 11,
     }),
   ]);
-  for (const [selector, expectedFace] of [
-    ['.pico-client-metadata > span', 'Manrope-Medium'],
-    ['.company-money > small', 'Manrope-Regular'],
+  await expect(page.locator('.pico-client-copy > strong').first()).toHaveCSS('font-weight', '800');
+  for (const [selector, weight] of [
+    ['.pico-client-metadata > span', '500'],
+    ['.company-money > small', '400'],
   ]) {
+    await expect(page.locator(selector).first()).toHaveCSS('font-weight', weight);
     const textNode = await cdp.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector });
     const actual = await cdp.send('CSS.getPlatformFontsForNode', { nodeId: textNode.nodeId });
     expect(actual.fonts).toEqual([
-      expect.objectContaining({ postScriptName: expectedFace, isCustomFont: true }),
+      expect.objectContaining({
+        familyName: expect.stringMatching(/^Manrope(?: |$)/),
+        postScriptName: expect.stringMatching(/^Manrope-/),
+        isCustomFont: true,
+      }),
     ]);
   }
-  await cdp.detach();
+  // CDP reports the platform face name: FreeType can retain the variable font's
+  // base name (ExtraLight) even when rendering wght=800. Verify the real DOM
+  // raster instead of treating an OS-specific PostScript name as weight proof.
+  await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.id = 'manrope-raster-proof';
+    probe.textContent = 'Ёж Щит Юлия';
+    Object.assign(probe.style, {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      zIndex: '2147483647',
+      width: '320px',
+      height: '80px',
+      padding: '0',
+      margin: '0',
+      border: '0',
+      background: 'white',
+      color: 'black',
+      fontFamily: 'Manrope',
+      fontSize: '32px',
+      lineHeight: '64px',
+      fontSynthesis: 'none',
+      fontStyle: 'normal',
+      letterSpacing: '0',
+      whiteSpace: 'nowrap',
+    });
+    document.body.append(probe);
+  });
+  const rasterProbe = page.locator('#manrope-raster-proof');
+  const rasterMetrics = [];
+  try {
+    for (const weight of ['200', '800']) {
+      await rasterProbe.evaluate((element, value) => (element.style.fontWeight = value), weight);
+      await expect(rasterProbe).toHaveCSS('font-weight', weight);
+      await expect(rasterProbe).toHaveCSS('font-synthesis', 'none');
+      const probeNode = await cdp.send('DOM.querySelector', {
+        nodeId: doc.root.nodeId,
+        selector: '#manrope-raster-proof',
+      });
+      const used = await cdp.send('CSS.getPlatformFontsForNode', { nodeId: probeNode.nodeId });
+      expect(used.fonts).toEqual([
+        expect.objectContaining({
+          familyName: expect.stringMatching(/^Manrope(?: |$)/),
+          isCustomFont: true,
+          glyphCount: expect.any(Number),
+        }),
+      ]);
+      expect(used.fonts[0].glyphCount).toBeGreaterThan(0);
+      const png = await rasterProbe.screenshot({ animations: 'disabled' });
+      await info.attach(`Manrope-Cyrillic-${weight}`, { body: png, contentType: 'image/png' });
+      const pixels = await page.evaluate(
+        async (uri) => {
+          const image = new Image();
+          image.src = uri;
+          await image.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext('2d')!;
+          context.drawImage(image, 0, 0);
+          const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          let ink = 0;
+          let left = canvas.width;
+          let right = -1;
+          for (let i = 0; i < data.length; i += 4) {
+            const blackness = (765 - data[i] - data[i + 1] - data[i + 2]) / 765;
+            ink += blackness;
+            if (blackness > 0.1) {
+              const x = (i / 4) % canvas.width;
+              left = Math.min(left, x);
+              right = Math.max(right, x);
+            }
+          }
+          return { width: canvas.width, height: canvas.height, ink, inkWidth: right - left + 1 };
+        },
+        `data:image/png;base64,${png.toString('base64')}`,
+      );
+      expect(pixels.inkWidth).toBeGreaterThan(0);
+      rasterMetrics.push({ weight, fonts: used.fonts, ...pixels });
+    }
+    expect(rasterMetrics[1].width).toBe(rasterMetrics[0].width);
+    expect(rasterMetrics[1].height).toBe(rasterMetrics[0].height);
+    // Normalize by actual glyph width so wider advances alone cannot pass.
+    const densityRatio =
+      rasterMetrics[1].ink /
+      rasterMetrics[1].inkWidth /
+      (rasterMetrics[0].ink / rasterMetrics[0].inkWidth);
+    await info.attach('Manrope-variable-raster-proof', {
+      body: JSON.stringify({ rasterMetrics, densityRatio }, null, 2),
+      contentType: 'application/json',
+    });
+    expect(
+      densityRatio,
+      'real wght=800 Cyrillic ink is denser than wght=200 without faux bold',
+    ).toBeGreaterThan(1.5);
+  } finally {
+    await rasterProbe.evaluate((element) => element.remove());
+    await cdp.detach();
+  }
   const last = (await page.locator('.pico-client-accordion').last().boundingBox())!;
   const footer = (await nav.boundingBox())!;
   await page.screenshot({
