@@ -37,6 +37,49 @@ async function fits(page: Page) {
 test('Mockups: empty screens explain the next step without fabricated metrics', async ({
   page,
 }, info) => {
+  await page.route('**/api/analytics?*', (r) =>
+    r.fulfill({
+      json: {
+        clientAnalytics: {
+          ruleVersion: 1,
+          asOf: new Date().toISOString().slice(0, 10),
+          settings: {
+            revision: 1,
+            taskDays: 14,
+            meetingMonths: 3,
+            projectMonths: 1,
+            updatedAt: null,
+          },
+          clientFunnel: ['new', 'acquaintance', 'development', 'partner', 'ours'].map((key) => ({
+            key,
+            label: key,
+            count: 0,
+          })),
+          clients: [],
+          metrics: {
+            potential: {
+              value: 0,
+              companies: 0,
+              delta: { kind: 'none', percent: null, tone: 'neutral' },
+            },
+            projects: {
+              value: 0,
+              count: 0,
+              delta: { kind: 'none', percent: null, tone: 'neutral' },
+            },
+            growth: {
+              value: 0,
+              share: null,
+              delta: { kind: 'none', percent: null, tone: 'neutral' },
+            },
+            active: { value: 0, total: 0, delta: { kind: 'none', percent: null, tone: 'neutral' } },
+          },
+          historyIncomplete: 0,
+          contactSourcesUnknown: 0,
+        },
+      },
+    }),
+  );
   for (const path of [
     '/api/companies',
     '/api/records/task',
@@ -71,16 +114,15 @@ test('Mockups: empty screens explain the next step without fabricated metrics', 
   await nav(page, 'Задачи');
   await expect(page.getByRole('heading', { name: 'Задач пока нет', exact: true })).toBeVisible();
   await nav(page, 'Аналитика');
-  await expect(
-    page.getByRole('heading', { name: 'Как работает аналитика', exact: true }),
-  ).toBeVisible();
-  await expect(page.locator('.pico-funnel')).toHaveCount(0);
-  await expect(
-    page.getByRole('heading', { name: 'Как считаются показатели', exact: true }),
-  ).toBeVisible();
   await expect(page.getByText('Воронка продаж', { exact: true })).toBeVisible();
-  await expect(page.getByText('Конверсия', { exact: true })).toBeVisible();
-  await expect(page.getByText('Потенциал', { exact: true })).toBeVisible();
+  await expect(page.locator('.pico-client-funnel')).toBeVisible();
+  await expect(page.locator('.pico-client-metric')).toHaveCount(4);
+  await expect(page.locator('.pico-metric-value > strong')).toHaveText(['0', '0', '0', '0']);
+  await expect(page.getByText('Потенциал клиентов', { exact: true })).toBeVisible();
+  await expect(page.getByText('Потенциал проектов', { exact: true })).toBeVisible();
+  await expect(page.getByText('Рост по воронке', { exact: true })).toBeVisible();
+  await expect(page.getByText('Активные клиенты', { exact: true })).toBeVisible();
+  await expect(page.getByText('Конверсия', { exact: true })).toHaveCount(0);
   await fits(page);
   await page.screenshot({ path: info.outputPath('empty-analytics.png'), fullPage: true });
 });
@@ -114,10 +156,10 @@ test('Mockups: navigation, calendar and real analytics remain usable on the devi
   await nav(page, 'Аналитика');
   await page.getByRole('button', { name: 'Период аналитики', exact: true }).click();
   const period = page.getByRole('dialog', { name: 'Период', exact: true });
-  await period.getByRole('radio', { name: /^Неделя/ }).click();
+  await period.getByRole('radio', { name: /^7 дней/ }).click();
   await period.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Период аналитики', exact: true })).toContainText(
-    '30 дней',
+    'Весь период',
   );
   await page.getByRole('button', { name: 'Период аналитики', exact: true }).click();
   await period.getByRole('radio', { name: /^Свой период/ }).click();

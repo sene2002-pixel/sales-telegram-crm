@@ -18,7 +18,13 @@ import { isLeader } from './auth';
 import { audit } from '../infra/audit';
 import { ProcessingStatus } from '../infra/processing-status';
 import { TaskMessages } from './task-messages';
-import { normalizeSales, projectSales, salesFeedback, salesQuestions } from '../../shared/sales';
+import {
+  normalizeSales,
+  projectSales,
+  salesFeedback,
+  salesQuestions,
+  salesQuestionVariant,
+} from '../../shared/sales';
 
 export function mapReport(r: any): Report {
   return {
@@ -248,10 +254,13 @@ export class ReportService {
           : projectSales([
               { id, occurredOn: b.occurredOn, createdAt: new Date().toISOString(), sales },
             ]).current;
-      const questions = salesQuestions(current, i).slice(0, questionBudget);
+      const variant = salesQuestionVariant(
+        `${groups[i]?.[0] || b.companyName}:${current.deals.map((deal) => deal.name || '').join('|')}`,
+      );
+      const questions = salesQuestions(current, variant).slice(0, questionBudget);
       questionBudget -= questions.length;
       responses.push(
-        `${salesFeedback(b.companyName, { ...current, deferred: true }, i)}\nЧто уточнено: ${b.summary}\n${questions.map((q) => `- ${q}`).join('\n')}`,
+        `${salesFeedback(b.companyName, { ...current, deferred: true }, variant)}\nЧто уточнено: ${b.summary}\n${questions.map((q) => `- ${q}`).join('\n')}`,
       );
     }
     return responses.join('\n\n');
@@ -380,6 +389,7 @@ export class ReportService {
           updatedAt: _updated,
           ...data
         } = await this.crm.company(actor, companyId, tx);
+        const analyticsBefore = { ...data, divisions: { ...data.divisions } };
         if (!sales && block.city !== null) data.city = block.city;
         if (!sales && block.segment !== null) data.segment = block.segment;
         if (block.stage !== null) data.stage = block.stage;
@@ -392,6 +402,10 @@ export class ReportService {
         await audit(tx, actor.id, 'report.applied', id, companyId, {
           authorId: author.id,
           before: company,
+          analyticsBefore,
+          after: data,
+          beforeVersion: _version,
+          afterVersion: _version + 1,
           block,
         });
         result.push({ companyId, activityId: activity.id });

@@ -1,5 +1,37 @@
 import { ReactNode } from 'react';
 const paths: Record<string, ReactNode> = {
+  'analytics-funnel': (
+    <g strokeWidth="1.9">
+      <path d="M3.5 4.5h17l-6 7.7v6.3L12 20l-2.5-1.5v-6.3z" />
+    </g>
+  ),
+  'analytics-client-potential': (
+    <g strokeWidth="1.9">
+      <rect x="3" y="6" width="18" height="13" rx="3" />
+      <path d="M3 10h18M16 14.5h2" />
+    </g>
+  ),
+  'analytics-project-potential': (
+    <g strokeWidth="1.9">
+      <path d="M3 8l9-5 9 5-9 5zM3 12.5l9 5 9-5M3 17l9 5 9-5" />
+    </g>
+  ),
+  'analytics-equipment': (
+    <g strokeWidth="1.9">
+      <path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" />
+    </g>
+  ),
+  'analytics-growth': (
+    <g strokeWidth="1.9">
+      <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
+    </g>
+  ),
+  'analytics-active': (
+    <g strokeWidth="1.9">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 19.5c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.8c1.6.8 2.6 2.4 3 4.7" />
+    </g>
+  ),
   notebook: (
     <g strokeWidth="2">
       <rect x="4.5" y="2.5" width="15" height="19" rx="2.5" />

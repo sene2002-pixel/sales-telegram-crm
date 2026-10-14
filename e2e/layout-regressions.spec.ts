@@ -77,7 +77,7 @@ for (const width of [360, 390, 1440]) {
       const box = (await brand.boundingBox())!;
       expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThan(1);
     }
-    const badges = page.locator('.pico-potential summary .pico-row-icon');
+    const badges = page.locator('.pico-client-equipment summary .pico-equipment-tile');
     await expect(badges).toHaveCount(7);
     const boxes = await badges.evaluateAll((elements) =>
       elements.map((el) => {
@@ -93,18 +93,18 @@ for (const width of [360, 390, 1440]) {
       }),
     );
     for (const box of boxes) {
-      expect(box.width).toBe(27);
-      expect(box.height).toBe(27);
+      expect(box.width).toBe(32);
+      expect(box.height).toBe(32);
       expect(box.flexGrow).toBe('0');
-      expect(box.svgWidth).toBe(16);
-      expect(box.svgHeight).toBe(16);
+      expect(box.svgWidth).toBe(18);
+      expect(box.svgHeight).toBe(18);
     }
     const amounts = await page
-      .locator('.pico-potential summary > strong')
+      .locator('.pico-client-equipment summary > strong')
       .evaluateAll((elements) => elements.map((el) => getComputedStyle(el).whiteSpace));
     expect(amounts.every((value) => value === 'nowrap')).toBeTruthy();
     const details = page
-      .locator('.pico-potential details')
+      .locator('.pico-client-equipment details')
       .filter({ hasText: 'Выключатели 6–35 кВ' })
       .first();
     await details.locator('summary').click();
@@ -128,7 +128,7 @@ for (const width of [360, 390, 1440]) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     ).toBeTruthy();
-    await page.locator('.pico-potential').scrollIntoViewIfNeeded();
+    await page.locator('.pico-client-equipment').scrollIntoViewIfNeeded();
     await page.screenshot({
       path: info.outputPath(`analytics-${width}.png`),
       animations: 'disabled',
@@ -138,8 +138,8 @@ for (const width of [360, 390, 1440]) {
       await expect(navigation.getByRole('button')).toHaveCount(5);
       const icon = navigation.getByRole('button', { name: 'Клиенты', exact: true }).locator('svg');
       const box = (await icon.boundingBox())!;
-      expect(box.width).toBe(21);
-      expect(box.height).toBe(21);
+      expect(box.width).toBe(24);
+      expect(box.height).toBe(24);
       await navigation.getByRole('button', { name: 'Клиенты', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Клиенты', exact: true })).toBeVisible();
     }

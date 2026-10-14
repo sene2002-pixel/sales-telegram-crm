@@ -507,7 +507,7 @@ for (const child of ['analytics', 'commercial'] as const) {
       (await api(page, '/employee-filter/options', f.supervisor.token)).map((o: any) => o.id),
     ).toContain(f.a.id);
     await expect(page.locator('.pico-scoped-content')).toHaveCount(0);
-    await expect(page.locator('.pico-potential')).toHaveCount(0);
+    await expect(page.locator('.pico-client-equipment')).toHaveCount(0);
     await expect(page.locator('pre.commercial-report')).toHaveCount(0);
     await navigate(page, 'Клиенты');
     await expect(client(page, f.ca.name)).toHaveCount(0);

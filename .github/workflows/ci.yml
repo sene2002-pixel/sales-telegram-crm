@@ -8,6 +8,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      LETTER_PYTHON: ${{ github.workspace }}/.venv/bin/python
     services:
       postgres:
         image: postgres:17

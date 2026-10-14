@@ -211,6 +211,25 @@ export class Database implements Sql {
       await tx.query(
         'CREATE INDEX IF NOT EXISTS request_history_expiry ON request_history(expires_at)',
       );
+      await tx.query('ALTER TABLE audit ADD COLUMN IF NOT EXISTS analytics_seq bigserial');
+      await tx.query(
+        'ALTER TABLE audit ADD COLUMN IF NOT EXISTS analytics_order_proven boolean NOT NULL DEFAULT false',
+      );
+      await tx.query('ALTER TABLE audit ALTER COLUMN analytics_order_proven SET DEFAULT true');
+      // Additive, repeatable: historical contacts stay unknown rather than guessed.
+      await tx.query(
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS contact_source text NOT NULL DEFAULT 'unknown' CHECK(contact_source IN ('user','bot','unknown'))",
+      );
+      await tx.query(`CREATE TABLE IF NOT EXISTS analytics_settings (
+        id integer PRIMARY KEY CHECK(id=1), revision integer NOT NULL DEFAULT 1,
+        task_days integer NOT NULL CHECK(task_days BETWEEN 1 AND 365),
+        meeting_months integer NOT NULL CHECK(meeting_months BETWEEN 1 AND 24),
+        project_months integer NOT NULL CHECK(project_months BETWEEN 1 AND 24),
+        updated_at timestamptz
+      )`);
+      await tx.query(
+        'INSERT INTO analytics_settings(id,task_days,meeting_months,project_months) VALUES(1,14,3,1) ON CONFLICT DO NOTHING',
+      );
       await tx.query(`CREATE TABLE IF NOT EXISTS request_events (
         id bigserial PRIMARY KEY, report_id uuid NOT NULL REFERENCES request_history(report_id) ON DELETE CASCADE,
         action_id uuid, event text NOT NULL, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now()

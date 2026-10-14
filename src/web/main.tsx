@@ -29,6 +29,7 @@ import {
   TasksScreen,
   ProjectsScreen,
   AnalyticsScreen,
+  AnalyticsSettingsDialog,
   RecordCreate,
   ScreenGuide,
 } from './Screens';
@@ -78,6 +79,8 @@ function App() {
     [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]),
     [contacts, setContacts] = useState<CrmRecord[]>([]);
   const [help, setHelp] = useState(false);
+  const [analyticsSettingsOpen, setAnalyticsSettingsOpen] = useState(false),
+    [analyticsRefreshVersion, setAnalyticsRefreshVersion] = useState(0);
   const [more, setMore] = useState(false),
     [recordCreate, setRecordCreate] = useState<'task' | 'project' | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
@@ -105,6 +108,7 @@ function App() {
     } catch {}
   }
   function clearScopeData() {
+    setAnalyticsSettingsOpen(false);
     setTaskView('open');
     ++scopeGeneration.current;
     setCompanies([]);
@@ -171,6 +175,7 @@ function App() {
     };
   }, [more]);
   function clearAccountData() {
+    setAnalyticsSettingsOpen(false);
     setTaskView('open');
     setCompanies([]);
     setUsers([]);
@@ -592,6 +597,16 @@ function App() {
                   {label}
                 </button>
               ))}
+              {user.role === 'admin' && (
+                <button
+                  onClick={() => {
+                    setMore(false);
+                    setAnalyticsSettingsOpen(true);
+                  }}
+                >
+                  Настройки аналитики
+                </button>
+              )}
               <button onClick={logout}>Выйти</button>
             </div>
           )}
@@ -697,6 +712,7 @@ function App() {
                 users={users}
                 employeeId={employeeId}
                 onScopeDenied={handleScopeDenied}
+                refreshVersion={analyticsRefreshVersion}
               />
             )}
             {tab === 'companies' && (
@@ -956,6 +972,14 @@ function App() {
         />
       )}
       {help && <RoleGuide role={user.role} onClose={() => setHelp(false)} />}
+      {analyticsSettingsOpen && user.role === 'admin' && (
+        <AnalyticsSettingsDialog
+          key={user.id}
+          onClose={() => setAnalyticsSettingsOpen(false)}
+          onSaved={() => setAnalyticsRefreshVersion((v) => v + 1)}
+          onScopeDenied={handleScopeDenied}
+        />
+      )}
       {create && (
         <Modal title="Новый клиент" onClose={() => setCreate(false)}>
           {employeeId && employeeId !== user.id && (

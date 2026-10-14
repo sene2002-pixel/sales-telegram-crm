@@ -17,6 +17,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -470,13 +471,23 @@ class CrmController {
   ) {
     return this.s.dashboard.summary(r.actor, from, to);
   }
+  @Get('analytics/settings') analyticsSettings(@Req() r: AuthedRequest) {
+    return this.s.dashboard.analyticsSettings(r.actor);
+  }
+  @Put('analytics/settings') updateAnalyticsSettings(
+    @Req() r: AuthedRequest,
+    @Body() body: unknown,
+  ) {
+    return this.s.dashboard.updateAnalyticsSettings(r.actor, body);
+  }
   @Get('analytics') analytics(
     @Req() r: AuthedRequest,
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('employeeId') employeeId?: unknown,
+    @Query('mode') mode?: unknown,
   ) {
-    return this.s.dashboard.analytics(r.actor, from, to, employeeId);
+    return this.s.dashboard.analytics(r.actor, from, to, employeeId, mode);
   }
   @Get('dashboard/commercial') commercial(
     @Req() r: AuthedRequest,

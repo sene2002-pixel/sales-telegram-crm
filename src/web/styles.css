@@ -1,3 +1,10 @@
+@font-face {
+  font-family: Manrope;
+  src: url('/fonts/manrope/Manrope-wght.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
 :root {
   font-family:
     Manrope,
@@ -3786,4 +3793,582 @@ select.pico-filter-sort {
 }
 .pico-client-row .company-money strong {
   white-space: nowrap;
+}
+
+/* Supplied final references: readable fixed typography and bounded card copy. */
+.pico-client-row .pico-two-lines,
+.pico-project-row .pico-two-lines,
+.pico-task-row .pico-two-lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.pico-scoped-content > .pico-client-list,
+.pico-scoped-content > .pico-project-list {
+  gap: 8px;
+  margin-top: 12px;
+}
+.pico-client-row {
+  min-height: 0;
+  padding: 12px 14px;
+}
+.pico-client-accordion {
+  border: 0;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px #e6ebf3;
+}
+.pico-client-accordion:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.pico-client-accordion > .pico-client-row {
+  background: transparent;
+}
+.pico-client-row .company-money {
+  flex-basis: 72px;
+  min-width: 72px;
+  max-width: 72px;
+}
+.pico-client-row > span:not(.icon-badge):not(.company-money).pico-client-copy > strong {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
+}
+.pico-client-row > span:not(.icon-badge):not(.company-money).pico-client-copy > small {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  margin-top: 0;
+}
+.pico-client-metadata > span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pico-client-row .icon-badge > svg,
+.pico-project-row > summary .icon-badge > svg {
+  width: 21px;
+  height: 21px;
+}
+.pico-project-row > summary {
+  padding: 12px 0;
+  gap: 10px;
+}
+.pico-project-row > summary .icon-badge {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+.pico-project-row > summary small:last-child {
+  white-space: nowrap;
+}
+.pico-compact-list {
+  border-radius: 20px;
+}
+.pico-task-row.task-row {
+  padding: 12px 14px;
+  border-bottom-color: #edf1f7;
+}
+.pico-task-row .task-text strong {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
+}
+.pico-task-row .task-text small {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+.pico-task-row .checkbox {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 13px;
+}
+.pico-task-row .checkbox::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+}
+.pico-task-row .checkbox > svg {
+  width: 21px;
+  height: 21px;
+}
+.pico-task-row .task-text {
+  min-height: 44px;
+}
+.pico-task-empty {
+  padding: 22px 18px 24px;
+  border-radius: 20px;
+}
+.pico-task-empty .pico-empty-icon {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 0;
+  border-radius: 16px;
+}
+.pico-task-empty .pico-empty-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.pico-task-empty h3 {
+  margin: 12px 0 4px;
+  font-size: 16px;
+  line-height: 21px;
+  font-weight: 800;
+}
+.pico-task-empty p {
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.pico-calendar .calendar > small {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pico-project-row > summary .badge-project-factory {
+  color: #f5a81c;
+  background: #fff3db;
+}
+.pico-scoped-content > .pico-add-row,
+.pico-home > .pico-add-row {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Client analytics: the eight-point relationship scale is separate from deal scoring. */
+.pico-analytics-final {
+  max-width: 760px;
+  padding-bottom: 16px;
+}
+.pico-analytics-final h1 {
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  margin: 0;
+}
+.pico-analytics-heading {
+  min-height: 40px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pico-analytics-heading .pico-period-trigger {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px 0 14px;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  border: 1px solid #e6ebf3;
+  border-radius: 15px;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.pico-client-funnel,
+.pico-score-path,
+.pico-client-metric,
+.pico-client-equipment {
+  background: #fff;
+  border: 1px solid #e6ebf3;
+  border-radius: 20px;
+  min-width: 0;
+}
+.pico-client-funnel {
+  margin-top: 12px;
+  padding: 14px;
+}
+.pico-client-funnel h2,
+.pico-client-equipment h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  line-height: 21px;
+  font-weight: 800;
+  margin: 0;
+}
+.pico-client-funnel h2 svg,
+.pico-client-equipment h2 svg {
+  flex: 0 0 22px;
+  color: #1f7aea;
+}
+.pico-client-funnel-content {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  column-gap: 18px;
+  margin-top: 12px;
+}
+.pico-client-funnel-content > svg {
+  max-width: none;
+  font-family: Manrope, sans-serif;
+}
+.pico-client-funnel-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 6px;
+}
+.pico-client-funnel-legend > div {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  gap: 8px;
+}
+.pico-client-funnel-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  flex: 0 0 8px;
+}
+.pico-client-funnel-legend span {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.pico-client-funnel-legend strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+.pico-score-path {
+  margin-top: 10px;
+  padding: 12px 14px;
+}
+.pico-score-path-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pico-score-path-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
+}
+.pico-score-path-heading > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a8299;
+}
+.pico-score-scale {
+  display: flex;
+  margin-top: 10px;
+}
+.pico-score-scale > div {
+  min-width: 0;
+  text-align: center;
+}
+.pico-score-scale i {
+  display: block;
+  height: 6px;
+  margin: 0 1.5px;
+  border-radius: 3px;
+}
+.pico-score-scale span {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 13px;
+  font-weight: 700;
+  color: #7a8299;
+}
+.pico-score-path p,
+.pico-score-explanation li,
+.pico-analytics-limits p {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: #7a8299;
+}
+.pico-score-path b {
+  color: #1f7aea;
+}
+.pico-score-explanation {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 18px;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.pico-score-explanation > summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: #1f7aea;
+  min-height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  margin: 0;
+}
+.pico-score-explanation ul {
+  padding-left: 18px;
+}
+.pico-client-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.pico-client-metric {
+  padding: 10px 14px;
+}
+.pico-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.pico-metric-label svg {
+  color: #1f7aea;
+  flex: 0 0 16px;
+}
+.pico-metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.pico-metric-value strong {
+  font-size: 26px;
+  line-height: 30px;
+  font-weight: 800;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pico-metric-value > span {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  color: #7a8299;
+}
+.pico-client-metric p,
+.pico-metric-delta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: #7a8299;
+}
+.pico-metric-delta {
+  display: block;
+  margin-top: 4px;
+}
+.pico-metric-delta.tone-positive {
+  color: #22a86b;
+}
+.pico-metric-delta.tone-negative {
+  color: #e55b6c;
+}
+.pico-client-equipment {
+  margin-top: 10px;
+  padding: 14px 14px 6px;
+}
+.pico-client-equipment h2 {
+  margin-bottom: 8px;
+}
+.pico-client-equipment details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border-bottom: 1px solid #edf1f7;
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+.pico-client-equipment > details {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+.pico-client-equipment .pico-potential-client > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pico-client-equipment .pico-potential-client > strong {
+  white-space: nowrap;
+}
+.pico-client-equipment details:last-child > summary {
+  border-bottom: 0;
+}
+.pico-equipment-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #e4effd;
+  color: #1f7aea;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+}
+.pico-client-equipment summary > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.pico-client-equipment summary > strong {
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.pico-client-equipment summary > svg {
+  color: #1f7aea;
+  flex: 0 0 18px;
+}
+.pico-analytics-commercial > .panel {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid #e6ebf3;
+  border-radius: 16px;
+  background: white;
+}
+.pico-analytics-commercial > .panel > button:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+  text-align: left;
+}
+.pico-analytics-commercial > .panel > button:first-child::after {
+  content: '';
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231F7AEA' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+.pico-analytics-commercial > .panel > .form-grid,
+.pico-analytics-commercial > .panel > .commercial-report,
+.pico-analytics-commercial > .panel > .error {
+  margin: 14px;
+}
+.pico-analytics-commercial > .panel > .pico-commercial-report-submit {
+  margin: 0 auto 14px;
+  max-width: calc(100% - 28px);
+}
+.pico-commercial-period-note {
+  display: none;
+}
+.pico-analytics-commercial:has(button[aria-expanded='true']) > .pico-commercial-period-note {
+  display: block;
+}
+@media (max-width: 760px) {
+  .pico-analytics-final {
+    padding-bottom: 4px;
+  }
+  .telegram-native-header .pico-analytics-heading {
+    padding-right: 44px;
+  }
+}
+@media (max-width: 760px) {
+  :root {
+    --pico-nav-inset: max(env(safe-area-inset-bottom, 0px), var(--pico-safe-bottom, 0px));
+    --pico-nav-height: max(82px, calc(48px + var(--pico-nav-inset)));
+  }
+  .workspace {
+    padding-bottom: calc(var(--pico-nav-height) + 12px);
+  }
+  .pico-bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: start;
+    height: var(--pico-nav-height);
+    box-sizing: border-box;
+    /* 1px top border + 3px padding + 44px target = 48px before the inset. */
+    padding: 3px calc(6px + var(--pico-safe-right, 0px)) var(--pico-nav-inset)
+      calc(6px + var(--pico-safe-left, 0px));
+    border-radius: 24px 24px 0 0;
+  }
+  .pico-bottom-nav button {
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    gap: 2px;
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 600;
+  }
+  .pico-bottom-nav button.active {
+    font-weight: 700;
+  }
+  .pico-bottom-nav button > svg {
+    width: 24px;
+    height: 24px;
+  }
+  .pico-bottom-nav button > span {
+    font-size: 11px;
+    line-height: 14px;
+  }
+  .pico-search {
+    height: 44px;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  .pico-search input {
+    height: 42px;
+    min-height: 0;
+    padding: 11px 0;
+    margin: 0;
+    line-height: 20px;
+    box-sizing: border-box;
+  }
+  .pico-scoped-content > .section-head:has(> h1) > h1 {
+    margin: 0;
+  }
+  .pico-scoped-content > .pico-filter-chip-row {
+    padding: 0;
+  }
+  .pico-scoped-content > .pico-add-row {
+    height: 44px;
+    min-height: 44px;
+    padding: 0 16px;
+  }
+  /* Telegram provides its title/close bar outside the WebView. Keep our gear
+     in the page-title row instead of reserving a duplicate 52px app header. */
+  .telegram-native-header .workspace > header {
+    height: 0;
+    min-height: 0;
+    margin-bottom: 0;
+    overflow: visible;
+  }
+  .telegram-native-header .workspace > header .header-leading {
+    display: none;
+  }
+  .telegram-native-header .pico-more-button {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 7;
+  }
+  .telegram-native-header .pico-scoped-content > .section-head:has(> h1) {
+    padding-right: 44px;
+  }
 }

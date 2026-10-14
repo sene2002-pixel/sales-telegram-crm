@@ -49,6 +49,7 @@ export function mapRecord(row: any): CrmRecord {
     version: row.version,
     createdAt: row.created_at,
     data: row.data,
+    ...(row.kind === 'contact' ? { contactSource: row.contact_source || 'unknown' } : {}),
   };
 }
 export class CrmService {
@@ -97,7 +98,7 @@ export class CrmService {
       ownerId,
       JSON.stringify(data),
     ]);
-    await audit(tx, actor.id, 'company.created', id, id, { after: data });
+    await audit(tx, actor.id, 'company.created', id, id, { after: data, afterVersion: 1 });
     return this.company(actor, id, tx);
   }
   async update(actor: Actor, id: string, raw: unknown) {
@@ -114,7 +115,12 @@ export class CrmService {
         'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
         [JSON.stringify(data), id],
       );
-      await audit(tx, actor.id, 'company.updated', id, id, { before: previous, after: data });
+      await audit(tx, actor.id, 'company.updated', id, id, {
+        before: previous,
+        after: data,
+        beforeVersion: previous.version,
+        afterVersion: previous.version + 1,
+      });
       if (previous.archived !== data.archived)
         await audit(tx, actor.id, data.archived ? 'company.archived' : 'company.restored', id, id);
       return this.company(actor, id, tx);
@@ -154,7 +160,7 @@ export class CrmService {
       )
     ).map(mapRecord);
     const events = await this.db.query(
-      'SELECT a.*,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE company_id=$1 ORDER BY created_at DESC LIMIT 100',
+      'SELECT a.id,a.actor_id,a.company_id,a.action,a.entity_id,a.details,a.created_at,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.company_id=$1 ORDER BY a.created_at DESC LIMIT 100',
       [id],
     );
     return { company, records, audit: events };
@@ -336,13 +342,14 @@ export class CrmService {
     raw: unknown,
     projectId: string | null = null,
     tx?: Sql,
+    internal?: { contactSource: 'user' | 'bot' | 'unknown' },
   ): Promise<CrmRecord> {
     const data = recordSchemas[kind].parse(raw);
     if (kind === 'activity' && (data as any).sales)
       (data as any).sales = normalizeSales((data as any).sales);
     if (!tx)
       return this.db.transaction((t) =>
-        this.createRecord(actor, companyId, kind, data, projectId, t),
+        this.createRecord(actor, companyId, kind, data, projectId, t, internal),
       );
     const company = await this.company(actor, companyId, tx, true);
     requireCondition(!company.archived, 409, 'Сначала восстановите компанию из архива');
@@ -360,7 +367,7 @@ export class CrmService {
         ? { ...data, completedAt: (data as any).done ? new Date().toISOString() : null }
         : data;
     const [row] = await tx.query(
-      'INSERT INTO records(id,kind,company_id,project_id,author_id,assignee_id,data) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      'INSERT INTO records(id,kind,company_id,project_id,author_id,assignee_id,data,contact_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
       [
         id,
         kind,
@@ -369,9 +376,13 @@ export class CrmService {
         actor.id,
         kind === 'task' ? company.ownerId : null,
         JSON.stringify(recordData),
+        kind === 'contact' ? internal?.contactSource || 'user' : 'unknown',
       ],
     );
-    await audit(tx, actor.id, `${kind}.created`, id, companyId);
+    await audit(tx, actor.id, `${kind}.created`, id, companyId, {
+      recordVersion: row.version,
+      recordAfter: { data: recordData, contactSource: row.contact_source, deleted: false },
+    });
     if (kind === 'activity' && (data as any).sales) {
       const projected = projectSales(await this.salesHistory(actor, companyId, tx)).current;
       const city = confirmed(projected.client.city),
@@ -394,6 +405,8 @@ export class CrmService {
         await audit(tx, actor.id, 'company.sales_updated', id, companyId, {
           before: company,
           after: next,
+          beforeVersion: company.version,
+          afterVersion: company.version + 1,
         });
       }
     }
@@ -433,6 +446,9 @@ export class CrmService {
       await audit(tx, actor.id, `${row.kind}.updated`, id, row.company_id, {
         before: current.data,
         after: data,
+        recordVersion: updated.version,
+        recordBefore: { data: current.data, contactSource: current.contact_source, deleted: false },
+        recordAfter: { data, contactSource: current.contact_source, deleted: false },
       });
       return mapRecord(updated);
     });
@@ -504,7 +520,11 @@ export class CrmService {
         'Запись изменена. Обновите страницу',
       );
       await tx.query('UPDATE records SET deleted=true,version=version+1 WHERE id=$1', [id]);
-      await audit(tx, actor.id, 'task.deleted', id, row.company_id);
+      await audit(tx, actor.id, 'task.deleted', id, row.company_id, {
+        recordVersion: row.version + 1,
+        recordBefore: { data: row.data, contactSource: row.contact_source, deleted: false },
+        recordAfter: { data: row.data, contactSource: row.contact_source, deleted: true },
+      });
       return { ok: true };
     });
   }
@@ -521,7 +541,11 @@ export class CrmService {
         [id],
       );
       requireCondition(deleted.length, 404, 'Контакт не найден');
-      await audit(tx, actor.id, 'contact.deleted', id, row.company_id);
+      await audit(tx, actor.id, 'contact.deleted', id, row.company_id, {
+        recordVersion: row.version + 1,
+        recordBefore: { data: row.data, contactSource: row.contact_source, deleted: false },
+        recordAfter: { data: row.data, contactSource: row.contact_source, deleted: true },
+      });
       return { ok: true };
     });
   }

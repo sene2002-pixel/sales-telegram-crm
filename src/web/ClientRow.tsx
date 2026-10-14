@@ -75,10 +75,18 @@ export function ClientRow({
         <span className={'icon-badge badge-' + color}>
           <Icon name={icon} />
         </span>
-        <span>
-          <strong>{companyDisplayName(company.name)}</strong>
-          <small>
-            {[labels[company.segment], company.city, company.industry].filter(Boolean).join(' · ')}
+        <span className="pico-client-copy">
+          <strong className="pico-two-lines" title={companyDisplayName(company.name)}>
+            {companyDisplayName(company.name)}
+          </strong>
+          <small
+            className="pico-client-metadata"
+            title={[labels[company.segment], company.city, company.industry]
+              .filter(Boolean)
+              .join(' · ')}
+          >
+            <span>{[labels[company.segment], company.city].filter(Boolean).join(' · ')}</span>
+            {company.industry && <span>{company.industry}</span>}
           </small>
         </span>
         <span className="company-money">

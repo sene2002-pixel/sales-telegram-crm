@@ -1,4 +1,10 @@
 import { test } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createApp } from '../server/http/app';
+import { Extraction } from '../shared/contracts';
+import { professionalSalesModules } from '../shared/professional-sales-context';
 import assert from 'node:assert/strict';
 import { OpenAiAdapter } from '../server/infra/ai';
 import { makeConfig } from '../server/config';
@@ -11,6 +17,7 @@ import {
   emptySales,
   projectSales,
   salesQuestions,
+  salesQuestionVariant,
   salesFeedback,
   Fact,
 } from '../shared/sales';
@@ -146,4 +153,141 @@ test('deferred, unknown and excluded statuses accept missing information without
   s.unknownAnswers = true;
   assert.equal(salesQuestions(s).length, 1);
   assert.ok(!salesQuestions(s)[0]!.includes('?'));
+});
+
+test('all supplied methodology files are attributed, unresolved claims remain outside client evidence', async () => {
+  const sources = new Set<string>(
+    professionalSalesModules.flatMap((module) => [...module.sources]),
+  );
+  for (const name of [
+    '00_system_prompt.md',
+    '01_company_context.md',
+    '02_products_and_solutions.md',
+    '03_client_types_and_roles.md',
+    '04_qualification.md',
+    '05_sales_formula.md',
+    '06_trips_and_meetings.md',
+    '07_references_by_industry.md',
+    '08_communication_style.md',
+    '09_assistant_rules.md',
+    '10_scenarios_and_templates.md',
+    '11_data_model.json',
+    'open_questions.md',
+  ])
+    assert.ok(sources.has(name), name);
+  const ai = new OpenAiAdapter(makeConfig({ NODE_ENV: 'test', OPENAI_API_KEY: '' }));
+  let instructions = '';
+  ai.request = async (_path, body) => {
+    instructions = JSON.parse(String(body)).instructions;
+    return { output: [{ content: [{ type: 'output_text', text: '{}' }] }] };
+  };
+  await assert.rejects(() =>
+    ai.extract('У клиента пока нет подтверждённых сведений.', '2026-10-15T10:00:00Z'),
+  );
+  assert.match(instructions, /цель SMART/);
+  assert.match(instructions, /Архивные референсы 2022–2025/);
+  assert.match(instructions, /Транстелеком/);
+  assert.match(instructions, /Открытые вопросы НЕ факты/);
+  assert.match(instructions, /не действующая схема приложения/);
+  assert.match(instructions, /Приоритет текущего регламента 1218735864996771/);
+  assert.match(instructions, /проверяй каталог и ТЗ/);
+});
+
+test('known-amount question variants preserve missing-only tiers and the global three-question cap', () => {
+  for (const variant of [0, 1, 2]) {
+    for (const amount of [999999, 1000000, 5000000, 5000001]) {
+      const s = qualified(amount),
+        d = s.deals[0]!;
+      d.due = null;
+      d.alternatives = null;
+      d.offerPosition = null;
+      const questions = salesQuestions(s, variant);
+      assert.equal(questions.length, amount < 1000000 ? 0 : 3);
+      assert.ok(questions.every((question) => question.startsWith(d.name! + ':')));
+      assert.ok(
+        !questions.some((question) =>
+          /ЛПР|бюджет|конкурентное предложение|какое оборудование/i.test(question),
+        ),
+      );
+      assert.equal(salesQuestions({ ...s, deferred: true }, variant).length, 0);
+    }
+  }
+  const s = qualified(2000000);
+  s.deals[0]!.due = null;
+  assert.equal(new Set([0, 1, 2].map((variant) => salesQuestions(s, variant)[0])).size, 3);
+});
+
+test('actual report feedback varies first-client known-amount questions while preserving facts, budget and no writes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'crm-professional-variation-'));
+  const { app, services, db } = await createApp(
+    makeConfig({ DATA_DIR: dir, NODE_ENV: 'test', DEV_AUTH: 'true' }),
+  );
+  try {
+    const { user } = await services.auth.dev('manager', '127.0.0.1');
+    const draft = (name: string): Extraction => {
+      const sales = qualified(2000000);
+      sales.deals[0]!.due = null;
+      sales.deals[0]!.alternatives = null;
+      sales.deals[0]!.offerPosition = null;
+      return {
+        warnings: [],
+        blocks: [
+          {
+            companyName: name,
+            inn: null,
+            city: null,
+            segment: null,
+            stage: null,
+            potential: null,
+            divisions: [],
+            summary: 'Сравнение подтвердили, дата реализации пока неизвестна.',
+            occurredOn: '2026-10-15',
+            contacts: [],
+            tasks: [],
+            sales,
+          },
+        ],
+      };
+    };
+    const first = draft('Клиент А'),
+      second = draft('Клиент Б');
+    assert.notEqual(
+      salesQuestionVariant('Клиент А:Модернизация подстанции'),
+      salesQuestionVariant('Клиент Б:Модернизация подстанции'),
+    );
+    const firstBefore = structuredClone(first);
+    const a = await services.reports.feedback(user, first),
+      b = await services.reports.feedback(user, second);
+    const questions = (text: string) =>
+      text.split('\n').filter((line) => line.startsWith('- Модернизация подстанции:'));
+    assert.equal(questions(a).length, 3);
+    assert.equal(questions(b).length, 3);
+    assert.notDeepEqual(questions(a), questions(b));
+    assert.equal(await services.reports.feedback(user, first), a);
+    const combined = await services.reports.feedback(user, {
+      warnings: [],
+      blocks: [...first.blocks, ...second.blocks],
+    });
+    assert.equal(questions(combined).length, 3);
+    assert.deepEqual(first, firstBefore);
+    for (const table of ['companies', 'records', 'reports'])
+      assert.equal((await db.query(`SELECT id FROM ${table}`)).length, 0);
+  } finally {
+    await app.close();
+    await db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('quote-sent wording asks about our dispatch in every variant, never client receipt', () => {
+  const s = qualified(6000000);
+  s.deals[0]!.quoteSent = null;
+  for (const variant of [0, 1, 2]) {
+    const questions = salesQuestions(s, variant);
+    assert.equal(questions.length, 1);
+    assert.match(questions[0]!, /(?:направ|отправ)/i);
+    assert.doesNotMatch(questions[0]!, /получ|прочит|достав/i);
+  }
+  s.deals[0]!.quoteSent = fact(true);
+  assert.deepEqual(salesQuestions(s, 2), []);
 });

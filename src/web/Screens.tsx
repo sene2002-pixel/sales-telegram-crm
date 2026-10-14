@@ -5,7 +5,6 @@ import {
   Actor,
   Company,
   CrmRecord,
-  divisions,
   primaryDivisions,
   primarySegments,
   projectSupplyTypes,
@@ -14,15 +13,12 @@ import {
   labels,
   stages,
   taskSchema,
-  dateSchema,
   taskTypeLabels,
 } from '../shared/contracts';
 import { api, ApiError, money, today } from './api';
 import { Field, Modal, RecordForm, TaskComposer, Chips, ClientPicker } from './forms';
-import { Icon, industryIcon } from './Icons';
+import { Icon } from './Icons';
 import { PickerRow } from './FormWidgets';
-import { AnalyticsSummary } from '../shared/analytics';
-import { CommercialReport } from './CommercialReport';
 export type NamedRecord = CrmRecord & { companyName: string; projectName?: string | null };
 type Common = {
   companies: Company[];
@@ -250,7 +246,7 @@ export function ScreenGuide({
 }
 function Empty({ icon, title, text }: { icon: string; title: string; text: string }) {
   return (
-    <div className="pico-empty">
+    <div className={'pico-empty' + (icon === 'task-empty-calendar' ? ' pico-task-empty' : '')}>
       <span className="pico-empty-icon">
         <Icon name={icon} size={26} />
       </span>
@@ -335,7 +331,7 @@ export function TaskList({
               disabled={busy}
               onClick={() => update(t, { done: !t.data.done })}
             >
-              <Icon name={t.data.done ? 'check' : t.data.type || 'reminder'} size={16} />
+              <Icon name={t.data.done ? 'check' : t.data.type || 'reminder'} size={21} />
             </button>
             <button
               className="task-text"
@@ -350,7 +346,12 @@ export function TaskList({
                 setError('');
               }}
             >
-              <strong className={t.data.done ? 'done' : ''}>{t.data.text}</strong>
+              <strong
+                className={'pico-two-lines' + (t.data.done ? ' done' : '')}
+                title={t.data.text}
+              >
+                {t.data.text}
+              </strong>
               <small>
                 {props.projects.find((p) => p.id === t.projectId)?.data.name ||
                   t.projectName ||
@@ -1094,21 +1095,16 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
         {list.map((p) => (
           <details className="pico-project-row panel" key={p.id}>
             <summary>
-              {(() => {
-                const company = props.companies.find((c) => c.id === p.companyId),
-                  [icon, color] = industryIcon(
-                    company?.industry || p.data.objectType || '',
-                    company?.segment,
-                  );
-                return (
-                  <span className={'icon-badge badge-' + color}>
-                    <Icon name={icon === 'factory' ? 'project-factory' : icon} />
-                  </span>
-                );
-              })()}
+              <span className="icon-badge badge-project-factory">
+                <Icon name="project-factory" />
+              </span>
               <span>
-                <strong>{p.data.name}</strong>
-                <small>{companyDisplayName(p.companyName)}</small>
+                <strong className="pico-two-lines" title={p.data.name}>
+                  {p.data.name}
+                </strong>
+                <small className="pico-two-lines" title={companyDisplayName(p.companyName)}>
+                  {companyDisplayName(p.companyName)}
+                </small>
                 <small>
                   Сумма: <b title={fullMoney(p.data.amount)}>{compactMoney(p.data.amount)}</b>
                 </small>
@@ -1219,369 +1215,4 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
     </>
   );
 }
-type PeriodKey = '7' | '30' | '90' | '365' | 'custom';
-function calendarRange(key: PeriodKey, anchor = today()) {
-  const d = new Date(anchor + 'T12:00:00'),
-    format = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  if (key === '7') {
-    const first = new Date(d);
-    first.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    const last = new Date(first);
-    last.setDate(first.getDate() + 6);
-    return { from: format(first), to: format(last) };
-  }
-  if (key === '90') {
-    const current = new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1, 12),
-      first = new Date(current);
-    first.setMonth(first.getMonth() - 3);
-    const last = new Date(+current - 86400000);
-    return { from: format(first), to: format(last) };
-  }
-  if (key === '365') return { from: `${d.getFullYear()}-01-01`, to: `${d.getFullYear()}-12-31` };
-  const first = new Date(d);
-  first.setDate(first.getDate() - 29);
-  return { from: format(first), to: anchor };
-}
-function analyticsPeriodStorageKey(actorId: string) {
-  return `pico-analytics-period:${actorId}`;
-}
-function readAnalyticsPeriod(actorId: string): { period: PeriodKey; from: string; to: string } {
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(analyticsPeriodStorageKey(actorId)) || 'null');
-    if (
-      saved &&
-      ['7', '30', '90', '365', 'custom'].includes(saved.period) &&
-      dateSchema.safeParse(saved.from).success &&
-      dateSchema.safeParse(saved.to).success &&
-      saved.from <= saved.to
-    )
-      return { period: saved.period, from: saved.from, to: saved.to };
-  } catch {}
-  return { period: '30', ...calendarRange('30') };
-}
-const readableRange = (from: string, to: string) =>
-  [from, to]
-    .map((d) =>
-      new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
-    )
-    .join(' — ');
-const equipmentIcon = (key: string) =>
-  key === 'heat'
-    ? 'heat'
-    : key === 'services'
-      ? 'edit'
-      : key === 'cells'
-        ? 'server'
-        : key.startsWith('drives')
-          ? 'gear'
-          : 'chip';
-export function AnalyticsScreen({
-  companies,
-  user,
-  users,
-  employeeId = '',
-  onScopeDenied,
-}: {
-  employeeId?: string;
-  onScopeDenied?: (error: Error) => void;
-  companies: Company[];
-  user: Actor;
-  users: Actor[];
-}) {
-  const [initialPeriod] = useState(() => readAnalyticsPeriod(user.id));
-  const [period, setPeriod] = useState<PeriodKey>(initialPeriod.period),
-    [from, setFrom] = useState(initialPeriod.from),
-    [to, setTo] = useState(initialPeriod.to),
-    [periodOpen, setPeriodOpen] = useState(false),
-    [draftPeriod, setDraftPeriod] = useState<PeriodKey>(initialPeriod.period),
-    [draftFrom, setDraftFrom] = useState(from),
-    [draftTo, setDraftTo] = useState(to),
-    [summary, setSummary] = useState<AnalyticsSummary | null>(null),
-    [error, setError] = useState('');
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(
-        analyticsPeriodStorageKey(user.id),
-        JSON.stringify({ period, from, to }),
-      );
-    } catch {}
-  }, [user.id, period, from, to]);
-  useEffect(() => {
-    let active = true;
-    setError('');
-    setSummary(null);
-    api<AnalyticsSummary>(
-      `/analytics?${new URLSearchParams({ from, to, ...(employeeId ? { employeeId } : {}) })}`,
-    )
-      .then((s) => {
-        if (active) setSummary(s);
-      })
-      .catch((e) => {
-        if (active) {
-          setError(e.message);
-          if (e instanceof ApiError && (e.status === 401 || e.status === 403)) onScopeDenied?.(e);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [from, to, companies, employeeId]);
-  const active = companies.filter((c) => !c.archived),
-    directions: readonly string[] = active.some((c) => c.divisions.drives != null)
-      ? [...primaryDivisions, 'drives']
-      : primaryDivisions;
-  const delta = (value: number | null, unit: string) =>
-    value == null ? (
-      <small className="muted">Нет данных для сравнения</small>
-    ) : (
-      <small className={value >= 0 ? 'pico-growth positive' : 'pico-growth negative'}>
-        {value >= 0 ? '↑ +' : '↓ '}
-        {Math.round(value * 10) / 10}
-        {unit} к предыдущему периоду
-      </small>
-    );
-  return (
-    <>
-      <div className="section-head">
-        <h1>Аналитика</h1>
-        <button
-          className="pico-period-trigger"
-          aria-label="Период аналитики"
-          onClick={() => {
-            setDraftPeriod(period);
-            setDraftFrom(from);
-            setDraftTo(to);
-            setPeriodOpen(true);
-          }}
-        >
-          {period === 'custom'
-            ? 'Свой период'
-            : period === '90'
-              ? 'Квартал'
-              : period === '365'
-                ? 'Год'
-                : period === '7'
-                  ? 'Неделя'
-                  : '30 дней'}{' '}
-          <Icon name="chevron-down" size={14} />
-        </button>
-      </div>
-      {periodOpen && (
-        <Modal title="Период" onClose={() => setPeriodOpen(false)}>
-          <div className="pico-period-options" role="radiogroup" aria-label="Период аналитики">
-            {(
-              [
-                ['7', 'Неделя'],
-                ['30', 'Месяц'],
-                ['90', 'Квартал'],
-                ['365', 'Год'],
-                ['custom', 'Свой период'],
-              ] as [PeriodKey, string][]
-            ).map(([key, title]) => {
-              const range = calendarRange(key);
-              return (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={draftPeriod === key}
-                  className="pico-period-option"
-                  key={key}
-                  onClick={() => {
-                    setDraftPeriod(key);
-                    if (key !== 'custom') {
-                      setDraftFrom(range.from);
-                      setDraftTo(range.to);
-                    }
-                  }}
-                >
-                  <span className={'pico-radio ' + (draftPeriod === key ? 'checked' : '')} />
-                  <strong>{title}</strong>
-                  <small>
-                    {key === 'custom'
-                      ? 'Выбрать даты'
-                      : key === '365'
-                        ? String(new Date().getFullYear())
-                        : readableRange(range.from, range.to)}
-                  </small>
-                </button>
-              );
-            })}
-          </div>
-          {draftPeriod === 'custom' && (
-            <div className="pico-form-two">
-              <Field label="Начало периода">
-                <input
-                  type="date"
-                  value={draftFrom}
-                  max={draftTo}
-                  onChange={(e) => setDraftFrom(e.target.value)}
-                />
-              </Field>
-              <Field label="Конец периода">
-                <input
-                  type="date"
-                  value={draftTo}
-                  min={draftFrom}
-                  onChange={(e) => setDraftTo(e.target.value)}
-                />
-              </Field>
-            </div>
-          )}
-          <button
-            className="primary pico-sheet-submit"
-            disabled={!draftFrom || !draftTo || draftFrom > draftTo}
-            onClick={() => {
-              setPeriod(draftPeriod);
-              setFrom(draftFrom);
-              setTo(draftTo);
-              setPeriodOpen(false);
-            }}
-          >
-            Применить
-          </button>
-        </Modal>
-      )}
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      {!companies.length ? (
-        <>
-          <section className="pico-intro">
-            <h2>Как работает аналитика</h2>
-            <div className="pico-analytics-journey">
-              <span>
-                <Icon name="email" size={28} />
-                Вы пишете в чат
-              </span>
-              <Icon name="chevron-right" />
-              <span>
-                <Icon name="sparkles" size={28} />
-                Pico разбирает заметки
-              </span>
-              <Icon name="chevron-right" />
-              <span>
-                <Icon name="analytics" size={28} />
-                Видите итоги
-              </span>
-            </div>
-            <p>
-              Pico структурирует заметки по каждому клиенту и подсказывает, что ещё уточнить для
-              следующего шага.
-            </p>
-          </section>
-          <ScreenGuide
-            title="Как считаются показатели"
-            items={[
-              ['funnel', 'Воронка продаж', 'Стадии клиентов, созданных за выбранный период'],
-              ['tasks', 'Конверсия', 'Доля завершённых клиентов среди созданных за период'],
-              ['potential', 'Потенциал', 'Годовой потенциал активных клиентов по направлениям'],
-            ]}
-          />
-        </>
-      ) : (
-        <>
-          {!summary && !error && <p role="status">Загрузка аналитики…</p>}
-          {summary && (
-            <>
-              <section className="panel pico-funnel">
-                <h2>
-                  <span className="pico-row-icon">
-                    <Icon name="funnel" />
-                  </span>
-                  Воронка продаж
-                </h2>
-                <p className="muted">По подтверждённым данным CRM за {readableRange(from, to)}</p>
-                {summary.funnel.map((stage, index) => (
-                  <div className="pico-funnel-row" key={stage.key}>
-                    <span
-                      className={'pico-funnel-bar funnel-' + index}
-                      style={{ width: `${100 - index * 13}%` }}
-                    >
-                      {stage.count}
-                    </span>
-                    <span>{stage.label}</span>
-                    <strong>{stage.count}</strong>
-                  </div>
-                ))}
-              </section>
-              <div className="pico-analytics-metrics">
-                <section className="panel">
-                  <small>
-                    <Icon name="tasks" size={15} /> Конверсия
-                  </small>
-                  <strong>
-                    {summary.conversion == null ? '—' : Math.round(summary.conversion) + '%'}
-                  </strong>
-                  {delta(summary.conversionDelta, ' п.п.')}
-                </section>
-                <section className="panel">
-                  <small>
-                    <Icon name="clients" size={15} /> Активные клиенты
-                  </small>
-                  <strong>{summary.activeClients}</strong>
-                  {delta(summary.activeDelta, '%')}
-                </section>
-              </div>
-              {summary.historyIncomplete > 0 && (
-                <p className="muted">
-                  Для части старых клиентов недостаточно данных для сравнения периодов.
-                </p>
-              )}
-            </>
-          )}
-          <section className="panel pico-potential">
-            <h2>
-              <span className="pico-row-icon">
-                <Icon name="potential" />
-              </span>
-              Потенциал по оборудованию
-            </h2>
-            {directions.map((direction) => {
-              const list = active.filter(
-                  (c) => c.divisions[direction as keyof Company['divisions']] != null,
-                ),
-                sum = list.reduce(
-                  (total, c) => total + (c.divisions[direction as keyof Company['divisions']] || 0),
-                  0,
-                );
-              return (
-                <details key={direction}>
-                  <summary>
-                    <span className="pico-row-icon">
-                      <Icon name={equipmentIcon(direction)} size={16} />
-                    </span>
-                    <span className="pico-equipment-label">{divisionLabels[direction]}</span>
-                    <strong>{list.length ? money(sum) : '—'}</strong>
-                    <Icon name="chevron-down" size={16} />
-                  </summary>
-                  {list.map((c) => (
-                    <div className="pico-potential-client" key={c.id}>
-                      <span>{companyDisplayName(c.name)}</span>
-                      <strong>{money(c.divisions[direction as keyof Company['divisions']])}</strong>
-                    </div>
-                  ))}
-                  {!list.length && (
-                    <div className="pico-potential-client">
-                      <span>Потенциал пока не указан</span>
-                    </div>
-                  )}
-                </details>
-              );
-            })}
-          </section>
-        </>
-      )}
-      {user.role !== 'manager' && (
-        <CommercialReport
-          users={users}
-          employeeId={employeeId}
-          initialPeriod={{ from, to }}
-          onScopeDenied={onScopeDenied}
-        />
-      )}
-    </>
-  );
-}
+export { AnalyticsScreen, AnalyticsSettingsDialog } from './Analytics';

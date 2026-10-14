@@ -191,6 +191,7 @@ export const recordSchemas = {
 };
 export type RecordKind = keyof typeof recordSchemas;
 export interface CrmRecord {
+  readonly contactSource?: ContactSource;
   id: string;
   kind: RecordKind;
   companyId: string;
@@ -264,3 +265,24 @@ export interface CompanyDetail {
   records: CrmRecord[];
   audit: any[];
 }
+
+// Server-owned provenance; deliberately absent from editable contactSchema.
+export type ContactSource = 'user' | 'bot' | 'unknown';
+export const analyticsSettingsInputSchema = z
+  .object({
+    revision: z.number().int().positive(),
+    taskDays: z.number().int().min(1).max(365),
+    meetingMonths: z.number().int().min(1).max(24),
+    projectMonths: z.number().int().min(1).max(24),
+  })
+  .strict();
+export type AnalyticsSettings = z.infer<typeof analyticsSettingsInputSchema> & {
+  updatedAt: string | null;
+};
+export const defaultAnalyticsSettings: AnalyticsSettings = {
+  revision: 1,
+  taskDays: 14,
+  meetingMonths: 3,
+  projectMonths: 1,
+  updatedAt: null,
+};

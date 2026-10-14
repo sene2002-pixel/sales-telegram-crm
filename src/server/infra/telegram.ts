@@ -21,6 +21,41 @@ export class ProcessingMessageUndeletable extends DomainError {
     super(502, 'Telegram запретил удаление временного сообщения; очистка не блокирует результат');
   }
 }
+export function buildLetterPdfCaption(details: {
+  recipient: string[];
+  source: string;
+  industry: string;
+  references: string[];
+  number: string;
+  date: string;
+  signature: string;
+  warning?: string;
+}) {
+  const clean = (value: string, limit: number) => {
+    const text = value
+      .replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text.length <= limit
+      ? text
+      : text.slice(0, limit - 1).replace(/[\uD800-\uDBFF]$/, '') + '…';
+  };
+  return [
+    `${clean(details.recipient.join(', '), 200)}. ${clean(details.source, 90)}`,
+    `Отрасль: ${clean(details.industry, 80)}; референсы: ${
+      details.references.length
+        ? details.references
+            .slice(0, 3)
+            .map((r) => clean(r, 55))
+            .join('; ')
+        : 'не подставлены'
+    }`,
+    `Исх. № ${clean(details.number, 4)} от ${clean(details.date, 10)}; подпись: ${clean(details.signature, 60)}`,
+    'Сохранено в CRM. Из чата удалится через 24 часа' +
+      (details.warning ? `; ${clean(details.warning, 180)}` : ''),
+  ].join('\n');
+}
+
 export class TelegramAdapter implements Messenger {
   constructor(
     private config: Config,
@@ -155,12 +190,19 @@ export class TelegramAdapter implements Messenger {
     content: Uint8Array,
     filename: string,
     warning?: string,
+    metadataCaption?: string,
   ): Promise<number | void> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     requireCondition(
       Buffer.from(content).subarray(0, 5).toString() === '%PDF-',
       502,
       'Некорректный PDF',
+    );
+    requireCondition(
+      !metadataCaption ||
+        (metadataCaption.length <= 1024 && metadataCaption.split('\n').length <= 4),
+      400,
+      'Некорректная подпись к письму',
     );
     const body = new FormData();
     body.append('chat_id', chatId);
@@ -171,7 +213,11 @@ export class TelegramAdapter implements Messenger {
     );
     body.append(
       'caption',
-      'Сохранено в CRM. Из чата удалится через 24 часа' + (warning ? `\n${warning}` : ''),
+      metadataCaption ||
+        ('Сохранено в CRM. Из чата удалится через 24 часа' + (warning ? `\n${warning}` : '')).slice(
+          0,
+          1024,
+        ),
     );
     const response = await fetch(
       `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,

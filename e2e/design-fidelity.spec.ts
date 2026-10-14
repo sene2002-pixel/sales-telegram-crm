@@ -123,12 +123,12 @@ test('Design fidelity: period choices have ranges, cancel preserves data and app
   const trigger = page.getByRole('button', { name: 'Период аналитики', exact: true });
   await trigger.click();
   const period = page.getByRole('dialog', { name: 'Период', exact: true });
-  await expect(period.getByRole('radio')).toHaveCount(5);
+  await expect(period.getByRole('radio')).toHaveCount(6);
   await expect(period).toContainText(/\d+\s+\p{L}+\s*[—–]\s*\d+/u);
-  await period.getByRole('radio', { name: /Неделя/ }).click();
+  await period.getByRole('radio', { name: /7 дней/ }).click();
   await screenshot(page, 'analytics-period-ranges');
   await period.getByRole('button', { name: /Закрыть|Отмена/ }).click();
-  await expect(trigger).toContainText('30 дней');
+  await expect(trigger).toContainText('Весь период');
   await trigger.click();
   await period.getByRole('radio', { name: /Свой период/ }).click();
   await period.getByLabel('Начало периода').fill('2026-01-01');
