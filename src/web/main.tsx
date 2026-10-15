@@ -79,13 +79,6 @@ function App() {
   const [files, setFiles] = useState<(CrmRecord & { companyName: string })[]>([]),
     [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]),
     [contacts, setContacts] = useState<CrmRecord[]>([]);
-  const [levelFilter, setLevelFilter] = useState<{
-    key: string;
-    label: string;
-    ids: string[];
-    query: string;
-  } | null>(null);
-  const [levelLoading, setLevelLoading] = useState(false);
   const [help, setHelp] = useState(false);
   const [analyticsSettingsOpen, setAnalyticsSettingsOpen] = useState(false),
     [analyticsRefreshVersion, setAnalyticsRefreshVersion] = useState(0);
@@ -116,7 +109,6 @@ function App() {
     } catch {}
   }
   function clearScopeData() {
-    setLevelFilter(null);
     setAnalyticsSettingsOpen(false);
     setTaskView('open');
     ++scopeGeneration.current;
@@ -184,7 +176,6 @@ function App() {
     };
   }, [more]);
   function clearAccountData() {
-    setLevelFilter(null);
     setAnalyticsSettingsOpen(false);
     setTaskView('open');
     setCompanies([]);
@@ -411,47 +402,6 @@ function App() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [user]);
-  useEffect(() => {
-    if (!user || !levelFilter) {
-      setLevelLoading(false);
-      return;
-    }
-    let active = true;
-    setLevelLoading(true);
-    const key = levelFilter.key;
-    api<import('../shared/analytics').AnalyticsSummary>(
-      `/analytics?${levelFilter.query}${employeeId ? `&employeeId=${encodeURIComponent(employeeId)}` : ''}`,
-    )
-      .then((summary) => {
-        if (!active) return;
-        if (!summary.clientAnalytics) throw new Error('Не удалось обновить уровни клиентов');
-        const ids = summary.clientAnalytics.clients.filter((c) => c.level === key).map((c) => c.id);
-        setLevelFilter((value) => (value ? { ...value, ids } : null));
-      })
-      .catch((e) => {
-        if (active) {
-          if (e instanceof ApiError && [401, 403].includes(e.status)) {
-            handleScopeDenied(e);
-            return;
-          }
-          setLevelFilter((value) => (value ? { ...value, ids: [] } : null));
-          setError(e.message);
-        }
-      })
-      .finally(() => {
-        if (active) setLevelLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [
-    levelFilter?.key,
-    levelFilter?.query,
-    companies,
-    employeeId,
-    user?.id,
-    analyticsRefreshVersion,
-  ]);
   if (!user)
     return (
       <main className="login">
@@ -532,7 +482,6 @@ function App() {
   const visible = companies.filter(
     (c) =>
       c.archived === archive &&
-      (!levelFilter || (!levelLoading && levelFilter.ids.includes(c.id))) &&
       (clientStatus === 'all' ||
         (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
       (!query ||
@@ -755,17 +704,6 @@ function App() {
                 employeeId={employeeId}
                 onScopeDenied={handleScopeDenied}
                 refreshVersion={analyticsRefreshVersion}
-                onShowLevel={(key, label, ids, query) => {
-                  setQuery('');
-                  setCity('');
-                  setSegment('');
-                  setDivision('');
-                  setArchive(false);
-                  setClientStatus('all');
-                  setLevelFilter({ key, label, ids, query });
-                  setTab('companies');
-                  window.scrollTo(0, 0);
-                }}
               />
             )}
             {tab === 'companies' && (
@@ -805,15 +743,6 @@ function App() {
                     <Icon name="filter" size={16} />
                   </button>
                 </div>
-                {levelFilter && (
-                  <button
-                    className="pico-level-filter"
-                    onClick={() => setLevelFilter(null)}
-                    aria-label="Сбросить фильтр уровня"
-                  >
-                    Уровень: {levelFilter.label} <span aria-hidden="true">×</span>
-                  </button>
-                )}
                 <button className="pico-add-row" onClick={() => setCreate(true)}>
                   <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
                 </button>
@@ -859,7 +788,6 @@ function App() {
                           setDivision('');
                           setArchive(false);
                           setClientSort('name');
-                          setLevelFilter(null);
                         }}
                       >
                         Сбросить
@@ -873,7 +801,6 @@ function App() {
                     </div>
                   </Modal>
                 )}
-                {levelFilter && levelLoading && <p role="status">Обновляем уровни клиентов…</p>}
                 <div className="pico-client-list">
                   {[...visible]
                     .sort((a, b) =>
@@ -893,7 +820,7 @@ function App() {
                       />
                     ))}
                 </div>
-                {!visible.length && !levelLoading && (
+                {!visible.length && (
                   <div className="empty">
                     <h3>
                       {companies.length
