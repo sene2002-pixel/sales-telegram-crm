@@ -141,13 +141,6 @@ function LevelClients({ clients, label }: { clients: Company[]; label: string })
           />
         </div>
       )}
-      {expanded && (
-        <p className="pico-level-count" role="status">
-          Показаны {visible.length} из {matches.length}
-          {normalized ? ' найденных' : ' клиентов'}
-          {matches.length > LEVEL_CLIENT_LIMIT ? '. Уточните поиск' : ''}
-        </p>
-      )}
       <ul
         id={listId}
         className={`pico-level-client-list${expanded ? ' is-expanded' : ''}`}
@@ -162,22 +155,20 @@ function LevelClients({ clients, label }: { clients: Company[]; label: string })
         ))}
       </ul>
       {expanded && !matches.length && <p className="pico-level-count">Клиенты не найдены</p>}
-      {clients.length > 3 && (
+      {clients.length > 3 && !expanded && (
         <button
           className="text-button"
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
           onClick={() => {
-            setExpanded(!expanded);
+            setExpanded(true);
             setQuery('');
           }}
         >
-          {expanded
-            ? 'Свернуть'
-            : clients.length > LEVEL_CLIENT_LIMIT
-              ? 'Показать до 100'
-              : `Показать всех, ${clients.length}`}
+          {clients.length > LEVEL_CLIENT_LIMIT
+            ? 'Показать до 100'
+            : `Показать всех, ${clients.length}`}
         </button>
       )}
     </div>
