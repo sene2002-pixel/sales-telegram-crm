@@ -369,6 +369,8 @@ test('Start offers import; its button sends the exact supplied workbook and crea
   assert.ok(sent[0]!.caption.length <= 1024);
   for (const phrase of [
     'Предзаполненные строки — пример',
+    'в одной ячейке «Контакты»',
+    'с новой строки внутри этой ячейки',
     'не импортируются',
     'млн ₽',
     'Подтвердить импорт',
