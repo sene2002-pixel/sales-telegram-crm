@@ -6,7 +6,7 @@ import { makeConfig } from '../server/config';
 import { importTemplateCaption } from '../server/services/import-onboarding';
 
 test('Template multipart upload preserves all XLSX bytes, fixed filename and caption, and handles provider errors', async (t) => {
-  const bytes = await readFile('assets/import/Pico-shablon-perenosa-klientov.xlsx');
+  const bytes = await readFile('assets/import/Pico-import.xlsx');
   const adapter = new TelegramAdapter(
     makeConfig({ NODE_ENV: 'test', BOT_TOKEN: 'synthetic-template-only' }),
   );
@@ -18,7 +18,7 @@ test('Template multipart upload preserves all XLSX bytes, fixed filename and cap
     assert.ok(options.body instanceof FormData);
     assert.equal(options.body.get('chat_id'), '997001');
     const file = options.body.get('document') as File;
-    assert.equal(file.name, 'Pico-shablon-perenosa-klientov.xlsx');
+    assert.equal(file.name, 'Pico-import.xlsx');
     assert.equal(file.type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     assert.deepEqual(Buffer.from(await file.arrayBuffer()), bytes);
     assert.equal(options.body.get('caption'), importTemplateCaption);

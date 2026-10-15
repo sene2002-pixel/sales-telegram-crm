@@ -253,7 +253,7 @@ test('Bot Google document import rejects unexpected URL query before DNS or remo
 
 test('Bot accepts the Pico workbook and DOCX upload with linked contacts/projects only after confirmation', async () => {
   input = picoTemplate({ clients: [syntheticClient()], projects: [syntheticProject()] });
-  await webhook(document(actor, { file_name: 'Pico-shablon-perenosa-klientov.xlsx' })).expect(201);
+  await webhook(document(actor, { file_name: 'Pico-import.xlsx' })).expect(201);
   assert.equal((await rows('records')).length, 0);
   await webhook(callback(confirmData())).expect(201);
   assert.equal((await rows('companies')).length, 1);

@@ -179,7 +179,7 @@ export class TelegramAdapter implements Messenger {
       new Blob([new Uint8Array(content)], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
-      'Pico-shablon-perenosa-klientov.xlsx',
+      'Pico-import.xlsx',
     );
     body.append('caption', caption);
     const response = await fetch(

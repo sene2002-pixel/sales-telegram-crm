@@ -171,7 +171,7 @@ export class BotService {
       if (callback?.data === importTemplateAction && this.imports) {
         await this.telegram.call('answerCallbackQuery', { callback_query_id: callback.id });
         try {
-          const bytes = await readFile('assets/import/Pico-shablon-perenosa-klientov.xlsx');
+          const bytes = await readFile('assets/import/Pico-import.xlsx');
           await this.telegram.sendImportTemplate(chatId, bytes, importTemplateCaption);
         } catch {
           await this.diagnostics?.record('import.template_failed', { reason: 'delivery_failed' });
