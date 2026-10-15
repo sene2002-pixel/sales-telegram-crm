@@ -4548,12 +4548,6 @@ select.pico-filter-sort {
   margin: 0;
   padding: 0;
 }
-.pico-level-client-list.is-expanded {
-  max-height: min(360px, 50dvh);
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-gutter: stable;
-}
 .pico-level-search {
   margin: 8px 0;
 }

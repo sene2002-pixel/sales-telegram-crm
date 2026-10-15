@@ -540,3 +540,38 @@ test('Large level caps the inline list at 100, searches beyond the cap and clear
   await expect(page.getByRole('alert')).toContainText('Доступ к уровню отозван');
   await expect(page.locator('.pico-levels')).toHaveCount(0);
 });
+
+for (const count of [6, 121]) {
+  test(`Desktop wheel scrolls the page over a level with ${count} clients`, async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== 'desktop', 'Desktop wheel regression');
+    const { level } = await levelFixture(page, count);
+    await level
+      .getByRole('button', { name: count > 100 ? 'Показать до 100' : `Показать всех, ${count}` })
+      .click();
+    const list = level.locator('ul');
+    const first = list.locator('li').first();
+    await first.scrollIntoViewIfNeeded();
+    const box = (await first.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const top = await page.evaluate(() => document.scrollingElement!.scrollTop);
+    await page.mouse.wheel(0, 240);
+    await expect
+      .poll(() => page.evaluate(() => document.scrollingElement!.scrollTop))
+      .toBeGreaterThan(top);
+    expect(
+      await list.evaluate((el) => ({
+        top: el.scrollTop,
+        height: el.clientHeight,
+        fullHeight: el.scrollHeight,
+      })),
+    ).toEqual({
+      top: 0,
+      height: await list.evaluate((el) => el.scrollHeight),
+      fullHeight: await list.evaluate((el) => el.scrollHeight),
+    });
+    await page.locator('.pico-client-equipment').scrollIntoViewIfNeeded();
+    await expect(page.locator('.pico-client-equipment h2')).toBeVisible();
+  });
+}
