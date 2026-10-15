@@ -5,6 +5,9 @@ import { request } from 'node:https';
 import {
   CompanyData,
   companySchema,
+  contactSchema,
+  projectSchema,
+  validInn,
   labels,
   segments,
   stages,
@@ -38,6 +41,12 @@ export type ImportedCompany = {
   data: Partial<CompanyData> & { name: string };
   missing: string[];
   warnings: string[];
+  contacts?: ReturnType<typeof contactSchema.parse>[];
+  projects?: {
+    data: ReturnType<typeof projectSchema.parse>;
+    source: string;
+    customerInn?: string;
+  }[];
 };
 const baseFields = [
   'name',
@@ -155,6 +164,12 @@ export function parseCompanyTable(
     400,
     'Таблица должна содержать заголовок и до 100 компаний',
   );
+  const contactColumn = rows[0]!.findIndex((h) => normalize(h) === 'контакты');
+  const contactRows = rows
+    .slice(1)
+    .map((r) => (contactColumn < 0 ? [] : parseBusinessContacts(r[contactColumn] || '', privacy)));
+  const safeRows = rows.map((r) => r.map((v, i) => (i === contactColumn ? '' : v)));
+  rows = safeRows;
   for (const row of rows) {
     requireCondition(
       row.length <= companyImportLimits.columns,
@@ -192,7 +207,7 @@ export function parseCompanyTable(
   const result: ImportedCompany[] = [];
   for (let index = 1; index < rows.length; index++) {
     const row = rows[index]!;
-    if (!row.some((v) => v.trim())) continue;
+    if (!row.some((v) => v.trim()) && !contactRows[index - 1]?.length) continue;
     const data: any = {};
     mapped.forEach((field, col) => {
       const value = (row[col] || '').trim();
@@ -253,7 +268,10 @@ export function parseCompanyTable(
               notes: 'Заметки',
             })[f],
         ),
-      warnings: unknown.length ? [`Не импортированы колонки: ${unknown.length}`] : [],
+      warnings: unknown.length
+        ? [`Не импортированы колонки: ${unknown.length} (${unknown.join(', ').slice(0, 400)})`]
+        : [],
+      ...(contactRows[index - 1]?.length ? { contacts: contactRows[index - 1] } : {}),
     });
   }
   requireCondition(result.length, 400, 'В таблице нет компаний');
@@ -299,7 +317,10 @@ function csv(text: string): string[][] {
   }
   return rows;
 }
-async function unzip(bytes: Buffer): Promise<Map<string, string>> {
+async function unzip(
+  bytes: Buffer,
+  policy: 'xlsx' | 'docx' = 'xlsx',
+): Promise<Map<string, string>> {
   return new Promise((resolve, reject) => {
     let zip: ZipFile | undefined,
       total = 0,
@@ -375,11 +396,23 @@ async function unzip(bytes: Buffer): Promise<Map<string, string>> {
                   requireCondition(length === entry.uncompressedSize, 400, 'Повреждённый XLSX');
                   const content = Buffer.concat(chunks).toString('utf8');
                   if (entry.fileName.endsWith('.xml') || entry.fileName.endsWith('.rels')) {
-                    requireCondition(
-                      !/TargetMode\s*=\s*["']External/i.test(content),
-                      400,
-                      'Внешние ссылки в XLSX запрещены',
-                    );
+                    if (/TargetMode\s*=\s*["']External/i.test(content)) {
+                      const relationships =
+                        policy === 'docx' && entry.fileName.endsWith('.rels')
+                          ? arr(xml(content).Relationships?.Relationship)
+                          : [];
+                      requireCondition(
+                        relationships.length > 0 &&
+                          relationships.every(
+                            (r) =>
+                              r['@_TargetMode'] !== 'External' ||
+                              (String(r['@_Type']).endsWith('/hyperlink') &&
+                                /^(?:https?:|mailto:)/i.test(String(r['@_Target']))),
+                          ),
+                        400,
+                        'Внешние связи и объекты не поддерживаются',
+                      );
+                    }
                     out.set(entry.fileName, content);
                   }
                   file.readEntry();
@@ -399,7 +432,7 @@ async function unzip(bytes: Buffer): Promise<Map<string, string>> {
 }
 export async function parseCompanyImport(
   bytes: Uint8Array,
-  format: 'xlsx' | 'csv' | 'txt',
+  format: 'xlsx' | 'csv' | 'txt' | 'docx',
   privacy: ImportPrivacyGuard,
 ): Promise<ImportedCompany[]> {
   requireCondition(
@@ -407,6 +440,7 @@ export async function parseCompanyImport(
     413,
     'Файл должен быть не больше 2 МБ',
   );
+  if (format === 'docx') return parseGoogleDocx(Buffer.from(bytes), privacy);
   if (format !== 'xlsx') {
     let text: string;
     try {
@@ -414,8 +448,10 @@ export async function parseCompanyImport(
     } catch {
       throw new DomainError(400, 'Отправьте текст в кодировке UTF-8');
     }
-    privacy(text);
-    if (format === 'csv' || /^(?:название|компания|name|company)[\t;,]/i.test(text.trim()))
+    if (
+      format === 'csv' ||
+      /^(?:название(?: компании)?|наименование|компания|name|company)[\t;,]/i.test(text.trim())
+    )
       return parseCompanyTable(csv(text), 'Таблица', privacy);
     if (!text.includes(':'))
       return parseCompanyTable(
@@ -460,6 +496,8 @@ export async function parseCompanyImport(
     return companies;
   }
   const parts = await unzip(Buffer.from(bytes));
+  const template = parsePicoTemplate(parts, privacy);
+  if (template) return template;
   const shared = arr(xml(parts.get('xl/sharedStrings.xml') || '<sst/>').sst?.si).map(textNode);
   const sheets = [...parts.keys()].filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/.test(p)).sort();
   requireCondition(sheets.length === 1, 400, 'Импортируйте файл с одним листом компаний');
@@ -489,7 +527,10 @@ export async function parseCompanyImport(
   }
   return parseCompanyTable(rows, 'XLSX', privacy);
 }
-export async function fetchPublicGoogleDocument(raw: string): Promise<Uint8Array> {
+export async function fetchPublicGoogleDocument(
+  raw: string,
+  format: 'txt' | 'docx' = 'txt',
+): Promise<Uint8Array> {
   let url: URL;
   try {
     url = new URL(raw);
@@ -569,7 +610,7 @@ export async function fetchPublicGoogleDocument(raw: string): Promise<Uint8Array
     const req = request(
       {
         hostname: 'docs.google.com',
-        path: `/document/d/${match[1]}/export?format=txt`,
+        path: `/document/d/${match[1]}/export?format=${format}`,
         method: 'GET',
         timeout: 10000,
         family: 4,
@@ -578,7 +619,11 @@ export async function fetchPublicGoogleDocument(raw: string): Promise<Uint8Array
       (res) => {
         if (
           res.statusCode !== 200 ||
-          !/^text\/plain(?:;|$)/i.test(String(res.headers['content-type'] || ''))
+          !(
+            format === 'txt'
+              ? /^text\/plain(?:;|$)/i
+              : /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document(?:;|$)/i
+          ).test(String(res.headers['content-type'] || ''))
         ) {
           req.destroy();
           return fail();
@@ -608,4 +653,492 @@ export async function fetchPublicGoogleDocument(raw: string): Promise<Uint8Array
     req.on('error', fail);
     req.end();
   });
+}
+
+// Business contacts are allowed only in this structured local import channel.
+// Check the same privacy policy on names/roles and all residual text, never send to AI.
+export function parseBusinessContacts(value: string, privacy: ImportPrivacyGuard) {
+  requireCondition(value.length <= 1000, 400, 'Слишком длинное поле контактов');
+  const lines = value.split(/\r?\n/).filter((v) => v.trim());
+  requireCondition(lines.length <= 10, 400, 'До 10 контактов на компанию');
+  return lines.map((line) => {
+    const fields = line.split(',').map((v) => v.trim());
+    requireCondition(
+      fields.length === 4,
+      400,
+      'Контакты: одна строка «ФИО, должность, телефон, email»; для пропуска поля оставьте пустое место между запятыми',
+    );
+    const [name, role, phone, email] = fields as [string, string, string, string];
+    privacy(name);
+    privacy(role);
+    requireCondition(
+      !phone || /^\+?[\d ()-]{5,30}$/.test(phone),
+      400,
+      'Проверьте телефон контакта',
+    );
+    const checked = contactSchema.safeParse({ name, role, phone, email });
+    requireCondition(checked.success, 400, 'Проверьте имя и email контакта');
+    // Strip only the validated business address. Forbidden categories/secrets in its
+    // local/domain parts must still be checked by the caller's policy.
+    privacy(email.replace('@', ' '));
+    return checked.data!;
+  });
+}
+
+const clientHeaders = [
+  'ИНН *',
+  'Компания *',
+  'Город',
+  'Тип клиента *',
+  'Выключатели',
+  '',
+  'ПЧ (УПП)',
+  '',
+  'КСО (КРУ)',
+  'Шкафы АСУ ТП',
+  'Услуги',
+  'Теплотехника',
+  'Итого потенциал',
+  'Якорные заказчики',
+  'Контакты',
+  'Комментарий',
+];
+const projectHeaders = [
+  'Компания *',
+  'ИНН *',
+  'Проект *',
+  'Заказчик проекта',
+  'ИНН заказчика',
+  'Выключатели',
+  '',
+  'ПЧ (УПП)',
+  '',
+  'КСО (КРУ)',
+  'Шкафы АСУ ТП',
+  'ДГУ (ДЭС)',
+  'Шкафы НКУ',
+  'Услуги',
+  'Теплотехника',
+  'Другое',
+  'Итого, млн ₽',
+  'Стадия *',
+  'Решение до',
+  'Дата поставки',
+  'Комментарий',
+];
+const columnLetter = (n: number) => String.fromCharCode(65 + n);
+function templateSheet(
+  part: string,
+  shared: string[],
+  headers: string[],
+  kind: 'clients' | 'projects',
+) {
+  const sheet = xml(part).worksheet;
+  const cells = new Map<string, { value: string; formula?: string }>();
+  const physicalRows = arr(sheet?.sheetData?.row);
+  requireCondition(physicalRows.length <= 504, 400, 'Шаблон содержит слишком много строк');
+  for (const row of physicalRows) {
+    for (const c of arr(row.c)) {
+      const ref = /^([A-Z]+)([1-9]\d*)$/.exec(c['@_r'] || '');
+      requireCondition(ref && Number(ref[2]) <= 504, 400, 'Некорректная ячейка шаблона');
+      const col = [...ref[1]!].reduce((n, x) => n * 26 + x.charCodeAt(0) - 64, 0) - 1;
+      requireCondition(
+        col < headers.length && !cells.has(c['@_r']),
+        400,
+        'Неизвестная или повторная колонка шаблона',
+      );
+      const value =
+        c['@_t'] === 's'
+          ? shared[Number(c.v)]
+          : c['@_t'] === 'inlineStr'
+            ? textNode(c.is)
+            : textNode(c.v);
+      requireCondition(
+        value !== undefined && value.length <= 1000,
+        400,
+        'Повреждённый или слишком длинный текст шаблона',
+      );
+      if (c.f !== undefined) {
+        const r = Number(ref![2]),
+          total = kind === 'clients' ? 'M' : 'Q',
+          range = kind === 'clients' ? `E${r}:L${r}` : `F${r}:O${r}`;
+        requireCondition(
+          r >= 5 && ref![1] === total && textNode(c.f) === `IF(COUNT(${range})=0,"",SUM(${range}))`,
+          400,
+          'Неизвестная формула шаблона: вычисления запрещены',
+        );
+      }
+      cells.set(c['@_r'], { value, ...(c.f === undefined ? {} : { formula: textNode(c.f) }) });
+    }
+  }
+  headers.forEach((h, col) =>
+    requireCondition(
+      cells.get(`${columnLetter(col)}1`)?.value === h,
+      400,
+      'Шапка шаблона изменена: используйте исходные колонки',
+    ),
+  );
+  const sub = kind === 'clients' ? [4, 5, 6, 7] : [5, 6, 7, 8];
+  sub.forEach((col, i) =>
+    requireCondition(
+      cells.get(`${columnLetter(col)}2`)?.value === (i % 2 ? '6-35 кВ' : '0,4 кВ'),
+      400,
+      'Проверьте напряжения в шапке шаблона',
+    ),
+  );
+  // Only canonical header merges. A merge in user data may silently lose data.
+  const allowedMerges = headers.flatMap((h, i) =>
+    h
+      ? [
+          (kind === 'clients' ? [4, 6] : [5, 7]).includes(i)
+            ? `${columnLetter(i)}1:${columnLetter(i + 1)}1`
+            : `${columnLetter(i)}1:${columnLetter(i)}2`,
+        ]
+      : [],
+  );
+  const merges = arr(sheet?.mergeCells?.mergeCell).map((m) => m['@_ref']);
+  requireCondition(
+    merges.length === allowedMerges.length &&
+      new Set(merges).size === merges.length &&
+      merges.every((v) => allowedMerges.includes(v)),
+    400,
+    'Объединения ячеек шаблона изменены',
+  );
+  const result: { row: number; values: string[] }[] = [];
+  for (let row = 5; row <= 504; row++) {
+    const totalCol = kind === 'clients' ? 12 : 16;
+    const values = headers.map((_, col) => cells.get(`${columnLetter(col)}${row}`)?.value || '');
+    const populated = values.some((v, col) => col !== totalCol && v.trim());
+    if (!populated) {
+      requireCondition(
+        !values[totalCol] || cells.get(`${columnLetter(totalCol)}${row}`)?.formula !== undefined,
+        400,
+        `Строка ${row}: итог без данных`,
+      );
+      continue;
+    }
+    result.push({ row, values });
+  }
+  requireCondition(result.length <= 100, 400, 'До 100 заполненных строк на лист');
+  return result;
+}
+function parsePicoTemplate(
+  parts: Map<string, string>,
+  privacy: ImportPrivacyGuard,
+): ImportedCompany[] | null {
+  const book = xml(parts.get('xl/workbook.xml') || '<workbook/>').workbook;
+  const sheetNames = arr(book?.sheets?.sheet).map((s) => s['@_name']);
+  if (!sheetNames.includes('Клиенты') || !sheetNames.includes('Проекты')) return null;
+  requireCondition(
+    JSON.stringify(sheetNames) === JSON.stringify(['Как заполнять', 'Клиенты', 'Проекты']),
+    400,
+    'Неизвестная структура шаблона Pico',
+  );
+  const relations = arr(
+    xml(parts.get('xl/_rels/workbook.xml.rels') || '<Relationships/>').Relationships?.Relationship,
+  );
+  const sheets = arr(book.sheets.sheet);
+  function sheetPart(index: number) {
+    const rel = relations.find((r) => r['@_Id'] === sheets[index]['@_id']);
+    const target = String(rel?.['@_Target'] || '')
+      .replace(/^\/xl\//, '')
+      .replace(/^xl\//, '');
+    requireCondition(
+      /^worksheets\/sheet\d+\.xml$/.test(target),
+      400,
+      'Неверная связь листа шаблона',
+    );
+    const part = parts.get(`xl/${target}`);
+    requireCondition(part, 400, 'Лист шаблона отсутствует');
+    return part;
+  }
+  const shared = arr(xml(parts.get('xl/sharedStrings.xml') || '<sst/>').sst?.si).map(textNode);
+  const clients = templateSheet(sheetPart(1), shared, clientHeaders, 'clients');
+  const projects = templateSheet(sheetPart(2), shared, projectHeaders, 'projects');
+  requireCondition(
+    clients.length,
+    400,
+    'Шаблон не заполнен: добавьте клиентов начиная со строки 5. Строка 4 — пример',
+  );
+  const moneyValue = (value: string, row: number): number | undefined => {
+    if (!value.trim()) return undefined;
+    requireCondition(
+      /^\d+(?:[.,]\d{1,6})?$/.test(value.trim()),
+      400,
+      `Строка ${row}: сумма должна быть числом в млн ₽`,
+    );
+    const n = Number(value.replace(',', '.')) * 1_000_000;
+    requireCondition(Number.isFinite(n) && n <= 1e12, 400, `Строка ${row}: слишком большая сумма`);
+    return n;
+  };
+  const result = clients.map(({ row, values: v }) => {
+    v.forEach((value, col) => {
+      if (col !== 14) privacy(value);
+    });
+    const mapped = parseCompanyTable(
+      [
+        ['ИНН', 'Название', 'Город', 'Тип', 'Заметки'],
+        [v[0]!, v[1]!, v[2]!, v[3]!, v[15]!],
+      ],
+      'Клиенты',
+      privacy,
+    )[0]!;
+    requireCondition(
+      mapped.data.inn && mapped.data.segment,
+      400,
+      `Клиенты, строка ${row}: заполните ИНН и тип`,
+    );
+    const amounts = v.slice(4, 12).map((value) => moneyValue(value, row));
+    const keys = ['lv', 'mv', 'drives_lv', 'drives_mv', 'cells', null, 'services', 'heat'] as const;
+    mapped.data.divisions = {};
+    amounts.forEach((amount, i) => {
+      if (amount !== undefined && keys[i]) mapped.data.divisions![keys[i]!] = amount;
+    });
+    mapped.data.potential = amounts.some((a) => a !== undefined)
+      ? amounts.reduce<number>((sum, a) => sum + (a ?? 0), 0)
+      : null;
+    requireCondition(
+      mapped.data.potential === null || mapped.data.potential <= 1e12,
+      400,
+      `Клиенты, строка ${row}: слишком большой итог`,
+    );
+    const notes = [mapped.data.notes || ''];
+    if (amounts[5] !== undefined) {
+      notes.push(`АСУ ТП: ${amounts[5]} ₽/год`);
+      mapped.warnings.push(
+        'АСУ ТП сохранено в заметках и общем потенциале; отдельной категории потенциала компании в CRM нет',
+      );
+    }
+    if (v[13]) notes.push(`Якорные заказчики: ${v[13]}`);
+    mapped.data.notes = notes.filter(Boolean).join('\n');
+    mapped.missing = mapped.missing.filter((field) =>
+      field === 'Потенциал'
+        ? mapped.data.potential == null
+        : field === 'Заметки'
+          ? !mapped.data.notes
+          : true,
+    );
+    mapped.contacts = parseBusinessContacts(v[14]!, privacy);
+    mapped.projects = [];
+    mapped.source = `Клиенты · строка ${row}`;
+    mapped.warnings.push(
+      'Пример из строки 4 не импортируется. Потенциал пересчитан из направлений, млн ₽ → ₽',
+    );
+    return mapped;
+  });
+  requireCondition(
+    new Set(result.map((r) => r.data.inn)).size === result.length,
+    400,
+    'В листе «Клиенты» повторяется ИНН: объедините данные одной компании',
+  );
+  for (const { row, values: v } of projects) {
+    v.forEach(privacy);
+    const parent = result.find((r) => r.data.inn === v[1]);
+    requireCondition(
+      parent && normalize(parent.data.name) === normalize(v[0]!),
+      400,
+      `Проекты, строка ${row}: укажите компанию с тем же ИНН и названием в листе «Клиенты»`,
+    );
+    const keys = [
+      'lv',
+      'mv',
+      'drives_lv',
+      'drives_mv',
+      'cells',
+      'automation',
+      'generator',
+      'switchboard',
+      'services',
+      'heat',
+    ] as const;
+    const equipment: ReturnType<typeof projectSchema.parse>['equipment'] = [];
+    v.slice(5, 15).forEach((value, i) => {
+      const amount = moneyValue(value, row);
+      if (amount !== undefined)
+        equipment.push({ division: keys[i]!, name: divisionLabels[keys[i]!]!, amount });
+    });
+    if (v[15]) {
+      const other = /^(.{1,180}?)\s+-\s+(\d+(?:[.,]\d{1,6})?)$/.exec(v[15]!);
+      requireCondition(
+        other,
+        400,
+        `Проекты, строка ${row}: «Другое» в формате «Оборудование - сумма в млн ₽»`,
+      );
+      equipment.push({ division: 'other', name: other[1]!, amount: moneyValue(other[2]!, row)! });
+    }
+    const originalStage = v[17]!;
+    requireCondition(
+      ['Есть проект', 'Тендер', 'Выбор вендора', 'Заказ получен'].includes(originalStage),
+      400,
+      `Проекты, строка ${row}: неизвестная стадия`,
+    );
+    const notes = [v[20], `Стадия из источника: ${originalStage}`];
+    for (const [col, label] of [
+      [18, 'Решение до'],
+      [19, 'Дата поставки'],
+    ] as const) {
+      if (v[col]) {
+        requireCondition(
+          /^(?:0[1-9]|1[0-2])\.\d{4}$/.test(v[col]!),
+          400,
+          `Проекты, строка ${row}: ${label} в формате ММ.ГГГГ`,
+        );
+        notes.push(`${label} (месяц): ${v[col]}`);
+      }
+    }
+    if (v[3] || v[4])
+      notes.push(`Заказчик из источника: ${v[3] || 'не указан'}; ИНН: ${v[4] || 'не указан'}`);
+    if (v[4])
+      requireCondition(validInn(v[4]!), 400, `Проекты, строка ${row}: проверьте ИНН заказчика`);
+    const customer = result.find((r) => r.data.inn === v[4]);
+    requireCondition(
+      !customer || !v[3] || normalize(customer.data.name) === normalize(v[3]),
+      400,
+      `Проекты, строка ${row}: название заказчика не совпадает с ИНН в листе «Клиенты»`,
+    );
+    requireCondition(
+      !parent.projects!.some((p) => normalize(p.data.name) === normalize(v[2]!)),
+      400,
+      `Проекты, строка ${row}: проект этой компании повторяется`,
+    );
+    const checked = projectSchema.safeParse({
+      name: v[2],
+      equipment,
+      amount: equipment.length ? equipment.reduce((n, e) => n + (e.amount ?? 0), 0) : null,
+      stage: 'new',
+      notes: notes.filter(Boolean).join('\n'),
+    });
+    requireCondition(
+      checked.success,
+      400,
+      `Проекты, строка ${row}: проверьте название, суммы и комментарий`,
+    );
+    parent.projects!.push({
+      data: checked.data!,
+      source: `Проекты · строка ${row}`,
+      ...(v[4] ? { customerInn: v[4] } : {}),
+    });
+    parent.warnings.push(
+      `Проект «${v[2]}»: техническая стадия CRM «Новый»; исходная стадия и месяцы дат сохранены в заметках. Итог пересчитан, включая «Другое». Заказчик связывается только с новой компанией из этого импорта; иначе остаётся в заметках`,
+    );
+  }
+  return result;
+}
+
+async function parseGoogleDocx(
+  bytes: Buffer,
+  privacy: ImportPrivacyGuard,
+): Promise<ImportedCompany[]> {
+  const parts = await unzip(bytes, 'docx');
+  const raw = parts.get('word/document.xml');
+  requireCondition(raw, 400, 'Google Docs: документ не содержит текста');
+  requireCondition(
+    !/<(?:\w+:)?(?:altChunk|object|instrText|fldSimple|fldChar|sdt|gridSpan|vMerge|gridBefore|gridAfter|drawing|pict|ins|del|customXml)\b/.test(
+      raw,
+    ),
+    400,
+    'Google Docs: вложенные объекты, скрытые контейнеры и объединённые ячейки не поддерживаются',
+  );
+  // Preserve document order, paragraph text and actual table boundaries.
+  xml(raw); // entities/depth/node validation before preserve-order parsing
+  const tree = new XMLParser({
+    ignoreAttributes: false,
+    removeNSPrefix: true,
+    processEntities: false,
+    parseTagValue: false,
+    preserveOrder: true,
+  }).parse(raw);
+  const text = (nodes: any[]): string =>
+    nodes
+      .map((n) =>
+        n['#text'] !== undefined
+          ? entity(String(n['#text']))
+          : n.br || n.cr
+            ? '\n'
+            : n.tab
+              ? '\t'
+              : Object.entries(n)
+                  .filter(([k]) => k !== ':@')
+                  .map(([, v]) => (Array.isArray(v) ? text(v) : ''))
+                  .join(''),
+      )
+      .join('');
+  function find(nodes: any[], key: string): any[] {
+    for (const n of nodes) {
+      if (n[key]) return n[key];
+      for (const [k, v] of Object.entries(n))
+        if (k !== ':@' && Array.isArray(v)) {
+          const r = find(v, key);
+          if (r.length) return r;
+        }
+    }
+    return [];
+  }
+  const body = find(tree, 'body');
+  const result: ImportedCompany[] = [];
+  let paragraphs: string[] = [];
+  const flush = async () => {
+    const value = paragraphs.join('\n').trim();
+    paragraphs = [];
+    if (value) result.push(...(await parseCompanyImport(Buffer.from(value), 'txt', privacy)));
+  };
+  for (const block of body) {
+    if (block.p) paragraphs.push(text(block.p));
+    else if (block.tbl) {
+      requireCondition(
+        !find(block.tbl, 'tbl').length,
+        400,
+        'Google Docs: вложенные таблицы не поддерживаются',
+      );
+      await flush();
+      // Reject unsupported table structure as a whole instead of extending a
+      // blacklist for each Word container; never shift sparse cells into a new column.
+      const structure = (nodes: any[], allowed: string[]) =>
+        requireCondition(
+          nodes.every((n) => Object.keys(n).every((k) => k === ':@' || allowed.includes(k))),
+          400,
+          'Google Docs: неподдерживаемая структура таблицы',
+        );
+      structure(block.tbl, ['tblPr', 'tblGrid', 'tr']);
+      for (const row of block.tbl.filter((n: any) => n.tr)) {
+        structure(row.tr, ['trPr', 'tc']);
+        for (const cell of row.tr.filter((n: any) => n.tc)) structure(cell.tc, ['tcPr', 'p']);
+      }
+      const rows = block.tbl
+        .filter((n: any) => n.tr)
+        .map((n: any) =>
+          n.tr
+            .filter((v: any) => v.tc)
+            .map((v: any) =>
+              v.tc
+                .filter((p: any) => p.p)
+                .map((p: any) => text(p.p))
+                .join('\n'),
+            ),
+        );
+      requireCondition(
+        rows.length && rows.length <= 101,
+        400,
+        'Google Docs: таблица должна содержать заголовок и до 100 компаний',
+      );
+      requireCondition(
+        rows.every((r: string[]) => r.length === rows[0].length),
+        400,
+        'Google Docs: число ячеек строки должно совпадать с заголовком',
+      );
+      result.push(...parseCompanyTable(rows, 'Google Docs · таблица', privacy));
+    } else
+      requireCondition(
+        block.sectPr,
+        400,
+        'Google Docs: неподдерживаемая структура документа; отправьте простую таблицу',
+      );
+  }
+  await flush();
+  requireCondition(
+    result.length && result.length <= 100,
+    400,
+    'Google Docs: нужно от 1 до 100 компаний',
+  );
+  return result;
 }

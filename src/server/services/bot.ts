@@ -171,7 +171,7 @@ export class BotService {
         if (action === 'ic') {
           const result = await this.imports.confirm(actor, id || '', Number(version));
           await this.telegram.send(chatId, {
-            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}.`,
+            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}.`,
             reply_markup: this.telegram.appButton(),
           });
         } else await this.imports.cancel(actor, id || '', Number(version));
@@ -182,14 +182,15 @@ export class BotService {
         return { ok: true };
       }
       if (!callback && msg?.document && this.imports) {
-        const extension = /\.(xlsx|csv|txt)$/i
+        const extension = /\.(xlsx|csv|txt|docx)$/i
           .exec(msg.document.file_name || '')?.[1]
-          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | undefined;
+          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | 'docx' | undefined;
         const mimeFormat = (
           {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
             'text/csv': 'csv',
             'text/plain': 'txt',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
           } as const
         )[msg.document.mime_type as 'text/csv'];
         const format = extension || mimeFormat;

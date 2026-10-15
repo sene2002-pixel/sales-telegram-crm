@@ -8,6 +8,7 @@ import {
   ImportPrivacyGuard,
   fetchPublicGoogleDocument,
   parseCompanyImport,
+  parseBusinessContacts,
 } from './company-import-parser';
 
 export const importConfirmPrefix = 'ic';
@@ -18,6 +19,8 @@ export interface CompanyImportDraftRow extends ImportedCompany {
 export interface CompanyImportResult {
   created: string[];
   skipped: number;
+  contacts?: number;
+  projects?: number;
 }
 export interface CompanyImportPreview {
   id: string;
@@ -35,7 +38,7 @@ export class CompanyImports {
   ) {}
   private async actor(actor: Actor, tx: Sql): Promise<Actor> {
     const [current] = await tx.query(
-      'SELECT id,telegram_id,name,role,active,supervisor_id FROM users WHERE id=$1',
+      'SELECT id,telegram_id,name,role,active,supervisor_id FROM users WHERE id=$1 FOR SHARE',
       [idSchema.parse(actor.id)],
     );
     requireCondition(current?.active, 403, 'Импорт недоступен');
@@ -99,6 +102,14 @@ export class CompanyImports {
                 'Стадия в источнике не указана: новая запись CRM получит техническую стадию «Новый».',
               ]
             : []),
+          ...(row.contacts || []).map(
+            (contact) =>
+              `Контакт: ${contact.name}; ${contact.role}; ${contact.phone}; ${contact.email}`,
+          ),
+          ...(row.projects || []).map(
+            (project) =>
+              `Проект: ${project.data.name}; сумма: ${project.data.amount ?? '—'} ₽; ${project.source}\nОборудование: ${project.data.equipment.map((e) => `${e.name}: ${e.amount ?? '—'} ₽`).join('; ')}\n${project.data.notes}`,
+          ),
           ...row.warnings,
         ].join('\n') + '\n\n';
       if (message.length + details.length > 3500) {
@@ -112,7 +123,11 @@ export class CompanyImports {
       id: record.id,
       version: record.version,
       rows,
-      messages: chunks,
+      messages: chunks.flatMap((chunk) => {
+        const parts: string[] = [];
+        for (let i = 0; i < chunk.length; i += 3500) parts.push(chunk.slice(i, i + 3500));
+        return parts;
+      }),
       replyMarkup: {
         inline_keyboard: [
           [
@@ -131,7 +146,7 @@ export class CompanyImports {
   }
   async prepare(
     actor: Actor,
-    input: { sourceKey: string; bytes: Uint8Array; format: 'xlsx' | 'csv' | 'txt' },
+    input: { sourceKey: string; bytes: Uint8Array; format: 'xlsx' | 'csv' | 'txt' | 'docx' },
   ): Promise<CompanyImportPreview> {
     requireCondition(/^[\w:-]{1,150}$/.test(input.sourceKey), 400, 'Некорректный источник импорта');
     // Idempotency precedes parsing but still verifies the actual actor, not stale caller role.
@@ -185,7 +200,7 @@ export class CompanyImports {
           randomUUID(),
           actor.id,
           input.sourceKey,
-          { xlsx: 'XLSX', csv: 'CSV', txt: 'Документ' }[input.format],
+          { xlsx: 'XLSX', csv: 'CSV', txt: 'Документ', docx: 'Google Docs' }[input.format],
           JSON.stringify({ rows }),
         ],
       );
@@ -193,10 +208,25 @@ export class CompanyImports {
     });
   }
   async prepareGoogle(actor: Actor, input: { sourceKey: string; url: string }) {
-    await this.db.transaction((tx) => this.actor(actor, tx));
+    const existing = await this.db.transaction(async (tx) => {
+      await this.actor(actor, tx);
+      const [record] = await tx.query('SELECT * FROM company_imports WHERE source_key=$1', [
+        input.sourceKey,
+      ]);
+      if (record) {
+        requireCondition(record.author_id === actor.id, 403, 'Импорт недоступен');
+        requireCondition(
+          record.status === 'pending' && new Date(record.expires_at).getTime() > Date.now(),
+          409,
+          'Импорт уже завершён или истёк',
+        );
+      }
+      return record;
+    });
+    if (existing) return this.preview(existing);
     // The remote body never enters diagnostics or storage before local parsing/privacy validation.
-    const bytes = await fetchPublicGoogleDocument(input.url);
-    return this.prepare(actor, { sourceKey: input.sourceKey, bytes, format: 'txt' });
+    const bytes = await fetchPublicGoogleDocument(input.url, 'docx');
+    return this.prepare(actor, { sourceKey: input.sourceKey, bytes, format: 'docx' });
   }
   async confirm(actor: Actor, id: string, version: number): Promise<CompanyImportResult> {
     idSchema.parse(id);
@@ -222,8 +252,12 @@ export class CompanyImports {
         'Предпросмотр истёк. Отправьте файл заново',
       );
       const result: CompanyImportResult = { created: [], skipped: 0 };
+      const newCompanies = new Map<CompanyImportDraftRow, string>();
       for (const row of record.draft.rows as CompanyImportDraftRow[]) {
         this.privacy(JSON.stringify(row.data));
+        for (const c of row.contacts || [])
+          parseBusinessContacts([c.name, c.role, c.phone, c.email].join(', '), this.privacy);
+        for (const p of row.projects || []) this.privacy(JSON.stringify(p.data));
         if (row.disposition === 'skip_duplicate' || (await this.duplicate(tx, row))) {
           result.skipped++;
           continue;
@@ -235,6 +269,37 @@ export class CompanyImports {
           tx,
         );
         result.created.push(company.id);
+        newCompanies.set(row, company.id);
+      }
+      for (const [row, companyId] of newCompanies) {
+        for (const contact of row.contacts || []) {
+          await this.crm.createRecord(current, companyId, 'contact', contact, null, tx, {
+            contactSource: 'user',
+          });
+          result.contacts = (result.contacts || 0) + 1;
+        }
+        for (const project of row.projects || []) {
+          const customer = [...newCompanies].find(
+            ([r]) => r.data.inn && r.data.inn === project.customerInn,
+          );
+          const data = {
+            ...project.data,
+            participants:
+              customer && customer[1] !== companyId
+                ? [
+                    {
+                      companyId: customer[1],
+                      role: 'Заказчик',
+                      contactId: null,
+                      currentTask: '',
+                      nextStep: '',
+                    },
+                  ]
+                : [],
+          };
+          await this.crm.createRecord(current, companyId, 'project', data, null, tx);
+          result.projects = (result.projects || 0) + 1;
+        }
       }
       await tx.query(
         `UPDATE company_imports SET status='saved',version=version+1,draft=$2 WHERE id=$1`,
