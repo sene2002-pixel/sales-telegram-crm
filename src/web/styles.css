@@ -3967,7 +3967,9 @@ select.pico-filter-sort {
   gap: 4px;
   font-size: 13px;
   line-height: 18px;
-  font-weight: 700;
+  font-weight: 500;
+  background: #fff;
+  color: #1f7aea;
   border: 1px solid #e6ebf3;
   border-radius: 15px;
   white-space: nowrap;
@@ -4040,8 +4042,8 @@ select.pico-filter-sort {
   font-weight: 800;
 }
 .pico-score-path {
-  margin-top: 10px;
-  padding: 12px 14px;
+  margin-top: 8px;
+  padding: 10px 14px;
 }
 .pico-score-path-heading {
   display: flex;
@@ -4085,7 +4087,7 @@ select.pico-filter-sort {
 .pico-score-path p,
 .pico-score-explanation li,
 .pico-analytics-limits p {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-size: 13px;
   line-height: 18px;
   color: #7a8299;
@@ -4103,9 +4105,11 @@ select.pico-filter-sort {
 }
 .pico-score-explanation > summary {
   cursor: pointer;
-  padding: 8px 0;
+  padding: 0;
   color: #1f7aea;
-  min-height: 44px;
+  min-height: 18px;
+  line-height: 18px;
+  font-weight: 500;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -4118,8 +4122,8 @@ select.pico-filter-sort {
 .pico-client-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
 }
 .pico-client-metric {
   padding: 10px 14px;
@@ -4141,12 +4145,12 @@ select.pico-filter-sort {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  margin-top: 4px;
+  margin-top: 2px;
   flex-wrap: wrap;
 }
 .pico-metric-value strong {
   font-size: 26px;
-  line-height: 30px;
+  line-height: 28px;
   font-weight: 800;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -4175,7 +4179,7 @@ select.pico-filter-sort {
   color: #e55b6c;
 }
 .pico-client-equipment {
-  margin-top: 10px;
+  margin-top: 8px;
   padding: 14px 14px 6px;
 }
 .pico-client-equipment h2 {
@@ -4291,41 +4295,48 @@ select.pico-filter-sort {
 @media (max-width: 760px) {
   :root {
     --pico-nav-inset: max(env(safe-area-inset-bottom, 0px), var(--pico-safe-bottom, 0px));
-    --pico-nav-height: max(82px, calc(48px + var(--pico-nav-inset)));
+    --pico-nav-height: max(72px, calc(59px + var(--pico-nav-inset)));
   }
   .workspace {
     padding-bottom: calc(var(--pico-nav-height) + 12px);
   }
   .pico-bottom-nav {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 72px));
+    column-gap: 2px;
+    justify-content: center;
     align-items: start;
     height: var(--pico-nav-height);
     box-sizing: border-box;
-    /* 1px top border + 3px padding + 44px target = 48px before the inset. */
-    padding: 3px calc(6px + var(--pico-safe-right, 0px)) var(--pico-nav-inset)
-      calc(6px + var(--pico-safe-left, 0px));
+    /* Border + top padding + 48px target stay above the native home indicator. */
+    padding: 10px calc(11px + var(--pico-safe-right, 0px)) var(--pico-nav-inset)
+      calc(11px + var(--pico-safe-left, 0px));
+    border-top-color: #e6ebf3;
     border-radius: 24px 24px 0 0;
   }
   .pico-bottom-nav button {
-    height: 44px;
-    min-height: 44px;
+    height: 48px;
+    min-height: 48px;
     padding: 0;
-    gap: 2px;
-    font-size: 11px;
+    gap: 3px;
+    color: #6b7389;
+    font-size: 10.5px;
     line-height: 14px;
     font-weight: 600;
   }
   .pico-bottom-nav button.active {
+    color: #1f7aea;
     font-weight: 700;
   }
   .pico-bottom-nav button > svg {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
+    stroke-width: 1.9;
   }
   .pico-bottom-nav button > span {
-    font-size: 11px;
+    font-size: 10.5px;
     line-height: 14px;
+    white-space: nowrap;
   }
   .pico-search {
     height: 44px;
@@ -4370,5 +4381,143 @@ select.pico-filter-sort {
   }
   .telegram-native-header .pico-scoped-content > .section-head:has(> h1) {
     padding-right: 44px;
+  }
+}
+
+/* The nested client list uses the same palette as the funnel, without extra tiles. */
+.pico-levels {
+  margin: 12px 0 -8px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border-top: 1px solid #e6ebf3;
+}
+.pico-levels > summary {
+  min-height: 32px;
+  color: #1f7aea;
+  font-size: 13px;
+  font-weight: 500;
+}
+.pico-levels summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 0;
+  list-style: none;
+}
+.pico-levels summary::-webkit-details-marker {
+  display: none;
+}
+.pico-levels summary > svg {
+  margin-left: auto;
+  flex: 0 0 18px;
+}
+.pico-levels details[open] > summary > svg,
+.pico-levels[open] > summary > svg {
+  transform: rotate(180deg);
+}
+.pico-level {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+.pico-level > summary,
+.pico-level-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.pico-level-empty {
+  opacity: 0.6;
+}
+.pico-levels i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+}
+.pico-level summary > span,
+.pico-level-empty > span {
+  flex: 1;
+}
+.pico-levels strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+.pico-level-clients {
+  padding: 0 0 8px 16px;
+}
+.pico-level-clients > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.pico-level-clients > div > span {
+  overflow-wrap: anywhere;
+}
+.pico-level-clients strong {
+  color: #7a8299;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pico-level-clients button {
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 32px;
+}
+.pico-level-filter {
+  margin: 8px 0;
+  gap: 12px;
+  color: #1f7aea;
+  background: #e4effd;
+  border-radius: 16px;
+}
+.pico-metric-delta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #f0f2f6;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.pico-metric-delta.tone-positive {
+  color: #16a36a;
+  background: #e2f6ec;
+}
+.pico-metric-delta.tone-negative {
+  color: #e5484d;
+  background: #fdecec;
+}
+.pico-client-metric > p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 359px) {
+  .pico-client-funnel-content {
+    grid-template-columns: 138px minmax(0, 1fr);
+    column-gap: 8px;
+  }
+  .pico-client-funnel-content > svg {
+    width: 138px;
+    height: auto;
+  }
+  .pico-client-funnel-legend {
+    padding-right: 0;
+  }
+  .pico-client-funnel-legend > div {
+    gap: 6px;
   }
 }

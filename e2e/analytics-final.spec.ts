@@ -224,7 +224,7 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
   await navigate(page, 'Аналитика');
   await expect(page.locator('.telegram-native-header')).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  for (const width of [360, 390, 1440]) {
+  for (const width of [320, 360, 390, 1440]) {
     if (width === 1440 && info.project.name === 'mobile') {
       // A portrait tablet with a keyboard-height WebView, matching the other
       // responsive tests; actual landscape rejection has separate coverage.
@@ -253,8 +253,14 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
       if (Math.abs(heading.y - period.y) < 20)
         expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
     }
-    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS('width', '150px');
-    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS('height', '146px');
+    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS(
+      'width',
+      width === 320 ? '138px' : '150px',
+    );
+    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS(
+      'height',
+      width === 320 ? '134.312px' : '146px',
+    );
     expect(
       await page
         .locator('.pico-score-scale > div')
@@ -268,6 +274,13 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,
     );
+    if (width === 390) {
+      const menu = (await page.locator('.pico-bottom-nav').boundingBox())!;
+      const lastMetric = (await page.locator('.pico-client-metric').last().boundingBox())!;
+      const equipment = (await page.locator('.pico-client-equipment').boundingBox())!;
+      expect(lastMetric.y + lastMetric.height).toBeLessThanOrEqual(menu.y - 6);
+      expect(equipment.y).toBeGreaterThanOrEqual(menu.y);
+    }
     await page.screenshot({
       path: info.outputPath(`analytics-native-${width}.png`),
       animations: 'disabled',
@@ -343,7 +356,7 @@ test('Analytics preserves compact white rows, equal empty/populated indentation 
     'rgba(0, 0, 0, 0)',
   );
   await expect(page.locator('.pico-score-explanation')).toHaveCSS('padding', '0px');
-  await expect(page.locator('.pico-score-explanation summary')).toHaveCSS('height', '44px');
+  await expect(page.locator('.pico-score-explanation summary')).toHaveCSS('height', '18px');
   await filled.locator('summary').click();
   await empty.locator('summary').click();
   await expect(filled.locator('summary')).toHaveCSS('height', '44px');
@@ -408,4 +421,68 @@ test('Analytics declines client/project counts and describes incomplete history 
     );
     await navigate(page, 'Главная');
   }
+});
+
+test('Client levels expand three previews, filter the client list and clear the filter', async ({
+  page,
+}) => {
+  let moved = false;
+  let denied = false;
+  const companies = Array.from({ length: 5 }, (_, i) => ({
+    id: `level-company-${i}`,
+    name: `Клиент уровня ${i}`,
+    city: 'Москва',
+    industry: '',
+    segment: 'end_client',
+    stage: 'new',
+    potential: i ? 1000000 : null,
+    divisions: {},
+    inn: '',
+    notes: '',
+    archived: false,
+    ownerId: 'qa',
+    ownerName: 'Менеджер',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+  await page.route('**/api/companies*', (r) =>
+    r.request().method() === 'GET' ? r.fulfill({ json: companies }) : r.fallback(),
+  );
+  await page.route('**/api/analytics?*', (r) => {
+    if (denied) return r.fulfill({ status: 403, json: { message: 'Доступ к уровню отозван' } });
+    const data = response('all');
+    data.clientAnalytics.clients = companies.map((c, i) => ({
+      id: c.id,
+      level: i < 4 && !(moved && i === 0) ? 'new' : 'development',
+    })) as any;
+    return r.fulfill({ json: data });
+  });
+  await login(page);
+  await navigate(page, 'Аналитика');
+  const levels = page.locator('.pico-levels');
+  await expect(levels).not.toHaveAttribute('open');
+  await levels.locator(':scope > summary').click();
+  await expect(levels.locator('.pico-level-empty')).toHaveCount(3);
+  const first = levels.locator('.pico-level').first();
+  await first.locator('summary').click();
+  await expect(first.locator('.pico-level-clients > div')).toHaveCount(3);
+  await expect(first.locator('.pico-level-clients strong').first()).toHaveText('—');
+  await first.getByRole('button', { name: 'Показать всех, 4' }).click();
+  await expect(page.getByRole('heading', { name: 'Клиенты', exact: true })).toBeVisible();
+  await expect(page.locator('.pico-client-list > .pico-client-accordion')).toHaveCount(4);
+  await expect(page.locator('.pico-client-list')).not.toContainText('Клиент уровня 4');
+  moved = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.locator('.pico-client-list > .pico-client-accordion')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Сбросить фильтр уровня' }).click();
+  await expect(page.locator('.pico-client-list > .pico-client-accordion')).toHaveCount(5);
+  await navigate(page, 'Аналитика');
+  await page.locator('.pico-levels > summary').click();
+  await page.locator('.pico-level').first().locator('summary').click();
+  denied = true;
+  await page.getByRole('button', { name: 'Показать всех, 3' }).click();
+  await expect(page.getByRole('alert')).toContainText('Доступ к уровню отозван');
+  await expect(page.locator('.pico-client-list')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Сбросить фильтр уровня' })).toHaveCount(0);
 });
