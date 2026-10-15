@@ -477,9 +477,13 @@ for (const count of [3, 4, 100]) {
       await level.getByRole('button', { name: `Показать всех, ${count}` }).click();
       await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
       await expect(level.locator('li')).toHaveCount(count);
-      await expect(level.getByRole('status')).toContainText(`Показаны ${count} из ${count}`);
-      await level.getByRole('button', { name: 'Свернуть' }).click();
-      await expect(level.locator('li')).toHaveCount(3);
+      await expect(level).not.toContainText('Показаны');
+      await expect(level.getByRole('button')).toHaveCount(0);
+      await level.locator('summary').click();
+      await expect(level.locator('ul')).not.toBeVisible();
+      await level.locator('summary').click();
+      await expect(level.locator('ul')).toBeVisible();
+      await expect(level.locator('li')).toHaveCount(count);
     }
     await expect(page.locator('.pico-level-empty')).toHaveCount(4);
   });
@@ -493,9 +497,8 @@ test('Large level caps the inline list at 100, searches beyond the cap and clear
   await expect(level.locator('li strong').first()).toHaveText('—');
   await level.getByRole('button', { name: 'Показать до 100' }).click();
   await expect(level.locator('li')).toHaveCount(100);
-  await expect(level.getByRole('status')).toContainText(
-    'Показаны 100 из 121 клиентов. Уточните поиск',
-  );
+  await expect(level).not.toContainText('Показаны');
+  await expect(level.getByRole('button')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
   const search = level.getByRole('searchbox', { name: 'Поиск клиентов уровня «Новый»' });
   await search.fill('  кЛиЕнТ 121  ');
@@ -512,9 +515,10 @@ test('Large level caps the inline list at 100, searches beyond the cap and clear
     path: info.outputPath('inline-level-clients.png'),
     animations: 'disabled',
   });
-  await level.getByRole('button', { name: 'Свернуть' }).click();
-  await expect(level.locator('li')).toHaveCount(3);
-  await level.getByRole('button', { name: 'Показать до 100' }).click();
+  await level.locator('summary').click();
+  await expect(level.locator('ul')).not.toBeVisible();
+  await level.locator('summary').click();
+  await expect(level.locator('li')).toHaveCount(100);
   await expect(search).toHaveValue('');
   await page.getByRole('button', { name: 'Период аналитики' }).click();
   const dialog = page.getByRole('dialog', { name: 'Период', exact: true });
