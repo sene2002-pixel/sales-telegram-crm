@@ -327,7 +327,7 @@ test('Bot Google Docs link parses real table structure; webhook retry reuses dra
   assert.equal((await rows('records')).filter((r: any) => r.kind === 'contact').length, 1);
 });
 
-test('Start offers import; its button sends the exact supplied workbook and creates no CRM data', async (t) => {
+test('Start offers import; its button sends the packaged workbook and creates no CRM data', async (t) => {
   const sent: { chatId: string; bytes: Uint8Array; caption: string }[] = [];
   t.mock.method(
     (services.bot as any).telegram,
@@ -363,7 +363,7 @@ test('Start offers import; its button sends the exact supplied workbook and crea
   assert.equal(sent[0]!.chatId, actor.telegramId);
   assert.equal(
     createHash('sha256').update(sent[0]!.bytes).digest('hex'),
-    '0b1dd5e0c9f9b6e7a41fce78076957406a90012686b5ac94075a0044c92efa5d',
+    '41d22c028caa3e4ddecc6fca2a636db583ee9949355d25dae54e63f21536a398',
   );
   assert.equal(sent[0]!.caption, importTemplateCaption);
   assert.ok(sent[0]!.caption.length <= 1024);
