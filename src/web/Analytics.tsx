@@ -108,13 +108,21 @@ function Metric({
               )}
         </strong>
         {value !== null && <span>{money ? (million ? 'млн ₽' : '₽') : unit}</span>}
+        <Comparison value={delta} />
       </div>
-      <p>{value === null ? 'Недостаточно истории' : detail}</p>
-      <Comparison value={delta} />
+      <p title={detail}>{value === null ? 'Недостаточно истории' : detail}</p>
     </section>
   );
 }
-function Funnel({ data }: { data: ClientAnalytics }) {
+function Funnel({
+  data,
+  companies,
+  onShowLevel,
+}: {
+  data: ClientAnalytics;
+  companies: Company[];
+  onShowLevel: (key: string, label: string, ids: string[]) => void;
+}) {
   return (
     <section className="pico-client-funnel">
       <h2>
@@ -167,6 +175,56 @@ function Funnel({ data }: { data: ClientAnalytics }) {
           ))}
         </div>
       </div>
+      <details className="pico-levels">
+        <summary>
+          Клиенты по уровням <Icon name="chevron-down" size={18} />
+        </summary>
+        {levels.map((level) => {
+          const ids = new Set(data.clients.filter((c) => c.level === level.key).map((c) => c.id));
+          const clients = companies.filter((c) => !c.archived && ids.has(c.id));
+          const heading = (
+            <>
+              <i style={{ background: level.color }} />
+              <span>{level.label}</span>
+              <strong>{clients.length}</strong>
+            </>
+          );
+          return clients.length ? (
+            <details className="pico-level" key={level.key}>
+              <summary>
+                {heading}
+                <Icon name="chevron-down" size={18} />
+              </summary>
+              <div className="pico-level-clients">
+                {clients.slice(0, 3).map((company) => (
+                  <div key={company.id}>
+                    <span>{companyDisplayName(company.name)}</span>
+                    <strong>
+                      {company.potential == null ? '—' : compactMoney(company.potential)}
+                    </strong>
+                  </div>
+                ))}
+                <button
+                  className="text-button"
+                  onClick={() =>
+                    onShowLevel(
+                      level.key,
+                      level.label,
+                      clients.map((c) => c.id),
+                    )
+                  }
+                >
+                  Показать всех, {clients.length}
+                </button>
+              </div>
+            </details>
+          ) : (
+            <div className="pico-level-empty" key={level.key}>
+              {heading}
+            </div>
+          );
+        })}
+      </details>
     </section>
   );
 }
@@ -222,6 +280,7 @@ export function AnalyticsScreen({
   employeeId = '',
   onScopeDenied,
   refreshVersion = 0,
+  onShowLevel,
 }: {
   companies: Company[];
   user: Actor;
@@ -229,6 +288,7 @@ export function AnalyticsScreen({
   employeeId?: string;
   onScopeDenied?: (error: Error) => void;
   refreshVersion?: number;
+  onShowLevel: (key: string, label: string, ids: string[], query: string) => void;
 }) {
   const [initial] = useState(() => readPeriod(user.id));
   const [period, setPeriod] = useState<PeriodKey>(initial.period),
@@ -395,7 +455,22 @@ export function AnalyticsScreen({
       )}
       {data && (
         <>
-          <Funnel data={data} />
+          <Funnel
+            data={data}
+            companies={current}
+            onShowLevel={(key, label, ids) =>
+              onShowLevel(
+                key,
+                label,
+                ids,
+                new URLSearchParams({
+                  mode: period === 'all' ? 'all' : 'range',
+                  from,
+                  to,
+                }).toString(),
+              )
+            }
+          />
           <ScorePath settings={data.settings} />
           <div className="pico-client-metrics">
             <Metric
@@ -406,7 +481,7 @@ export function AnalyticsScreen({
               detail={
                 period === 'all'
                   ? `по ${data.metrics.potential.companies} ${countedWord(data.metrics.potential.companies, 'клиенту', 'клиентам', 'клиентам')}`
-                  : `добавлен за период · по ${data.metrics.potential.companies} ${countedWord(data.metrics.potential.companies, 'клиенту', 'клиентам', 'клиентам')}`
+                  : `добавлено за период`
               }
               delta={data.metrics.potential.delta}
             />
@@ -418,7 +493,7 @@ export function AnalyticsScreen({
               detail={
                 period === 'all'
                   ? `по ${data.metrics.projects.count} ${countedWord(data.metrics.projects.count, 'проекту', 'проектам', 'проектам')}`
-                  : `новых проектов: ${data.metrics.projects.count}`
+                  : `${data.metrics.projects.count} ${countedWord(data.metrics.projects.count, 'новый проект', 'новых проекта', 'новых проектов')}`
               }
               delta={data.metrics.projects.delta}
             />
@@ -430,7 +505,7 @@ export function AnalyticsScreen({
               detail={
                 data.metrics.growth.share === null
                   ? 'Нет данных о доле базы'
-                  : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(data.metrics.growth.share)}% базы ${period === 'all' ? 'выше уровня «Новый»' : 'поднялись'}`
+                  : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(data.metrics.growth.share)}% базы поднялись`
               }
               delta={data.metrics.growth.delta}
             />
@@ -439,7 +514,7 @@ export function AnalyticsScreen({
               label="Активные клиенты"
               value={data.metrics.active.value}
               unit={`из ${data.metrics.active.total}`}
-              detail={period === 'all' ? 'есть действия по клиенту' : 'действия за период'}
+              detail={period === 'all' ? 'ведётся работа' : 'действия за период'}
               delta={data.metrics.active.delta}
             />
           </div>

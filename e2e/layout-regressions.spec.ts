@@ -138,8 +138,8 @@ for (const width of [360, 390, 1440]) {
       await expect(navigation.getByRole('button')).toHaveCount(5);
       const icon = navigation.getByRole('button', { name: 'Клиенты', exact: true }).locator('svg');
       const box = (await icon.boundingBox())!;
-      expect(box.width).toBe(24);
-      expect(box.height).toBe(24);
+      expect(box.width).toBe(26);
+      expect(box.height).toBe(26);
       await navigation.getByRole('button', { name: 'Клиенты', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Клиенты', exact: true })).toBeVisible();
     }
