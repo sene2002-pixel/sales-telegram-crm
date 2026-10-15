@@ -508,7 +508,9 @@ test('prototype-named unknown headers remain ignored safely in CSV, TXT and XLSX
   ] as const) {
     const [company] = await parseCompanyImport(input, format, assertImportPrivacy);
     assert.deepEqual(company!.data, { name: 'Альфа' });
-    assert.deepEqual(company!.warnings, ['Не импортированы колонки: 4']);
+    assert.deepEqual(company!.warnings, [
+      'Не импортированы колонки: 4 (constructor, __proto__, tostring, hasownproperty)',
+    ]);
     assert.ok(company!.missing.includes('Потенциал'));
     assert.ok(!Object.hasOwn(company!.data, 'constructor'));
     assert.ok(!Object.hasOwn(company!.data, '__proto__'));
