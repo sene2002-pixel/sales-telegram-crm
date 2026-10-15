@@ -1,3 +1,4 @@
+import { expireSession } from './helpers';
 import { openCompanySection } from './helpers';
 import { createHmac } from 'node:crypto';
 import { expect, Page, test } from '@playwright/test';
@@ -150,7 +151,7 @@ test('UI audit: saved letter stays saved when refreshing fails and cannot submit
   await expect(composer).toContainText('Письмо сохранено');
 });
 
-test('UI audit: logout erases privileged cached data before a different-role login whose refresh fails', async ({
+test('UI audit: session expiry erases privileged cached data before a different-role login whose refresh fails', async ({
   page,
 }) => {
   await login(page, 'Администратор');
@@ -161,15 +162,7 @@ test('UI audit: logout erases privileged cached data before a different-role log
   await navigate(page, 'Клиенты');
   await page.getByLabel('Поиск компаний', { exact: true }).fill(company.name);
   await expect(page.locator('.pico-client-row').filter({ hasText: company.name })).toBeVisible();
-  if (await page.getByTitle('Выйти', { exact: true }).isVisible())
-    await page.getByTitle('Выйти', { exact: true }).click();
-  else {
-    await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
-    await page
-      .locator('.pico-more-menu')
-      .getByRole('button', { name: 'Выйти', exact: true })
-      .click();
-  }
+  await expireSession(page);
   await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
   for (const path of [
     '/api/companies',
@@ -213,7 +206,7 @@ test('UI audit: additional menu closes on Escape and returns keyboard focus to i
 });
 
 for (const role of ['Менеджер', 'Руководитель', 'Администратор']) {
-  test(`UI audit: ${role} can reach every permitted route, help, refresh and logout`, async ({
+  test(`UI audit: ${role} can reach every permitted route, help, refresh and session expiry`, async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -290,15 +283,7 @@ for (const role of ['Менеджер', 'Руководитель', 'Админ�
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await action(page, 'Обновить');
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
-    if (await page.getByTitle('Выйти', { exact: true }).isVisible())
-      await page.getByTitle('Выйти', { exact: true }).click();
-    else {
-      await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
-      await page
-        .locator('.pico-more-menu')
-        .getByRole('button', { name: 'Выйти', exact: true })
-        .click();
-    }
+    await expireSession(page);
     await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
     await expect(page.locator('.app-shell')).toHaveCount(0);
     expect(errors).toEqual([]);

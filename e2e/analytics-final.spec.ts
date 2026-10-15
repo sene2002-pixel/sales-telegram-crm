@@ -1,3 +1,4 @@
+import { expireSession } from './helpers';
 import { expect, test, Page } from '@playwright/test';
 import { navigate, prepareDemoAuth } from './helpers';
 
@@ -177,8 +178,7 @@ test('Analytics settings are versioned, reload on conflict and never expose admi
     { revision: 1, taskDays: 30, meetingMonths: 3, projectMonths: 1 },
     { revision: 2, taskDays: 365, meetingMonths: 3, projectMonths: 1 },
   ]);
-  await page.getByRole('button', { name: 'Дополнительное меню' }).click();
-  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await expireSession(page);
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
   await page.getByRole('button', { name: 'Дополнительное меню' }).click();

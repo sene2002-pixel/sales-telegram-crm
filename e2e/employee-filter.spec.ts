@@ -1,3 +1,4 @@
+import { expireSession } from './helpers';
 import { createHmac, randomUUID } from 'node:crypto';
 import { expect, Page, test } from '@playwright/test';
 import { action, navigate, prepareDemoAuth } from './helpers';
@@ -369,9 +370,7 @@ test('Employee filter: delayed A responses cannot replace B during navigation or
   );
   await selectScope(page, f.b.id);
   await logoutStarted;
-  const desktopLogout = page.getByTitle('Выйти', { exact: true });
-  if (await desktopLogout.isVisible()) await desktopLogout.click();
-  else await action(page, 'Выйти');
+  await expireSession(page);
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
   releaseLogout();

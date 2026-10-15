@@ -62,7 +62,7 @@ for (const width of [360, 390, 1440]) {
       await expect(page.locator('.mobile-brand')).toBeHidden();
     } else {
       const brand = page.locator('.brand-mark:visible').first();
-      await expect(brand).toHaveAttribute('src', '/brand/pico-avatar.png');
+      await expect(brand).toHaveAttribute('src', /\/assets\/pico-avatar-[^/]+\.png$/);
       expect(
         await brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0),
       ).toBeTruthy();

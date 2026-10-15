@@ -84,3 +84,14 @@ export async function openCompanySection(page: Page, section: 'summary' | 'actio
   if ((await disclosure.getAttribute('open')) === null)
     await disclosure.locator(':scope > summary').click();
 }
+
+// Exercise the real session-expiry path without a user-facing logout action.
+export async function expireSession(page: Page) {
+  await page.route(
+    '**/api/me',
+    (route) => route.fulfill({ status: 401, json: { message: 'Сессия истекла' } }),
+    { times: 1 },
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
+}

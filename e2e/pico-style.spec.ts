@@ -30,7 +30,7 @@ for (const width of [375, 1440]) {
     await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
     const avatar = page.getByRole('img', { name: 'Pico — AI-помощник' });
     await expect(avatar).toBeVisible();
-    await expect(avatar).toHaveAttribute('src', '/brand/pico-avatar.png');
+    await expect(avatar).toHaveAttribute('src', /\/assets\/pico-avatar-[^/]+\.png$/);
     await expect(avatar).toHaveJSProperty('naturalWidth', 1254);
 
     await page.getByRole('button', { name: 'Менеджер', exact: true }).click();

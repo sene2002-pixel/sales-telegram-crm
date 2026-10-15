@@ -34,6 +34,7 @@ import {
   ScreenGuide,
 } from './Screens';
 import './styles.css';
+import picoAvatar from '../../public/brand/pico-avatar.png';
 import { configureViewport, TelegramViewport } from './viewport';
 declare global {
   interface Window {
@@ -406,7 +407,7 @@ function App() {
       <main className="login">
         <img
           className="brand-mark"
-          src="/brand/pico-avatar.png"
+          src={picoAvatar}
           alt="Pico — AI-помощник"
           width="112"
           height="112"
@@ -500,7 +501,7 @@ function App() {
     >
       <aside>
         <div className="logo">
-          <img className="brand-mark" src="/brand/pico-avatar.png" alt="" width="40" height="40" />
+          <img className="brand-mark" src={picoAvatar} alt="" width="40" height="40" />
           <strong>Pico</strong>
           <span className="beta">CRM</span>
         </div>
@@ -537,9 +538,6 @@ function App() {
             <strong>{user.name}</strong>
             <small>{labels[user.role]}</small>
           </div>
-          <button title="Выйти" onClick={logout}>
-            ↗
-          </button>
         </div>
       </aside>
       <main className={`workspace ${tab === 'home' ? 'pico-home-workspace' : ''}`}>
@@ -548,7 +546,7 @@ function App() {
             <div className="mobile-brand" aria-label="Pico CRM">
               <img
                 className="brand-mark"
-                src="/brand/pico-avatar.png"
+                src={picoAvatar}
                 alt=""
                 width="28"
                 height="28"
@@ -607,7 +605,6 @@ function App() {
                   Настройки аналитики
                 </button>
               )}
-              <button onClick={logout}>Выйти</button>
             </div>
           )}
           <div className="connection-state">
