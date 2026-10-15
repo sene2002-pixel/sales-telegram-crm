@@ -111,7 +111,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     path: info.outputPath('reference-home-empty-native-frame.png'),
   });
   const homeFooter = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  const homeEmpty = (await page.locator('.pico-home .pico-empty').last().boundingBox())!;
+  const homeEmpty = (await page.locator('.pico-home-snapshot').last().boundingBox())!;
   expect(homeEmpty.y + homeEmpty.height).toBeLessThanOrEqual(homeFooter.y);
   await page.evaluate(() => document.fonts.ready);
   const font = await page.evaluate(async () => {

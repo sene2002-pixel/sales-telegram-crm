@@ -93,9 +93,13 @@ test('Mockups: empty screens explain the next step without fabricated metrics', 
   await login(page);
   const onboarding = page.locator('.pico-home-start');
   await expect(onboarding).not.toHaveAttribute('open', '');
-  await onboarding.locator(':scope > summary').click();
+  await onboarding.click();
   await expect(page.getByRole('heading', { name: 'Как работает Pico', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Сегодня', exact: true })).toBeVisible();
+  await page
+    .getByRole('dialog', { name: 'С чего начать', exact: true })
+    .getByRole('button', { name: 'Закрыть', exact: true })
+    .click();
+  await expect(page.locator('.pico-home-snapshot').first()).toContainText('Сегодня');
   await expect(page.getByText('На сегодня задач нет', { exact: true })).toBeVisible();
   await expect(page.locator('.pico-task-row')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('empty-home.png'), fullPage: true });

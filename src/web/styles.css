@@ -4556,3 +4556,149 @@ select.pico-filter-sort {
   outline: 2px solid #1f7aea;
   outline-offset: 2px;
 }
+
+/* Home is a fixed overview; full lists and onboarding live on dedicated surfaces. */
+html.pico-home-active,
+.pico-home-active body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.pico-home-active .app-shell {
+  height: var(--pico-view-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+.pico-home-workspace {
+  height: var(--pico-view-height, 100dvh);
+  min-height: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.pico-home-workspace > header,
+.pico-home-workspace > .pico-home-greeting,
+.pico-home-workspace > .pico-home-overview {
+  flex-shrink: 0;
+}
+.pico-home-workspace > .pico-scoped-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.pico-static-home {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-height: 0;
+  padding-bottom: 8px;
+}
+.pico-static-home > .pico-home-start {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.pico-home-snapshot {
+  flex: 1 1 0;
+  min-height: 64px;
+  max-height: 176px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e6ebf3;
+  border-radius: 20px;
+  background: white;
+  color: var(--text, #24294f);
+  text-align: left;
+}
+.pico-home-snapshot-icon {
+  color: #2e83ee;
+  flex-shrink: 0;
+}
+.pico-home-snapshot-copy {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+.pico-home-snapshot-copy strong {
+  font-size: 18px;
+}
+.pico-home-snapshot-copy > span {
+  font-size: 14px;
+}
+.pico-home-snapshot-copy small {
+  color: #5e6e87;
+  font-size: 12px;
+}
+.pico-static-home > .pico-add-row {
+  flex-shrink: 0;
+  min-height: 40px;
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .pico-home-workspace {
+    padding-top: var(--pico-safe-top, 0px);
+  }
+  .pico-home-welcome {
+    padding-right: 40px;
+  }
+  .pico-home-welcome h1 {
+    flex-wrap: wrap;
+  }
+}
+@media (max-height: 620px) {
+  .pico-home-workspace .pico-home-overview {
+    margin-bottom: 10px;
+  }
+  .pico-home-workspace .pico-home-greeting {
+    margin-bottom: 8px;
+  }
+  .pico-home-workspace .pico-home-welcome h1 {
+    font-size: 20px;
+    line-height: 25px;
+    min-height: 30px;
+  }
+  .pico-home-workspace .pico-home-welcome > .muted {
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .pico-static-home {
+    gap: 8px;
+  }
+  .pico-home-snapshot {
+    padding: 10px 12px;
+    gap: 10px;
+    border-radius: 16px;
+  }
+  .pico-home-snapshot-copy {
+    gap: 2px;
+  }
+  .pico-home-snapshot-copy strong {
+    font-size: 16px;
+  }
+  .pico-home-snapshot-copy small {
+    display: none;
+  }
+}
+
+.pico-home-welcome .pico-home-greeting-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pico-home-welcome h1 {
+  flex-wrap: nowrap;
+}
+.pico-home-welcome .pico-admin-button {
+  flex-shrink: 0;
+}

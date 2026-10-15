@@ -703,7 +703,7 @@ test('UI audit: legacy project and task edits persist; contact deletion cancel a
   });
 });
 
-test('UI audit: task detail and Home inline deletion accept native confirmation and persist after reload', async ({
+test('UI audit: task detail and Home task navigation deletion accept native confirmation and persist after reload', async ({
   page,
 }) => {
   await isolatedActor(page, 'manager');
@@ -736,10 +736,14 @@ test('UI audit: task detail and Home inline deletion accept native confirmation 
     .click();
   await expect(row).toHaveCount(0);
   await navigate(page, 'Главная');
+  await page.locator('.pico-home-snapshot').first().click();
   const home = page.locator('.pico-task-row').filter({ hasText: 'Удаление с главной' });
   await home.locator('button.task-text').click();
   page.once('dialog', (native) => native.accept());
-  await home.getByRole('button', { name: 'Удалить', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Удалить задачу', exact: true })
+    .click();
   await expect(home).toHaveCount(0);
   await page.reload();
   const records = (await api(page, `/companies/${company.id}`, undefined, 'GET')).records;
