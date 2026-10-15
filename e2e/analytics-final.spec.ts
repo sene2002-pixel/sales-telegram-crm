@@ -468,13 +468,22 @@ async function levelFixture(page: Page, count: number) {
 for (const count of [3, 4, 100]) {
   test(`Level with ${count} clients expands on the analytics page and collapses`, async ({
     page,
-  }) => {
+  }, info) => {
     const { level } = await levelFixture(page, count);
     await expect(level.locator('li')).toHaveCount(3);
     if (count === 3) {
       await expect(level.getByRole('button')).toHaveCount(0);
     } else {
-      await level.getByRole('button', { name: `Показать всех, ${count}` }).click();
+      const showAll = level.getByRole('button', { name: `Показать всех, ${count}` });
+      await expect(showAll).toHaveCSS('min-height', '44px');
+      await expect(showAll).toHaveCSS('border-width', '0px');
+      await expect(showAll).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await expect(showAll.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+      await page.screenshot({
+        path: info.outputPath(`show-all-${count}.png`),
+        animations: 'disabled',
+      });
+      await showAll.click();
       await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
       await expect(level.locator('li')).toHaveCount(count);
       await expect(level).not.toContainText('Показаны');

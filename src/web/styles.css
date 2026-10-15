@@ -4469,10 +4469,37 @@ select.pico-filter-sort {
   font-weight: 700;
   white-space: nowrap;
 }
-.pico-level-clients button {
+.pico-level-clients .pico-level-show-all {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #1f7aea;
+  text-align: left;
   font-size: 13px;
+  line-height: 18px;
   font-weight: 500;
-  min-height: 32px;
+}
+.pico-level-show-all > svg {
+  flex: 0 0 16px;
+}
+.pico-level-clients .pico-level-show-all:hover {
+  color: #1762bd;
+  background: transparent;
+}
+.pico-level-clients .pico-level-show-all:active {
+  background: #eef6ff;
+}
+.pico-level-show-all:focus-visible {
+  outline: 2px solid #1f7aea;
+  outline-offset: 2px;
 }
 
 .pico-metric-delta {
