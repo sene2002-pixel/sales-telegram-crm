@@ -23,11 +23,32 @@ export const companyImportLimits = {
 } as const;
 // Required by the caller: no import is allowed to bypass the application privacy policy.
 export type ImportPrivacyGuard = (text: string) => void;
+// Recognize the existing unanchored ASCII email pattern in linear time.
+// Domain runs cannot overlap: '@' is not a domain character. Only the
+// immediately preceding local-part character is needed for an unanchored match.
+function containsEmail(text: string): boolean {
+  const word = (c: number) =>
+    (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 95;
+  const letter = (c: number) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+  for (let i = 1; i < text.length; i++) {
+    if (text.charCodeAt(i) !== 64) continue;
+    const previous = text.charCodeAt(i - 1);
+    if (!word(previous) && previous !== 46 && previous !== 43 && previous !== 45) continue;
+    for (let j = i + 1; j < text.length; j++) {
+      const c = text.charCodeAt(j);
+      if (!word(c) && c !== 46 && c !== 45) break;
+      if (c === 46 && j > i + 1 && letter(text.charCodeAt(j + 1)) && letter(text.charCodeAt(j + 2)))
+        return true;
+    }
+  }
+  return false;
+}
 export function assertImportPrivacy(text: string) {
   requireCondition(
-    !/[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+\d[\d ()-]{8,}\d|(?:пароль|password|api[_ -]?key|secret|токен)\s*[:=]|\bsk-[a-z0-9_-]{10,}|Bearer\s+\S+|(?:диагноз|паспорт|домашн(?:ий|его)\s+адрес|дата\s+рождения|состояние\s+здоровья)/i.test(
-      text,
-    ),
+    !containsEmail(text) &&
+      !/\+\d[\d ()-]{8,}\d|(?:пароль|password|api[_ -]?key|secret|токен)\s*[:=]|\bsk-[a-z0-9_-]{10,}|Bearer\s+\S+|(?:диагноз|паспорт|домашн(?:ий|его)\s+адрес|дата\s+рождения|состояние\s+здоровья)/i.test(
+        text,
+      ),
     400,
     'Импортируйте только сведения о компаниях, без личных контактов и секретов',
   );
@@ -109,11 +130,24 @@ function xml(text: string) {
   );
   let depth = 0,
     nodes = 0;
-  for (const tag of text.matchAll(/<\/?[A-Za-z][^>]*>/g)) {
+  // Advance monotonically. A regex searching for '>' at every '<a' start
+  // has quadratic failure cost on an unterminated, attacker-controlled sheet.
+  for (let cursor = 0; cursor < text.length;) {
+    const start = text.indexOf('<', cursor);
+    if (start < 0) break;
+    const closing = text[start + 1] === '/';
+    const c = text.charCodeAt(start + (closing ? 2 : 1));
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122))) {
+      cursor = start + 1;
+      continue;
+    }
+    const end = text.indexOf('>', start + 1);
+    requireCondition(end >= 0, 400, 'Повреждённый XML в таблице');
     requireCondition(++nodes <= 25000, 400, 'Слишком сложный XML в таблице');
-    if (tag[0].startsWith('</')) depth--;
-    else if (!tag[0].endsWith('/>')) depth++;
+    if (closing) depth--;
+    else if (text[end - 1] !== '/') depth++;
     requireCondition(depth >= 0 && depth <= 32, 400, 'Слишком вложенный XML в таблице');
+    cursor = end + 1;
   }
   requireCondition(XMLValidator.validate(text) === true, 400, 'Повреждённый XML в таблице');
   return new XMLParser({

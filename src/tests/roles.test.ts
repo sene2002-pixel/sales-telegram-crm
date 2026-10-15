@@ -72,7 +72,13 @@ test(
       }).expect(201);
       assert.equal(second.body.record.data.name, result.body.record.data.name);
       assert.notEqual(second.body.record.id, result.body.record.id);
-      assert.notEqual(second.body.record.data.key, result.body.record.data.key);
+      assert.equal(Object.hasOwn(second.body.record.data, 'key'), false);
+      assert.equal(Object.hasOwn(result.body.record.data, 'key'), false);
+      const storedFiles = await db.query('SELECT data FROM records WHERE id=ANY($1::uuid[])', [
+        [second.body.record.id, result.body.record.id],
+      ]);
+      assert.equal(storedFiles.length, 2);
+      assert.notEqual(storedFiles[0].data.key, storedFiles[1].data.key);
     } finally {
       s.letters.ai.request = original;
     }
@@ -745,7 +751,9 @@ for (const role of roles) {
       .expect(role === 'manager' ? 404 : 201);
     await api(actor, 'delete', `/files/${f.body.id}`).expect(200);
     await api(actor, 'get', `/files/${f.body.id}`).expect(404);
-    assert.ok((await readdir(join(dir, 'files'))).includes(f.body.data.key));
+    assert.equal(Object.hasOwn(f.body.data, 'key'), false);
+    const [storedFile] = await db.query('SELECT data FROM records WHERE id=$1', [f.body.id]);
+    assert.ok((await readdir(join(dir, 'files'))).includes(storedFile.data.key));
   });
   test(`[ASSIGN-01] ${role}: transfer permission, open tasks, past authors and new ACL`, async () => {
     const actor = actors[role];

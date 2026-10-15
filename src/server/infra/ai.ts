@@ -4,6 +4,7 @@ import { requireCondition } from '../domain/errors';
 import { z } from 'zod';
 import { DiagnosticLog } from './diagnostic-log';
 import { protectedInstructions } from '../services/pico-security';
+import { redactSystemPayload } from './system-confidentiality';
 import { salesInstructions } from '../../shared/sales';
 import { salesSupplementInstructions } from '../../shared/sales-instructions';
 
@@ -30,6 +31,8 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
       503,
       'Не настроен OPENAI_API_KEY. Обратитесь к администратору',
     );
+    if (!multipart && typeof body === 'string')
+      body = JSON.stringify(redactSystemPayload(JSON.parse(body), this.config, false, true));
     const response = await fetch(`https://api.openai.com/v1/${path}`, {
       method: 'POST',
       headers: {

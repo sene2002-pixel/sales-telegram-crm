@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rm, unlink } from 'node:fs/promise
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
+import { redactSystemPayload } from '../infra/system-confidentiality';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { Actor, idSchema, contactSchema, validInn } from '../../shared/contracts';
@@ -603,7 +604,11 @@ export class LetterService {
       temp = await mkdtemp(join(tmpdir(), 'esq-letter-'));
       let rendered = false;
       for (let attempt = 0; attempt < 4; attempt++) {
-        await writeFile(join(temp, 'data.json'), JSON.stringify(data), { mode: 0o600 });
+        await writeFile(
+          join(temp, 'data.json'),
+          JSON.stringify(redactSystemPayload(data, this.config)),
+          { mode: 0o600 },
+        );
         const renderStartedAt = Date.now();
         await this.diagnostics?.record('letter.render.started', {
           renderAttempt: attempt + 1,
