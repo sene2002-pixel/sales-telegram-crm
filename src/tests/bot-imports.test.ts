@@ -367,7 +367,12 @@ test('Start offers import; its button sends the exact supplied workbook and crea
   );
   assert.equal(sent[0]!.caption, importTemplateCaption);
   assert.ok(sent[0]!.caption.length <= 1024);
-  for (const phrase of ['строки 5', 'строка 4', 'млн ₽', 'Подтвердить импорт'])
+  for (const phrase of [
+    'Предзаполненные строки — пример',
+    'не импортируются',
+    'млн ₽',
+    'Подтвердить импорт',
+  ])
     assert.ok(sent[0]!.caption.includes(phrase), phrase);
   await assert.rejects(
     parseCompanyImport(sent[0]!.bytes, 'xlsx', assertImportPrivacy),
