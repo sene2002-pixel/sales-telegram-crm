@@ -253,7 +253,7 @@ test('Bot Google document import rejects unexpected URL query before DNS or remo
 
 test('Bot accepts the Pico workbook and DOCX upload with linked contacts/projects only after confirmation', async () => {
   input = picoTemplate({ clients: [syntheticClient()], projects: [syntheticProject()] });
-  await webhook(document(actor, { file_name: 'Pico-shablon-perenosa-klientov.xlsx' })).expect(201);
+  await webhook(document(actor, { file_name: 'Pico-import.xlsx' })).expect(201);
   assert.equal((await rows('records')).length, 0);
   await webhook(callback(confirmData())).expect(201);
   assert.equal((await rows('companies')).length, 1);
@@ -367,7 +367,14 @@ test('Start offers import; its button sends the exact supplied workbook and crea
   );
   assert.equal(sent[0]!.caption, importTemplateCaption);
   assert.ok(sent[0]!.caption.length <= 1024);
-  for (const phrase of ['строки 5', 'строка 4', 'млн ₽', 'Подтвердить импорт'])
+  for (const phrase of [
+    'Предзаполненные строки — пример',
+    'в одной ячейке «Контакты»',
+    'с новой строки внутри этой ячейки',
+    'не импортируются',
+    'млн ₽',
+    'Подтвердить импорт',
+  ])
     assert.ok(sent[0]!.caption.includes(phrase), phrase);
   await assert.rejects(
     parseCompanyImport(sent[0]!.bytes, 'xlsx', assertImportPrivacy),
