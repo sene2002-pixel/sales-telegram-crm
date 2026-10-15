@@ -423,21 +423,17 @@ test('Analytics declines client/project counts and describes incomplete history 
   }
 });
 
-test('Client levels expand three previews, filter the client list and clear the filter', async ({
-  page,
-}) => {
-  let moved = false;
-  let denied = false;
-  const companies = Array.from({ length: 5 }, (_, i) => ({
+async function levelFixture(page: Page, count: number) {
+  const companies = Array.from({ length: count }, (_, i) => ({
     id: `level-company-${i}`,
-    name: `Клиент уровня ${i}`,
+    name: `Клиент ${String(i + 1).padStart(3, '0')}`,
     city: 'Москва',
     industry: '',
     segment: 'end_client',
     stage: 'new',
     potential: i ? 1000000 : null,
     divisions: {},
-    inn: '',
+    inn: String(7700000000 + i),
     notes: '',
     archived: false,
     ownerId: 'qa',
@@ -449,40 +445,85 @@ test('Client levels expand three previews, filter the client list and clear the 
   await page.route('**/api/companies*', (r) =>
     r.request().method() === 'GET' ? r.fulfill({ json: companies }) : r.fallback(),
   );
+  let denied = false;
   await page.route('**/api/analytics?*', (r) => {
     if (denied) return r.fulfill({ status: 403, json: { message: 'Доступ к уровню отозван' } });
     const data = response('all');
-    data.clientAnalytics.clients = companies.map((c, i) => ({
-      id: c.id,
-      level: i < 4 && !(moved && i === 0) ? 'new' : 'development',
-    })) as any;
+    data.clientAnalytics.clients = companies.map((c) => ({ id: c.id, level: 'new' })) as any;
+    data.clientAnalytics.clientFunnel[0].count = count;
     return r.fulfill({ json: data });
   });
   await login(page);
   await navigate(page, 'Аналитика');
-  const levels = page.locator('.pico-levels');
-  await expect(levels).not.toHaveAttribute('open');
-  await levels.locator(':scope > summary').click();
-  await expect(levels.locator('.pico-level-empty')).toHaveCount(3);
-  const first = levels.locator('.pico-level').first();
-  await first.locator('summary').click();
-  await expect(first.locator('.pico-level-clients > div')).toHaveCount(3);
-  await expect(first.locator('.pico-level-clients strong').first()).toHaveText('—');
-  await first.getByRole('button', { name: 'Показать всех, 4' }).click();
-  await expect(page.getByRole('heading', { name: 'Клиенты', exact: true })).toBeVisible();
-  await expect(page.locator('.pico-client-list > .pico-client-accordion')).toHaveCount(4);
-  await expect(page.locator('.pico-client-list')).not.toContainText('Клиент уровня 4');
-  moved = true;
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('.pico-client-list > .pico-client-accordion')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Сбросить фильтр уровня' }).click();
-  await expect(page.locator('.pico-client-list > .pico-client-accordion')).toHaveCount(5);
-  await navigate(page, 'Аналитика');
   await page.locator('.pico-levels > summary').click();
-  await page.locator('.pico-level').first().locator('summary').click();
-  denied = true;
-  await page.getByRole('button', { name: 'Показать всех, 3' }).click();
+  const level = page.locator('.pico-level').first();
+  await level.locator('summary').click();
+  return {
+    level,
+    deny: () => {
+      denied = true;
+    },
+  };
+}
+for (const count of [3, 4, 100]) {
+  test(`Level with ${count} clients expands on the analytics page and collapses`, async ({
+    page,
+  }) => {
+    const { level } = await levelFixture(page, count);
+    await expect(level.locator('li')).toHaveCount(3);
+    if (count === 3) {
+      await expect(level.getByRole('button')).toHaveCount(0);
+    } else {
+      await level.getByRole('button', { name: `Показать всех, ${count}` }).click();
+      await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
+      await expect(level.locator('li')).toHaveCount(count);
+      await expect(level.getByRole('status')).toContainText(`Показаны ${count} из ${count}`);
+      await level.getByRole('button', { name: 'Свернуть' }).click();
+      await expect(level.locator('li')).toHaveCount(3);
+    }
+    await expect(page.locator('.pico-level-empty')).toHaveCount(4);
+  });
+}
+test('Large level caps the inline list at 100, searches beyond the cap and clears on scope rejection', async ({
+  page,
+}, info) => {
+  const { level, deny } = await levelFixture(page, 121);
+  await expect(level.locator('summary strong')).toHaveText('121');
+  await expect(level.locator('li')).toHaveCount(3);
+  await expect(level.locator('li strong').first()).toHaveText('—');
+  await level.getByRole('button', { name: 'Показать до 100' }).click();
+  await expect(level.locator('li')).toHaveCount(100);
+  await expect(level.getByRole('status')).toContainText(
+    'Показаны 100 из 121 клиентов. Уточните поиск',
+  );
+  await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
+  const search = level.getByRole('searchbox', { name: 'Поиск клиентов уровня «Новый»' });
+  await search.fill('  кЛиЕнТ 121  ');
+  await expect(level.locator('li')).toHaveCount(1);
+  await expect(level.locator('li')).toContainText('Клиент 121');
+  await search.fill('7700000120');
+  await expect(level.locator('li')).toHaveCount(1);
+  await search.fill('несуществующий');
+  await expect(level.locator('li')).toHaveCount(0);
+  await expect(level).toContainText('Клиенты не найдены');
+  await search.fill('');
+  await expect(level.locator('li')).toHaveCount(100);
+  await page.screenshot({
+    path: info.outputPath('inline-level-clients.png'),
+    animations: 'disabled',
+  });
+  await level.getByRole('button', { name: 'Свернуть' }).click();
+  await expect(level.locator('li')).toHaveCount(3);
+  await level.getByRole('button', { name: 'Показать до 100' }).click();
+  await expect(search).toHaveValue('');
+  await page.getByRole('button', { name: 'Период аналитики' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Период', exact: true });
+  await dialog.getByRole('radio', { name: /^30 дней/ }).click();
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(page.locator('.pico-levels')).not.toHaveAttribute('open');
+  await expect(page.locator('.pico-level-client-list li')).toHaveCount(3);
+  deny();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('alert')).toContainText('Доступ к уровню отозван');
-  await expect(page.locator('.pico-client-list')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Сбросить фильтр уровня' })).toHaveCount(0);
+  await expect(page.locator('.pico-levels')).toHaveCount(0);
 });
