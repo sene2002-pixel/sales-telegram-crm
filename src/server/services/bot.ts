@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { importTemplateAction, importTemplateCaption } from './import-onboarding';
 import { CompanyImports } from './company-imports';
 import { companyImportLimits } from './company-import-parser';
 import { companyDisplayName } from '../../shared/company-display-name';
@@ -166,6 +168,19 @@ export class BotService {
         await this.telegram.send(chatId, { text });
         return { ok: true };
       }
+      if (callback?.data === importTemplateAction && this.imports) {
+        await this.telegram.call('answerCallbackQuery', { callback_query_id: callback.id });
+        try {
+          const bytes = await readFile('assets/import/Pico-shablon-perenosa-klientov.xlsx');
+          await this.telegram.sendImportTemplate(chatId, bytes, importTemplateCaption);
+        } catch {
+          await this.diagnostics?.record('import.template_failed', { reason: 'delivery_failed' });
+          await this.telegram.send(chatId, {
+            text: 'Не удалось отправить шаблон. Попробуйте ещё раз: нажмите «Импортировать компании».',
+          });
+        }
+        return { ok: true };
+      }
       if (callback && /^(ic|ix):/.test(callback.data || '') && this.imports) {
         const [action, id, version] = (callback.data || '').split(':');
         if (action === 'ic') {
@@ -307,7 +322,14 @@ export class BotService {
       else if (command === '/start')
         await this.telegram.send(chatId, {
           text: picoGreeting,
-          reply_markup: this.telegram.appButton(),
+          reply_markup: {
+            inline_keyboard: [
+              ...this.telegram.appButton().inline_keyboard,
+              ...(this.imports
+                ? [[{ text: 'Импортировать компании', callback_data: importTemplateAction }]]
+                : []),
+            ],
+          },
         });
       else if (command === '/help')
         await this.telegram.send(chatId, {

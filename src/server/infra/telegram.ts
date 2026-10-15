@@ -164,6 +164,37 @@ export class TelegramAdapter implements Messenger {
     const result = await this.call('sendMessage', { chat_id: chatId, ...payload });
     return result?.message_id as number | undefined;
   }
+  async sendImportTemplate(chatId: string, content: Uint8Array, caption: string) {
+    requireCondition(this.config.botToken, 503, 'Бот не настроен');
+    requireCondition(
+      content.length > 0 && content.length <= 2 * 1024 * 1024,
+      500,
+      'Шаблон импорта недоступен',
+    );
+    requireCondition(caption.length <= 1024, 500, 'Инструкция к шаблону слишком длинная');
+    const body = new FormData();
+    body.append('chat_id', chatId);
+    body.append(
+      'document',
+      new Blob([new Uint8Array(content)], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      'Pico-shablon-perenosa-klientov.xlsx',
+    );
+    body.append('caption', caption);
+    const response = await fetch(
+      `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
+      {
+        method: 'POST',
+        body,
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    requireCondition(response.ok, 502, 'Не удалось отправить шаблон. Попробуйте ещё раз');
+    const result: any = await response.json().catch(() => null);
+    requireCondition(result?.ok, 502, 'Telegram отклонил отправку шаблона. Попробуйте ещё раз');
+    return result.result?.message_id as number | undefined;
+  }
   async sendDocument(chatId: string, content: string, filename: string) {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     const body = new FormData();
