@@ -157,7 +157,7 @@ function LevelClients({ clients, label }: { clients: Company[]; label: string })
       {expanded && !matches.length && <p className="pico-level-count">Клиенты не найдены</p>}
       {clients.length > 3 && !expanded && (
         <button
-          className="text-button"
+          className="pico-level-show-all"
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
@@ -166,9 +166,12 @@ function LevelClients({ clients, label }: { clients: Company[]; label: string })
             setQuery('');
           }}
         >
-          {clients.length > LEVEL_CLIENT_LIMIT
-            ? 'Показать до 100'
-            : `Показать всех, ${clients.length}`}
+          <span>
+            {clients.length > LEVEL_CLIENT_LIMIT
+              ? 'Показать до 100'
+              : `Показать всех, ${clients.length}`}
+          </span>
+          <Icon name="chevron-down" size={16} />
         </button>
       )}
     </div>
