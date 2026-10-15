@@ -89,7 +89,7 @@ function App() {
     [clientSort, setClientSort] = useState('name'),
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
-    [taskView, setTaskView] = useState<'open' | 'overdue'>('open');
+    [taskView, setTaskView] = useState<'open' | 'overdue' | 'today' | 'meetings'>('open');
   const [employeeId, setEmployeeId] = useState(''),
     [employeeOptions, setEmployeeOptions] = useState<EmployeeFilterOption[]>([]),
     [employeeError, setEmployeeError] = useState(''),
@@ -345,6 +345,43 @@ function App() {
       setTab('home');
     }
   }, [user?.role, tab]);
+  useEffect(() => {
+    if (!user || tab !== 'home') return;
+    document.documentElement.classList.add('pico-home-active');
+    window.scrollTo(0, 0);
+    const telegram = window.Telegram?.WebApp;
+    let ownsSwipeLock = false;
+    try {
+      if (
+        telegram?.isVerticalSwipesEnabled !== false &&
+        telegram?.disableVerticalSwipes &&
+        (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('7.7'))
+      ) {
+        telegram.disableVerticalSwipes();
+        ownsSwipeLock = true;
+      }
+    } catch {
+      /* Older Telegram clients retain the browser gesture fallback. */
+    }
+    const preventHomeDrag = (event: TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[role="dialog"], .pico-more-menu, aside'))
+        return;
+      if (event.cancelable) event.preventDefault();
+    };
+    document.addEventListener('touchmove', preventHomeDrag, { passive: false });
+    return () => {
+      document.documentElement.classList.remove('pico-home-active');
+      if (ownsSwipeLock) {
+        try {
+          telegram?.enableVerticalSwipes?.();
+        } catch {
+          /* Unsupported native capability. */
+        }
+      }
+      document.removeEventListener('touchmove', preventHomeDrag);
+    };
+  }, [user, tab]);
   async function login(role?: string) {
     setError('');
     setLoading(true);
@@ -617,7 +654,12 @@ function App() {
             <div className="pico-home-greeting">
               <div className="pico-home-welcome">
                 <h1 aria-label={`Привет, ${user.name.split(' ')[0]}!`}>
-                  Привет, {user.name.split(' ')[0]}!
+                  <span
+                    className="pico-home-greeting-text"
+                    title={`Привет, ${user.name.split(' ')[0]}!`}
+                  >
+                    Привет, {user.name.split(' ')[0]}!
+                  </span>
                   {user.role === 'admin' && (
                     <>
                       {' '}
@@ -687,7 +729,12 @@ function App() {
               <HomeScreen
                 {...screenProps}
                 user={user}
-                onNavigate={setTab}
+                onNavigate={(next) => {
+                  if (next === 'tasks' || next === 'calendar') {
+                    setTaskView(next === 'calendar' ? 'meetings' : 'today');
+                    setTab('tasks');
+                  } else setTab(next);
+                }}
                 onOverdue={() => {
                   setTaskView('overdue');
                   setTab('tasks');

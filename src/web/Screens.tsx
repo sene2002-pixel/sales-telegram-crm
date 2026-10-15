@@ -592,14 +592,56 @@ export function HomeScreen(
     onCreateRecord: (kind: 'task' | 'project') => void;
   },
 ) {
-  const active = props.companies.filter((c) => !c.archived),
-    open = props.tasks.filter((t) => !t.data.done),
-    todays = open.filter((t) => t.data.due === today());
+  const [introOpen, setIntroOpen] = useState(false);
+  const active = props.companies.filter((c) => !c.archived);
+  const open = props.tasks.filter((t) => !t.data.done);
+  const todays = open.filter((t) => t.data.due === today());
+  const meetings = open.filter((t) => t.data.type === 'meeting');
+  const overdue = open.filter((t) => t.data.due && t.data.due < today());
   return (
-    <div className="pico-home">
+    <div className="pico-home pico-static-home">
       {!active.length && (
-        <details className="pico-home-start">
-          <summary>С чего начать</summary>
+        <button className="pico-home-start" onClick={() => setIntroOpen(true)}>
+          С чего начать <Icon name="chevron-right" size={16} />
+        </button>
+      )}
+      <button className="pico-home-snapshot" onClick={() => props.onNavigate('tasks')}>
+        <span className="pico-home-snapshot-icon">
+          <Icon name="today-calendar" size={28} />
+        </span>
+        <span className="pico-home-snapshot-copy">
+          <strong>Сегодня</strong>
+          <span>
+            {todays.length ? `Задач на сегодня: ${todays.length}` : 'На сегодня задач нет'}
+          </span>
+          <small>{todays.length ? 'Открыть задачи' : 'Запланировать следующий шаг'}</small>
+        </span>
+        <Icon name="chevron-right" size={18} />
+      </button>
+      <button className="pico-home-snapshot" onClick={() => props.onNavigate('calendar')}>
+        <span className="pico-home-snapshot-icon">
+          <Icon name="handshake" size={28} />
+        </span>
+        <span className="pico-home-snapshot-copy">
+          <strong>Встречи</strong>
+          <span>
+            {meetings.length ? `Запланировано: ${meetings.length}` : 'Встреч не запланировано'}
+          </span>
+          <small>Открыть встречи</small>
+        </span>
+        <Icon name="chevron-right" size={18} />
+      </button>
+      {overdue.length > 0 && (
+        <button
+          className="pico-add-row"
+          onClick={() => (props.onOverdue ? props.onOverdue() : props.onNavigate('tasks'))}
+        >
+          Просроченные задачи · {overdue.length}
+          <Icon name="chevron-right" size={16} />
+        </button>
+      )}
+      {introOpen && (
+        <Modal title="С чего начать" onClose={() => setIntroOpen(false)}>
           <section className="pico-intro">
             <h2>Как работает Pico</h2>
             <p>
@@ -641,7 +683,13 @@ export function HomeScreen(
                 () => props.onNavigate('analytics'),
               ],
             ].map(([icon, title, text, action]) => (
-              <button key={String(title)} onClick={action as () => void}>
+              <button
+                key={String(title)}
+                onClick={() => {
+                  setIntroOpen(false);
+                  (action as () => void)();
+                }}
+              >
                 <span className="pico-row-icon">
                   <Icon name={String(icon)} />
                 </span>
@@ -653,66 +701,25 @@ export function HomeScreen(
               </button>
             ))}
           </div>
-        </details>
-      )}
-      <>
-        <h2>Сегодня</h2>
-        {todays.some((t) => t.data.type !== 'meeting') ? (
-          <TaskList
-            inlineActions
-            {...props}
-            list={todays.filter((t) => t.data.type !== 'meeting')}
-          />
-        ) : (
-          <Empty
-            icon="today-calendar"
-            title="На сегодня задач нет"
-            text="Хорошее время, чтобы запланировать следующий контакт с клиентами."
-          />
-        )}
-        <h2>Встречи</h2>
-        {open.some((t) => t.data.type === 'meeting') ? (
-          <TaskList
-            {...props}
-            list={open
-              .filter((t) => t.data.type === 'meeting')
-              .sort((a, b) =>
-                String(a.data.due || '9999').localeCompare(String(b.data.due || '9999')),
-              )}
-          />
-        ) : (
-          <Empty
-            icon="handshake"
-            title="Встреч не запланировано"
-            text="Каждая встреча приближает сделку. Назначьте первую, это займёт минуту."
-          />
-        )}
-      </>
-      {open.some((t) => t.data.due && t.data.due < today()) && (
-        <button
-          className="pico-add-row"
-          onClick={() => (props.onOverdue ? props.onOverdue() : props.onNavigate('tasks'))}
-        >
-          Просроченные задачи · {open.filter((t) => t.data.due && t.data.due < today()).length}
-          <Icon name="chevron-right" size={16} />
-        </button>
+        </Modal>
       )}
     </div>
   );
 }
+
 export function TasksScreen(
   props: Common & {
     calendarOnly?: boolean;
     onCreate: () => void;
-    initialFilter?: 'open' | 'overdue';
+    initialFilter?: 'open' | 'overdue' | 'today' | 'meetings';
   },
 ) {
   const [query, setQuery] = useState(''),
-    [filter, setFilter] = useState<string>(props.initialFilter || 'open'),
+    [filter, setFilter] = useState<string>(props.initialFilter === 'overdue' ? 'overdue' : 'open'),
     [month, setMonth] = useState(today().slice(0, 7)),
     [date, setDate] = useState(today()),
-    [byDate, setByDate] = useState(!!props.calendarOnly),
-    [type, setType] = useState(''),
+    [byDate, setByDate] = useState(!!props.calendarOnly || props.initialFilter === 'today'),
+    [type, setType] = useState(props.initialFilter === 'meetings' ? 'meeting' : ''),
     [filtersOpen, setFiltersOpen] = useState(false);
   const search = props.tasks.filter((t) =>
     `${t.data.text} ${t.companyName} ${companyDisplayName(t.companyName)} ${props.projects.find((p) => p.id === t.projectId)?.data.name || t.projectName || ''}`
