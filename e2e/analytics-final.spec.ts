@@ -134,8 +134,8 @@ test('Analytics uses all-period eight-point data, four comparisons and truthful 
   await expect(page.locator('.pico-analytics-limits')).toContainText(
     'Не всю историю можно подтвердить',
   );
-  await expect(page.locator('.pico-analytics-limits')).toContainText(
-    'Контакты с неизвестным источником: 3',
+  await expect(page.locator('.pico-analytics-final')).not.toContainText(
+    'Контакты с неизвестным источником',
   );
   await expect(page.locator('.pico-metric-delta')).toHaveText(
     Array(4).fill('Нет данных для сравнения'),
@@ -416,8 +416,8 @@ test('Analytics declines client/project counts and describes incomplete history 
       'Не всю историю можно подтвердить. Для таких данных сравнения недоступны.',
     );
     await expect(page.locator('.pico-analytics-limits')).not.toContainText('999');
-    await expect(page.locator('.pico-analytics-limits')).toContainText(
-      `Контакты с неизвестным источником: ${number}.`,
+    await expect(page.locator('.pico-analytics-final')).not.toContainText(
+      'Контакты с неизвестным источником',
     );
     await navigate(page, 'Главная');
   }

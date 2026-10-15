@@ -518,17 +518,9 @@ export function AnalyticsScreen({
               delta={data.metrics.active.delta}
             />
           </div>
-          {(data.historyIncomplete > 0 || data.contactSourcesUnknown > 0) && (
+          {data.historyIncomplete > 0 && (
             <div className="pico-analytics-limits" role="note">
-              {data.historyIncomplete > 0 && (
-                <p>Не всю историю можно подтвердить. Для таких данных сравнения недоступны.</p>
-              )}
-              {data.contactSourcesUnknown > 0 && (
-                <p>
-                  Контакты с неизвестным источником: {data.contactSourcesUnknown}. Балл за контакты
-                  рассчитывается без них.
-                </p>
-              )}
+              <p>Не всю историю можно подтвердить. Для таких данных сравнения недоступны.</p>
             </div>
           )}
           <section className="pico-client-equipment">
