@@ -1,3 +1,15 @@
+import { createHash } from 'node:crypto';
+import { importTemplateCaption } from '../server/services/import-onboarding';
+import { parseCompanyImport, assertImportPrivacy } from '../server/services/company-import-parser';
+import https from 'node:https';
+import { EventEmitter } from 'node:events';
+import {
+  picoTemplate,
+  syntheticClient,
+  syntheticProject,
+  docxDocument,
+  docTable,
+} from './helpers/import-fixtures';
 import { before, beforeEach, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -10,7 +22,7 @@ import { makeConfig } from '../server/config';
 import { createApp, Services } from '../server/http/app';
 import { companyImportLimits } from '../server/services/company-import-parser';
 let app: any, db: any, services: Services, dir: string, actor: Actor, foreign: Actor;
-let input = Buffer.from(''),
+let input: Buffer = Buffer.from(''),
   downloads = 0,
   sequence = 100;
 const replies: { method: string; payload: any }[] = [];
@@ -237,4 +249,166 @@ test('Bot Google document import rejects unexpected URL query before DNS or remo
   } finally {
     dns.lookup = lookup;
   }
+});
+
+test('Bot accepts the Pico workbook and DOCX upload with linked contacts/projects only after confirmation', async () => {
+  input = picoTemplate({ clients: [syntheticClient()], projects: [syntheticProject()] });
+  await webhook(document(actor, { file_name: 'Pico-shablon-perenosa-klientov.xlsx' })).expect(201);
+  assert.equal((await rows('records')).length, 0);
+  await webhook(callback(confirmData())).expect(201);
+  assert.equal((await rows('companies')).length, 1);
+  assert.deepEqual((await rows('records')).map((r: any) => r.kind).sort(), ['contact', 'project']);
+  replies.length = 0;
+  input = docxDocument(
+    docTable([
+      ['Название компании', 'Контакты'],
+      ['Другая компания', 'Тестовый Контакт, инженер, +79990000001, business@example.test'],
+    ]),
+  );
+  await webhook(
+    document(actor, {
+      file_name: 'document.docx',
+      mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    }),
+  ).expect(201);
+  await webhook(callback(confirmData())).expect(201);
+  assert.equal((await rows('companies')).length, 2);
+});
+
+test('Bot Google Docs link parses real table structure; webhook retry reuses draft without another download', async (t) => {
+  t.mock.method(dns, 'lookup', async () => [{ address: '142.250.1.1', family: 4 }] as any);
+  let requested = 0;
+  const body = docxDocument(
+    docTable([
+      ['Название компании', 'Город', 'Контакты'],
+      ['Google тест', 'Казань', 'Тестовый Контакт, инженер, +79990000001, business@example.test'],
+    ]),
+  );
+  t.mock.method(https, 'request', ((options: any, callback: any) => {
+    requested++;
+    assert.equal(options.path, '/document/d/abcdefghij/export?format=docx');
+    const req = new EventEmitter() as any;
+    req.destroy = () => {};
+    req.end = () =>
+      setImmediate(() => {
+        const res = new EventEmitter() as any;
+        res.statusCode = 200;
+        res.headers = {
+          'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        };
+        callback(res);
+        res.emit('data', body);
+        res.emit('end');
+      });
+    return req;
+  }) as any);
+  const id = ++sequence;
+  const msg = {
+    update_id: id,
+    message: {
+      message_id: id,
+      date: Math.floor(Date.now() / 1000),
+      from: { id: Number(actor.telegramId), first_name: actor.name },
+      chat: { id: Number(actor.telegramId), type: 'private' },
+      text: 'https://docs.google.com/document/d/abcdefghij/edit',
+    },
+  };
+  await webhook(msg).expect(201);
+  assert.equal(requested, 1);
+  assert.equal((await rows('companies')).length, 0);
+  // Service retry itself is also independent of network/provider availability.
+  await (services.bot as any).imports.prepareGoogle(actor, {
+    sourceKey: `telegram:${id}`,
+    url: msg.message.text,
+  });
+  assert.equal(requested, 1);
+  await webhook(callback(confirmData())).expect(201);
+  assert.equal((await rows('companies')).length, 1);
+  assert.equal((await rows('records')).filter((r: any) => r.kind === 'contact').length, 1);
+});
+
+test('Start offers import; its button sends the exact supplied workbook and creates no CRM data', async (t) => {
+  const sent: { chatId: string; bytes: Uint8Array; caption: string }[] = [];
+  t.mock.method(
+    (services.bot as any).telegram,
+    'sendImportTemplate',
+    async (chatId: string, bytes: Uint8Array, caption: string) => {
+      sent.push({ chatId, bytes, caption });
+      return 123;
+    },
+  );
+  const id = ++sequence;
+  await webhook({
+    update_id: id,
+    message: {
+      message_id: id,
+      date: Math.floor(Date.now() / 1000),
+      from: { id: Number(actor.telegramId), first_name: actor.name },
+      chat: { id: Number(actor.telegramId), type: 'private' },
+      text: '/start',
+    },
+  }).expect(201);
+  const greeting = replies.find((r) =>
+    r.payload.reply_markup?.inline_keyboard?.some((row: any[]) =>
+      row.some((b: any) => b.callback_data === 'import:template'),
+    ),
+  );
+  assert.ok(greeting, 'Import button must survive dynamic CRM-menu fallback');
+  const action = greeting.payload.reply_markup.inline_keyboard
+    .flat()
+    .find((b: any) => b.callback_data === 'import:template');
+  assert.equal(action.text, 'Импортировать компании');
+  await webhook(callback('import:template')).expect(201);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.chatId, actor.telegramId);
+  assert.equal(
+    createHash('sha256').update(sent[0]!.bytes).digest('hex'),
+    '0b1dd5e0c9f9b6e7a41fce78076957406a90012686b5ac94075a0044c92efa5d',
+  );
+  assert.equal(sent[0]!.caption, importTemplateCaption);
+  assert.ok(sent[0]!.caption.length <= 1024);
+  for (const phrase of ['строки 5', 'строка 4', 'млн ₽', 'Подтвердить импорт'])
+    assert.ok(sent[0]!.caption.includes(phrase), phrase);
+  await assert.rejects(
+    parseCompanyImport(sent[0]!.bytes, 'xlsx', assertImportPrivacy),
+    /Шаблон не заполнен/,
+  );
+  for (const table of ['companies', 'records', 'reports', 'company_imports'])
+    assert.equal((await rows(table)).length, 0, table);
+  assert.ok(replies.some((r) => r.method === 'answerCallbackQuery'));
+});
+
+test('Template callback refuses blocked users, unauthenticated webhooks, groups and mismatched recipients', async (t) => {
+  let sends = 0;
+  t.mock.method((services.bot as any).telegram, 'sendImportTemplate', async () => {
+    sends++;
+  });
+  await webhook(callback('import:template'), false).expect(401);
+  const group = callback('import:template');
+  group.callback_query.message.chat.type = 'group';
+  await webhook(group).expect(201);
+  const mismatch = callback('import:template');
+  mismatch.callback_query.message.chat.id = Number(foreign.telegramId);
+  await webhook(mismatch).expect(201);
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actor.id]);
+  await webhook(callback('import:template')).expect(201);
+  assert.equal(sends, 0);
+  assert.ok(replies.some((r) => /Доступ не выдан/.test(r.payload.text || '')));
+});
+
+test('Template delivery failure is explained safely and a later button press can retry', async (t) => {
+  let fail = true,
+    sends = 0;
+  t.mock.method((services.bot as any).telegram, 'sendImportTemplate', async () => {
+    sends++;
+    if (fail) throw new Error('internal /private/path synthetic-secret');
+  });
+  await webhook(callback('import:template')).expect(201);
+  const error = replies.find((r) => /Не удалось отправить шаблон/.test(r.payload.text || ''));
+  assert.ok(error);
+  assert.doesNotMatch(error.payload.text, /private|synthetic-secret/);
+  fail = false;
+  await webhook(callback('import:template')).expect(201);
+  assert.equal(sends, 2);
+  assert.equal((await rows('companies')).length, 0);
 });

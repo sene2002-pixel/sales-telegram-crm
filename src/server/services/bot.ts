@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { importTemplateAction, importTemplateCaption } from './import-onboarding';
 import { CompanyImports } from './company-imports';
 import { companyImportLimits } from './company-import-parser';
 import { companyDisplayName } from '../../shared/company-display-name';
@@ -166,12 +168,25 @@ export class BotService {
         await this.telegram.send(chatId, { text });
         return { ok: true };
       }
+      if (callback?.data === importTemplateAction && this.imports) {
+        await this.telegram.call('answerCallbackQuery', { callback_query_id: callback.id });
+        try {
+          const bytes = await readFile('assets/import/Pico-shablon-perenosa-klientov.xlsx');
+          await this.telegram.sendImportTemplate(chatId, bytes, importTemplateCaption);
+        } catch {
+          await this.diagnostics?.record('import.template_failed', { reason: 'delivery_failed' });
+          await this.telegram.send(chatId, {
+            text: 'Не удалось отправить шаблон. Попробуйте ещё раз: нажмите «Импортировать компании».',
+          });
+        }
+        return { ok: true };
+      }
       if (callback && /^(ic|ix):/.test(callback.data || '') && this.imports) {
         const [action, id, version] = (callback.data || '').split(':');
         if (action === 'ic') {
           const result = await this.imports.confirm(actor, id || '', Number(version));
           await this.telegram.send(chatId, {
-            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}.`,
+            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}.`,
             reply_markup: this.telegram.appButton(),
           });
         } else await this.imports.cancel(actor, id || '', Number(version));
@@ -182,14 +197,15 @@ export class BotService {
         return { ok: true };
       }
       if (!callback && msg?.document && this.imports) {
-        const extension = /\.(xlsx|csv|txt)$/i
+        const extension = /\.(xlsx|csv|txt|docx)$/i
           .exec(msg.document.file_name || '')?.[1]
-          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | undefined;
+          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | 'docx' | undefined;
         const mimeFormat = (
           {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
             'text/csv': 'csv',
             'text/plain': 'txt',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
           } as const
         )[msg.document.mime_type as 'text/csv'];
         const format = extension || mimeFormat;
@@ -306,7 +322,14 @@ export class BotService {
       else if (command === '/start')
         await this.telegram.send(chatId, {
           text: picoGreeting,
-          reply_markup: this.telegram.appButton(),
+          reply_markup: {
+            inline_keyboard: [
+              ...this.telegram.appButton().inline_keyboard,
+              ...(this.imports
+                ? [[{ text: 'Импортировать компании', callback_data: importTemplateAction }]]
+                : []),
+            ],
+          },
         });
       else if (command === '/help')
         await this.telegram.send(chatId, {
