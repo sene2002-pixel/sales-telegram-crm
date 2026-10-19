@@ -6,6 +6,7 @@ import {
   Company,
   companySchema,
   contactSchema,
+  holdingAllocationSchema,
   CompanyData,
   CrmRecord,
   RecordKind,
@@ -170,6 +171,17 @@ export class CrmService {
     ]);
     requireCondition(owner, 400, 'Ответственный неактивен');
     await this.validateHolding(actor, data, ownerId, tx);
+    if (data.inn && !data.archived) {
+      const duplicates = await tx.query(
+        "SELECT id FROM companies WHERE data->>'inn'=$1 AND COALESCE(data->>'archived','false')='false' LIMIT 1",
+        [data.inn],
+      );
+      requireCondition(
+        !duplicates.length,
+        409,
+        'Компания с таким ИНН уже существует. Проверьте существующую карточку.',
+      );
+    }
     const id = randomUUID();
     await tx.query('INSERT INTO companies(id,owner_id,data) VALUES($1,$2,$3)', [
       id,
@@ -262,6 +274,118 @@ export class CrmService {
         holdingDivisions[key] = (holdingDivisions[key] ?? 0) + (value ?? 0);
     }
     return { company, records, audit: events, holdingMembers, holdingPotential, holdingDivisions };
+  }
+  async allocateHolding(actor: Actor, id: string, raw: unknown) {
+    const input = holdingAllocationSchema.parse(raw);
+    await this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      const holding = await this.company(actor, id, tx, true);
+      requireCondition(
+        holding.segment === 'holding' && !holding.archived,
+        400,
+        'Выберите действующий холдинг',
+      );
+      requireCondition(holding.version === input.version, 409, 'Холдинг изменён. Обновите данные');
+      const rows = await tx.query(
+        "SELECT id FROM companies WHERE data->>'holdingId'=$1 AND COALESCE(data->>'archived','false')='false' ORDER BY id FOR UPDATE",
+        [id],
+      );
+      requireCondition(
+        rows.length > 0 && rows.length <= 100,
+        400,
+        'Укажите от 1 до 100 заказчиков',
+      );
+      const targets = new Map(input.allocations.map((target) => [target.companyId, target]));
+      requireCondition(
+        targets.size === input.allocations.length &&
+          targets.size === rows.length &&
+          rows.every((row) => targets.has(row.id)),
+        409,
+        'Список заказчиков изменён. Обновите данные',
+      );
+      const expected =
+        holding.potential ??
+        (Object.keys(holding.divisions).length
+          ? Object.values(holding.divisions).reduce<number>((n, v) => n + (v || 0), 0)
+          : null);
+      requireCondition(
+        expected !== null && expected > 0,
+        400,
+        'Нет временного потенциала для распределения',
+      );
+      const updates: { before: Company; after: CompanyData }[] = [];
+      const totals: Record<string, number> = {};
+      let total = 0;
+      for (const row of rows) {
+        const before = await this.company(actor, row.id, tx, true);
+        const target = targets.get(row.id)!;
+        requireCondition(
+          before.version === target.version && before.segment === 'end_client',
+          409,
+          'Заказчик изменён. Обновите данные',
+        );
+        const amount = Object.keys(target.divisions).length
+          ? Object.values(target.divisions).reduce<number>((n, v) => n + (v || 0), 0)
+          : target.potential;
+        requireCondition(
+          amount !== null &&
+            amount <= 1e12 &&
+            (target.potential === null || Math.abs(amount - target.potential) < 0.01),
+          400,
+          'Потенциал должен совпадать с суммой оборудования',
+        );
+        total += amount;
+        for (const [key, value] of Object.entries(target.divisions))
+          totals[key] = (totals[key] || 0) + (value || 0);
+        updates.push({
+          before,
+          after: companySchema
+            .strip()
+            .parse({ ...before, divisions: target.divisions, potential: amount }),
+        });
+      }
+      requireCondition(
+        Math.abs(total - expected) < 0.01,
+        400,
+        'Распределите весь временный потенциал без увеличения общей суммы',
+      );
+      if (Object.keys(holding.divisions).length) {
+        for (const key of new Set([...Object.keys(holding.divisions), ...Object.keys(totals)]))
+          requireCondition(
+            Math.abs(
+              (totals[key] || 0) - (holding.divisions[key as keyof typeof holding.divisions] || 0),
+            ) < 0.01,
+            400,
+            'Суммы по оборудованию должны совпадать с временной оценкой холдинга',
+          );
+      }
+      for (const { before, after } of updates) {
+        await tx.query(
+          'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+          [JSON.stringify(after), before.id],
+        );
+        await audit(tx, actor.id, 'company.updated', before.id, before.id, {
+          before,
+          after,
+          beforeVersion: before.version,
+          afterVersion: before.version + 1,
+          holdingAllocation: id,
+        });
+      }
+      const after = companySchema.strip().parse({ ...holding, potential: null, divisions: {} });
+      await tx.query(
+        'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+        [JSON.stringify(after), id],
+      );
+      await audit(tx, actor.id, 'company.updated', id, id, {
+        before: holding,
+        after,
+        beforeVersion: holding.version,
+        afterVersion: holding.version + 1,
+        holdingAllocation: input.allocations.map((target) => target.companyId),
+      });
+    });
+    return this.detail(actor, id);
   }
   async checkArchivePermission(
     actor: Actor,

@@ -12,10 +12,13 @@ import {
   segments,
   divisions,
   primaryDivisions,
+  primarySegments,
   divisionLabels,
 } from '../shared/contracts';
 import { AnalyticsSummary, ClientScore } from '../shared/analytics';
 import { api, ApiError, download, money, compactMoney, fullMoney, today, token } from './api';
+import { millionValue } from './FormWidgets';
+import { HoldingMembers } from './HoldingMembers';
 import { FileUpload } from './FileUpload';
 import { Icon, industryIcon } from './Icons';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
@@ -57,6 +60,8 @@ export function ClientRow({
   score: providedScore,
   actorRole,
   holdingMembers,
+  onReveal,
+  revealVersion,
 }: {
   company: Company;
   initiallyOpen?: boolean;
@@ -65,6 +70,8 @@ export function ClientRow({
   score?: ClientScore;
   actorRole?: Role;
   holdingMembers?: Company[];
+  onReveal?: (id: string) => void;
+  revealVersion?: number;
 }) {
   const [open, setOpen] = useState(initiallyOpen),
     [detail, setDetail] = useState<Detail | null>(null),
@@ -77,6 +84,13 @@ export function ClientRow({
     [uploading, setUploading] = useState(false),
     [uploadFile, setUploadFile] = useState<File | null>(null),
     [fileError, setFileError] = useState('');
+  const articleRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (initiallyOpen) {
+      setOpen(true);
+      requestAnimationFrame(() => articleRef.current?.scrollIntoView({ block: 'nearest' }));
+    }
+  }, [initiallyOpen, revealVersion]);
   const sequence = useRef(0);
   const c = detail && detail.company.version >= company.version ? detail.company : company;
   const isHolding = c.segment === 'holding';
@@ -189,7 +203,7 @@ export function ClientRow({
       const amount = Number(raw.replace(',', '.').replace(/\s/g, ''));
       if (!raw.trim() || !Number.isFinite(amount) || amount < 0)
         throw new Error('Введите сумму от 0 до 1 000 000 000 000 ₽');
-      next[key as keyof typeof next] = amount;
+      next[key as keyof typeof next] = amount * 1_000_000;
     }
     await patch({
       divisions: next,
@@ -218,7 +232,7 @@ export function ClientRow({
   const levelIndex = levels.findIndex((l) => l[0] === score?.level);
   const canArchive = !c.archived && (actorRole === 'admin' || actorRole === 'supervisor');
   return (
-    <article className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
+    <article ref={articleRef} className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
       <SwipeAction
         label={`клиента «${companyDisplayName(c.name)}» в архив`}
         onDelete={
@@ -276,20 +290,24 @@ export function ClientRow({
             >
               <div>
                 <strong>
+                  <i style={{ background: levels[levelIndex]?.[2] }} />
                   {score
-                    ? `${score.score} / 8 баллов`
+                    ? levels[levelIndex]?.[1]
                     : scoreError
                       ? 'Уровень недоступен'
                       : 'Загрузка уровня…'}
                 </strong>
-                <span>{levels[levelIndex]?.[1]}</span>
+                <span>{score ? `${score.score} баллов из 8` : ''}</span>
               </div>
               <div className="cc-segments">
                 {levels.map(([key, label, tone], i) => (
                   <span
                     key={key}
                     title={label}
-                    style={{ background: levelIndex >= i ? tone : '#E6EBF3' }}
+                    style={{
+                      background: levelIndex >= i ? tone : '#E6EBF3',
+                      flex: [1, 2, 3, 2, 1][i],
+                    }}
                   />
                 ))}
               </div>
@@ -298,7 +316,7 @@ export function ClientRow({
               <>
                 <details className="cc-section" open>
                   <summary>
-                    Потенциал <span>{money(potential)}</span>
+                    Потенциал <span>{millionValue(potential || 0)} млн ₽</span>
                     <Icon name="chevron-down" size={16} />
                   </summary>
                   <div className="cc-section-body">
@@ -308,21 +326,15 @@ export function ClientRow({
                         {Object.entries(detail.holdingDivisions || {}).map(([key, value]) => (
                           <div className="cc-equipment" key={key}>
                             <span>{divisionLabels[key] || key}</span>
-                            <strong>{money(value)}</strong>
+                            <strong>{millionValue(value)} млн ₽</strong>
                           </div>
                         ))}
-                        {detail.holdingMembers?.length ? (
-                          <ul className="cc-members">
-                            {detail.holdingMembers.map((member) => (
-                              <li key={member.id}>
-                                {companyDisplayName(member.name)}
-                                <strong>{money(member.potential)}</strong>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="muted">В холдинге пока нет заказчиков</p>
-                        )}
+                        <HoldingMembers
+                          company={c}
+                          members={members}
+                          onReveal={onReveal}
+                          onChanged={changed}
+                        />
                       </>
                     ) : (
                       <>
@@ -337,7 +349,8 @@ export function ClientRow({
                               <div className="cc-equipment">
                                 <InlineValue
                                   label={divisionLabels[key]}
-                                  value={String(c.divisions[key])}
+                                  value={millionValue(c.divisions[key])}
+                                  unit="млн ₽"
                                   numeric
                                   onSave={(value) => equipment(key, value)}
                                 />
@@ -383,7 +396,7 @@ export function ClientRow({
                             ['name', 'ФИО'],
                             ['role', 'Должность'],
                             ['phone', 'Телефон'],
-                            ['email', 'Email'],
+                            ['email', 'E-mail'],
                           ].map(([key, label]) => (
                             <InlineValue
                               key={key}
@@ -433,9 +446,11 @@ export function ClientRow({
                             )
                           }
                         >
-                          <Icon name="file" size={20} />
+                          <span className="cc-file-icon">
+                            <Icon name="file" size={20} />
+                          </span>
                           <span>
-                            {f.data.name}
+                            <strong>{f.data.name}</strong>
                             <small>{new Date(f.createdAt).toLocaleDateString('ru-RU')}</small>
                           </span>
                         </button>
@@ -486,7 +501,7 @@ export function ClientRow({
                     Данные
                     <Icon name="chevron-down" size={16} />
                   </summary>
-                  <div className="cc-section-body">
+                  <div className="cc-section-body cc-data">
                     {[
                       ['inn', 'ИНН'],
                       ['name', 'Название'],
@@ -500,10 +515,37 @@ export function ClientRow({
                         onSave={(value) => patch({ [key]: value })}
                       />
                     ))}
+                    {isHolding && (
+                      <>
+                        <InlineValue
+                          label="Описание деятельности"
+                          value={c.industry}
+                          onSave={(industry) => patch({ industry })}
+                        />
+                        <InlineValue
+                          label="Сайты"
+                          value={(c.sites || []).join('\n')}
+                          multiline
+                          onSave={(value) =>
+                            patch({
+                              sites: value
+                                .split('\n')
+                                .map((site) => site.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                        />
+                      </>
+                    )}
                     <InlineValue
                       label="Категория"
                       value={c.segment}
-                      options={segments.map((value) => ({ value, label: labels[value] }))}
+                      options={(primarySegments.includes(
+                        c.segment as (typeof primarySegments)[number],
+                      )
+                        ? primarySegments
+                        : [...primarySegments, c.segment]
+                      ).map((value) => ({ value, label: labels[value] }))}
                       onSave={(value) => patch({ segment: value as Company['segment'] })}
                     />
                   </div>
@@ -621,9 +663,9 @@ function EquipmentForm({
         </select>
       </label>
       <label>
-        Потенциал, ₽
+        Потенциал, млн ₽
         <input
-          aria-label="Потенциал, ₽"
+          aria-label="Потенциал, млн ₽"
           value={amount}
           inputMode="decimal"
           disabled={busy}

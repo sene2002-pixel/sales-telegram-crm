@@ -181,18 +181,52 @@ export class BotService {
         }
         return { ok: true };
       }
-      if (callback && /^(ic|ix):/.test(callback.data || '') && this.imports) {
-        const [action, id, version] = (callback.data || '').split(':');
-        if (action === 'ic') {
+      if (callback && /^(ic|ix|iu|iz):/.test(callback.data || '') && this.imports) {
+        const [action, id, version, index, decision] = (callback.data || '').split(':');
+        if (action === 'iu') {
+          const preview = await this.imports.decide(
+            actor,
+            id || '',
+            Number(version),
+            Number(index),
+            decision || '',
+          );
+          for (const [i, text] of preview.messages.entries())
+            await this.telegram.send(chatId, {
+              text,
+              ...(i === preview.messages.length - 1 ? { reply_markup: preview.replyMarkup } : {}),
+            });
+        } else if (action === 'iz') {
+          await this.imports.undo(actor, id || '', Number(version));
+          await this.telegram.send(chatId, {
+            text: 'Импорт отменён. Созданные компании перенесены в архив, обновлённые данные восстановлены.',
+          });
+        } else if (action === 'ic') {
           const result = await this.imports.confirm(actor, id || '', Number(version));
           await this.telegram.send(chatId, {
-            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}.`,
-            reply_markup: this.telegram.appButton(),
+            text: `Импорт завершён: создано ${result.created.length}, обновлено ${result.updated?.length || 0}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}. Отменить можно в течение 24 часов, если данные не изменены.`,
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: 'Отменить импорт · 24 часа',
+                    callback_data: `iz:${id}:${result.version}`,
+                  },
+                ],
+              ],
+            },
           });
         } else await this.imports.cancel(actor, id || '', Number(version));
         await this.telegram.call('answerCallbackQuery', {
           callback_query_id: callback.id,
-          text: action === 'ic' ? 'Импорт завершён' : 'Импорт отменён',
+          text:
+            action === 'ic'
+              ? 'Импорт завершён'
+              : action === 'iz'
+                ? 'Импорт отменён'
+                : action === 'iu'
+                  ? 'Выбор сохранён'
+                  : 'Импорт отменён',
         });
         return { ok: true };
       }

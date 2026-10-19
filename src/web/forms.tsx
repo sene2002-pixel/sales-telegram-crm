@@ -242,7 +242,9 @@ export function CompanyForm({
       ? companySchema.strip().parse(initial)
       : { ...companySchema.parse({ name: 'Новый клиент' }), name: '' },
   );
-  const [contacts, setContacts] = useState<InitialCompanyContact[]>([]);
+  const [contacts, setContacts] = useState<InitialCompanyContact[]>([
+    { name: '', role: '', phone: '', email: '' },
+  ]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -280,12 +282,16 @@ export function CompanyForm({
         setError('');
         setFieldErrors({});
         const parsed = companySchema.safeParse({ ...data, potential: savedPotential });
-        const parsedContacts = contacts.map((contact) => contactSchema.safeParse(contact));
+        const parsedContacts = contacts.map((contact) =>
+          Object.values(contact).some((value) => value.trim())
+            ? contactSchema.safeParse(contact)
+            : null,
+        );
         const errors: Record<string, string> = {};
         if (!parsed.success)
           for (const issue of parsed.error.issues) errors[String(issue.path[0])] = issue.message;
         parsedContacts.forEach((result, index) => {
-          if (!result.success)
+          if (result && !result.success)
             for (const issue of result.error.issues)
               errors[`contact-${index}-${String(issue.path[0])}`] = issue.message;
         });
@@ -306,10 +312,12 @@ export function CompanyForm({
             ...parsed.data,
             ...(!initial
               ? {
-                  initialContacts: parsedContacts.map((result) => {
-                    if (!result.success) throw new Error('Проверьте контакты');
-                    return result.data;
-                  }),
+                  initialContacts: parsedContacts
+                    .filter((result): result is NonNullable<typeof result> => result !== null)
+                    .map((result) => {
+                      if (!result.success) throw new Error('Проверьте контакты');
+                      return result.data;
+                    }),
                 }
               : {}),
           });
@@ -387,17 +395,24 @@ export function CompanyForm({
           <summary>
             <span>Потенциал</span>
             <strong>{millionValue(total)} млн ₽</strong>
-            <Icon name="chevron" size={16} />
+            <Icon name="chevron-down" size={18} />
           </summary>
           <div className="company-equipment">
-            <p className="muted">Годовая потребность, млн ₽</p>
+            <div className="company-equipment-head">
+              <span>Оборудование</span>
+              <span>млн ₽ в год</span>
+            </div>
             {[
               ...primaryDivisions,
               ...(data.divisions.drives !== undefined ? ['drives' as const] : []),
             ].map((division) => (
-              <label className="company-equipment-row" key={division}>
+              <label
+                className={`company-equipment-row ${data.divisions[division] ? 'is-filled' : ''}`}
+                key={division}
+              >
                 <span>{divisionLabels[division] || labels[division]}</span>
                 <input
+                  placeholder="0"
                   aria-label={divisionLabels[division] || labels[division]}
                   type="number"
                   inputMode="decimal"
@@ -423,7 +438,7 @@ export function CompanyForm({
         <details className="company-form-accordion">
           <summary>
             <span>Дополнительные поля</span>
-            <Icon name="chevron" size={16} />
+            <Icon name="chevron-down" size={18} />
           </summary>
           <div className="company-extra">
             <Field label="Сайт">
@@ -440,15 +455,15 @@ export function CompanyForm({
             </Field>
             {!initial && (
               <section className="company-contacts">
-                <h3>Контактные лица</h3>
                 {contacts.map((contact, index) => (
                   <fieldset key={index}>
-                    <legend>Контакт {index + 1}</legend>
                     {(['name', 'role', 'phone', 'email'] as const).map((key) => (
                       <Field
                         key={key}
                         label={
-                          { name: 'Имя', role: 'Должность', phone: 'Телефон', email: 'Почта' }[key]
+                          { name: 'Контакт', role: 'Должность', phone: 'Телефон', email: 'E-mail' }[
+                            key
+                          ]
                         }
                       >
                         <input
@@ -497,11 +512,11 @@ export function CompanyForm({
                   }
                 >
                   <Icon name="plus" size={14} />
-                  Добавить контакт
+                  Ещё контакт
                 </button>
               </section>
             )}
-            <Field label="Заметки">
+            <Field label="Комментарий">
               <textarea
                 rows={3}
                 value={data.notes}

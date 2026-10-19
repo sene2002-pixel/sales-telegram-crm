@@ -89,6 +89,7 @@ function App() {
     [clientSort, setClientSort] = useState('name'),
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
+    [clientRevealVersion, setClientRevealVersion] = useState(0),
     [taskView, setTaskView] = useState<'open' | 'overdue' | 'today' | 'meetings'>('open');
   const [creationHoldings, setCreationHoldings] = useState<Company[]>([]);
   const [holdingsError, setHoldingsError] = useState('');
@@ -546,7 +547,7 @@ function App() {
       (clientStatus === 'all' ||
         (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
       (!query ||
-        `${c.name} ${companyDisplayName(c.name)} ${c.inn} ${contacts
+        `${c.name} ${companyDisplayName(c.name)} ${(c.alternativeNames || []).join(' ')} ${c.inn} ${contacts
           .filter((contact) => contact.companyId === c.id)
           .map((contact) => `${contact.data.name} ${contact.data.phone} ${contact.data.email}`)
           .join(' ')}`
@@ -886,6 +887,16 @@ function App() {
                         key={c.id}
                         company={c}
                         actorRole={user.role}
+                        revealVersion={clientRevealVersion}
+                        onReveal={(id) => {
+                          setQuery('');
+                          setCity('');
+                          setSegment('');
+                          setDivision('');
+                          setClientStatus('all');
+                          setCreatedClientId(id);
+                          setClientRevealVersion((version) => version + 1);
+                        }}
                         holdingMembers={
                           c.segment === 'holding'
                             ? companies.filter(

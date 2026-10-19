@@ -504,6 +504,7 @@ export function summarizeClientAnalytics(
           e.action === 'company.sales_updated' ||
           e.action === 'report.applied',
       )) {
+        if (event.details?.holdingAllocation) continue;
         const before =
           event.action === 'company.created'
             ? 0

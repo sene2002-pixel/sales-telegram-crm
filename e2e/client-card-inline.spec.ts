@@ -85,14 +85,22 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
   await expect(card.getByText(/Изменения сохранены, но обновление не удалось/)).toHaveCount(0);
   expect(patches[1].data).not.toHaveProperty('id');
   expect(patches[1].version).toBe(2);
-  await card.getByRole('button', { name: /Удалить оборудование/ }).click();
+  await card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }).click();
+  await card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).fill('1.5');
+  await card.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  expect(company.divisions.lv).toBe(1500000);
+  await expect(card.locator('.cc-equipment')).toContainText('1.5');
+  await expect(card.locator('.cc-equipment')).toContainText('млн ₽');
+  const removeEquipment = card.getByRole('button', { name: /Удалить оборудование/ });
+  await removeEquipment.focus();
+  await removeEquipment.click();
   await expect(card.getByRole('alertdialog')).toBeVisible();
-  expect(company.potential).toBe(1000);
+  expect(company.potential).toBe(1500000);
   await card.getByRole('button', { name: 'Подтвердить удаление', exact: true }).click();
   await expect(card.getByText('Оборудование пока не добавлено', { exact: true })).toBeVisible();
   expect(company.potential).toBe(0);
   await expect(card.getByRole('alert')).toHaveCount(0);
-  expect(patches.at(-1).version).toBe(3);
+  expect(patches.at(-1).version).toBe(4);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({

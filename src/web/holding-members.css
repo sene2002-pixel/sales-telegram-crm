@@ -1,0 +1,48 @@
+.holding-members {
+  min-width: 0;
+}
+.holding-members ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.holding-members li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+}
+.holding-members li > button {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.holding-members li > span {
+  white-space: nowrap;
+  font-size: 12px;
+}
+.holding-allocation {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.holding-allocation > p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.holding-allocation > details > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 12px;
+}
+.holding-allocation input {
+  width: 80px;
+  min-width: 64px;
+  font-size: 16px;
+}
+.holding-allocation .cc-editor-actions {
+  flex-wrap: wrap;
+}

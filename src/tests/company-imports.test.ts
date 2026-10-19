@@ -99,7 +99,10 @@ test('company import parses only supplied facts, quoted CSV and labeled Docs wit
   const names = await parseCompanyImport(bytes('ООО Альфа\nАО Бета'), 'txt', assertImportPrivacy);
   assert.deepEqual(
     names.map((row) => row.data),
-    [{ name: 'Альфа' }, { name: 'Бета' }],
+    [
+      { name: 'Альфа', legalForm: 'ООО' },
+      { name: 'Бета', legalForm: 'АО' },
+    ],
   );
   await assert.rejects(
     parseCompanyImport(bytes('ООО Альфа\nКонтакт +79991234567'), 'txt', assertImportPrivacy),
@@ -111,16 +114,25 @@ test('company import parses only supplied facts, quoted CSV and labeled Docs wit
   );
 });
 
-test('company import blocks malformed headers, wrong INN, personal fields, formulas and limits before storing', async () => {
+test('company import rejects private data, malformed headers, formulas and limits; omits invalid INN with warning', async () => {
   for (const input of [
     'Название;Телефон\nАльфа;89991234567',
     'Название;Email\nАльфа;a@example.com',
     'Название;Город\nАльфа;=WEBSERVICE("http://localhost")',
-    'Название;ИНН\nАльфа;123',
     'Название;Название\nАльфа;Бета',
     'Город\nМосква',
   ])
     await assert.rejects(parseCompanyImport(bytes(input), 'csv', assertImportPrivacy), status(400));
+  const invalidInn = await parseCompanyImport(
+    bytes('Название;ИНН\nАльфа;123'),
+    'csv',
+    assertImportPrivacy,
+  );
+  assert.equal(invalidInn.length, 1);
+  assert.equal(invalidInn[0]!.data.name, 'Альфа');
+  assert.equal(invalidInn[0]!.data.inn, undefined);
+  assert.ok(invalidInn[0]!.missing.includes('ИНН'));
+  assert.ok(invalidInn[0]!.warnings.some((w) => w.includes('Некорректный ИНН')));
   await assert.rejects(
     parseCompanyImport(
       bytes('Название\n' + Array(101).fill('Альфа').join('\n')),
@@ -246,7 +258,7 @@ test('import preview/confirmation verifies current actor, skips duplicates, owns
   assert.equal((await crm.list(a)).length, 0);
   assert.deepEqual(
     preview.rows.map((r) => r.disposition),
-    ['skip_duplicate', 'create', 'create'],
+    ['foreign', 'create', 'create'],
   );
   assert.ok(preview.messages.join('\n').includes('Пока ничего не сохранено'));
   assert.equal((await service.prepare(a, input)).id, preview.id);
@@ -391,10 +403,14 @@ test('import retains all supported business facts without inventing a total or i
   assert.ok(row!.missing.includes('Потенциал'));
   assert.ok(row!.warnings[0]!.includes('1'));
   assert.ok(!('owner_id' in row!.data));
-  await assert.rejects(
-    parseCompanyImport(bytes('Название;Стадия\nАльфа;Придумано'), 'csv', assertImportPrivacy),
-    status(400),
+  const unknownStage = await parseCompanyImport(
+    bytes('Название;Стадия\nАльфа;Придумано'),
+    'csv',
+    assertImportPrivacy,
   );
+  assert.equal(unknownStage[0]!.data.name, 'Альфа');
+  assert.equal(unknownStage[0]!.data.stage, undefined);
+  assert.ok(unknownStage[0]!.warnings.some((w) => w.includes('Неизвестная стадия')));
 });
 
 test('name-only import persists unknown category, while supplied type and manual defaults remain intact', async (t) => {
