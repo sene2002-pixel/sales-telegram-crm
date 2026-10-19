@@ -1,5 +1,6 @@
 import { CompanyImports } from '../services/company-imports';
 import { assertImportPrivacy } from '../services/company-import-parser';
+import { mountApiDocs } from './api-docs';
 import { employeeFilterOptions } from '../services/employee-filter';
 import 'reflect-metadata';
 import {
@@ -37,6 +38,7 @@ import { Config } from '../config';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
 import { RateLimits } from '../infra/rate-limit';
+import { redactSystemPayload, redactSystemText } from '../infra/system-confidentiality';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import { FileDownloads } from '../services/file-downloads';
 import { LetterBot } from '../services/letter-bot';
@@ -212,7 +214,9 @@ class PublicController {
     await new Promise<void>((resolve, reject) => {
       res
         .type(file.mime)
-        .download(file.path, file.filename, (error) => (error ? reject(error) : resolve()));
+        .download(file.path, redactSystemText(file.filename, this.s.config), (error) =>
+          error ? reject(error) : resolve(),
+        );
     });
   }
   @Get('downloads/csv/:token') async csvDownload(
@@ -226,7 +230,10 @@ class PublicController {
       'Cross-Origin-Resource-Policy': 'cross-origin',
     });
     const file = await this.s.exports.read(token);
-    res.type('text/csv').attachment(file.filename).send(file.content);
+    res
+      .type('text/csv')
+      .attachment(redactSystemText(file.filename, this.s.config))
+      .send(file.content);
   }
   @Get('health') async health() {
     await this.s.db.query('SELECT 1');
@@ -560,7 +567,9 @@ class CrmController {
     await this.s.crm.company(r.actor, row.company_id);
     const path = join(this.s.config.dataDir, 'files', idSchema.parse(row.data.key));
     response.setHeader('Cache-Control', 'no-store');
-    response.type('application/octet-stream').download(path, row.data.name);
+    response
+      .type('application/octet-stream')
+      .download(path, redactSystemText(row.data.name, this.s.config));
   }
   @Delete('contacts/:id') deleteContact(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.deleteContact(r.actor, id);
@@ -579,6 +588,17 @@ export async function createApp(config: Config, existingDb?: Database) {
   })
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: ['warn', 'error'], bodyParser: false });
+  app.use((req: Request, res: Response, next: () => void) => {
+    if (req.path.startsWith('/api')) {
+      const json = res.json.bind(res);
+      const send = res.send.bind(res);
+      res.json = (body: unknown) => json(redactSystemPayload(body, config, true));
+      // CSV/text exports use send directly; binary files are intentionally untouched.
+      res.send = (body: any) =>
+        send(typeof body === 'string' ? redactSystemText(body, config) : body);
+    }
+    next();
+  });
   app.use((req: Request, res: Response, next: () => void) => {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-ID', res.locals.requestId);
@@ -658,6 +678,15 @@ export async function createApp(config: Config, existingDb?: Database) {
     next();
   });
   app.useGlobalFilters(new Errors(services.errors, services.diagnostics));
+  mountApiDocs(app.getHttpAdapter().getInstance(), {
+    enabled: config.apiDocsEnabled,
+    authorize: async (request) => {
+      const actor = await services.auth.authenticate(
+        (request.headers.authorization || '').replace(/^Bearer /, ''),
+      );
+      requireCondition(actor.role === 'admin', 403, 'Документация доступна только администратору');
+    },
+  });
   app.use(serveStatic(resolve('dist/web'), { index: 'index.html' }));
   await app.init();
   return { app, services, db };

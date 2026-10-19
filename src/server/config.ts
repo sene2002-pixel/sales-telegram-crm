@@ -5,6 +5,7 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
   const production = env.NODE_ENV === 'production';
   const config = {
     production,
+    apiDocsEnabled: env.API_DOCS_ENABLED === 'true',
     apiUserLimit: Number(env.API_RATE_LIMIT_PER_USER || 3000),
     apiIpLimit: Number(env.API_RATE_LIMIT_PER_IP || 6000),
     port: Number(env.PORT || 3000),

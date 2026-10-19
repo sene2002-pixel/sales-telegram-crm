@@ -1,6 +1,7 @@
 import { Config } from '../config';
 import { ErrorLog } from './error-log';
 import { DomainError, requireCondition } from '../domain/errors';
+import { redactSystemPayload, redactSystemText } from './system-confidentiality';
 export interface Messenger {
   send(chatId: string, payload: any): Promise<number | void>;
   download(fileId: string, maxBytes?: number): Promise<Uint8Array>;
@@ -66,7 +67,7 @@ export class TelegramAdapter implements Messenger {
     const response = await fetch(`https://api.telegram.org/bot${this.config.botToken}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(redactSystemPayload(payload, this.config)),
       signal: AbortSignal.timeout(25_000),
     });
     const result: any = await response.json().catch(() => null);
@@ -199,7 +200,11 @@ export class TelegramAdapter implements Messenger {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     const body = new FormData();
     body.append('chat_id', chatId);
-    body.append('document', new Blob([content], { type: 'text/csv;charset=utf-8' }), filename);
+    body.append(
+      'document',
+      new Blob([redactSystemText(content, this.config)], { type: 'text/csv;charset=utf-8' }),
+      redactSystemText(filename, this.config),
+    );
     const response = await fetch(
       `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
       {
@@ -240,15 +245,19 @@ export class TelegramAdapter implements Messenger {
     body.append(
       'document',
       new Blob([new Uint8Array(content)], { type: 'application/pdf' }),
-      filename,
+      redactSystemText(filename, this.config),
     );
     body.append(
       'caption',
-      metadataCaption ||
-        ('Сохранено в CRM. Из чата удалится через 24 часа' + (warning ? `\n${warning}` : '')).slice(
-          0,
-          1024,
-        ),
+      redactSystemText(
+        metadataCaption ||
+          (
+            'Сохранено в CRM. Из чата удалится через 24 часа' + (warning ? `\n${warning}` : '')
+          ).slice(0, 1024),
+        this.config,
+      )
+        .slice(0, 1024)
+        .replace(/[\uD800-\uDBFF]$/, ''),
     );
     const response = await fetch(
       `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
