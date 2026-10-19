@@ -78,7 +78,7 @@ for (const width of [360, 390, 1440]) {
       expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThan(1);
     }
     const badges = page.locator('.pico-client-equipment summary .pico-equipment-tile');
-    await expect(badges).toHaveCount(7);
+    await expect(badges).toHaveCount(8);
     const boxes = await badges.evaluateAll((elements) =>
       elements.map((el) => {
         const box = el.getBoundingClientRect();

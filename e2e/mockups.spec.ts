@@ -303,38 +303,48 @@ test('Mockups: inline contact sheets save, retain edits on failure and refresh a
   await nav(page, 'Клиенты');
   const row = page.locator('.pico-client-accordion').filter({ hasText: company.name });
   await row.locator('.pico-client-row').click();
-  await row
-    .getByRole('button', { name: 'Добавить контакт · ' + company.name, exact: true })
-    .click();
-  const form = page.getByRole('dialog', { name: 'Новый контакт', exact: true });
-  await form.getByLabel('Имя', { exact: true }).fill('Пётр QA');
-  await form.getByLabel('Телефон', { exact: true }).fill('+79991234567');
+  const contacts = row
+    .locator('.cc-section')
+    .filter({ has: page.locator(':scope > summary', { hasText: /^Контакты/ }) });
+  await contacts.locator(':scope > summary').click();
+  await contacts.getByRole('button', { name: 'Добавить контакт', exact: true }).click();
+  const form = contacts.locator('.cc-inline-editor');
+  await form.getByRole('textbox', { name: 'Новый контакт · ФИО', exact: true }).fill('Пётр QA');
+  await form
+    .getByRole('textbox', { name: 'Новый контакт · Телефон', exact: true })
+    .fill('+79991234567');
   await form.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
-  const detail = page.getByRole('dialog', { name: 'Пётр QA', exact: true });
-  await detail.getByRole('button', { name: 'Редактировать', exact: true }).click();
-  const edit = page.getByRole('dialog', { name: 'Редактировать контакт', exact: true });
-  await edit.getByLabel('Телефон', { exact: true }).fill('+79997654321');
+  await expect(form).toHaveCount(0);
+  const contact = contacts.locator('.cc-contact').filter({ hasText: 'Пётр QA' });
+  await expect(contact).toContainText('+79991234567');
+  await contact.getByRole('button', { name: 'Изменить Телефон', exact: true }).click();
+  const edit = contact.locator('.cc-inline-editor');
+  await edit.getByRole('textbox', { name: 'Телефон', exact: true }).fill('+79997654321');
   await page.route('**/api/records/*', (r) =>
     r.request().method() === 'PATCH'
-      ? r.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'QA temporary contact failure' }),
-        })
+      ? r.fulfill({ status: 503, json: { message: 'QA temporary contact failure' } })
       : r.continue(),
   );
-  await edit.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
-  await expect(edit.getByRole('alert')).toBeVisible();
-  await expect(edit.getByLabel('Телефон', { exact: true })).toHaveValue('+79997654321');
+  await edit.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(edit.getByRole('alert')).toHaveText('QA temporary contact failure');
+  await expect(edit.getByRole('textbox', { name: 'Телефон', exact: true })).toHaveValue(
+    '+79997654321',
+  );
   await page.unroute('**/api/records/*');
-  await edit.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
-  await expect(detail).toContainText('+79997654321');
-  await detail.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await expect(row).toContainText('+79997654321');
+  await edit.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(edit).toHaveCount(0);
+  await expect(contact).toContainText('+79997654321');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const saved = await api(page, `/companies/${company.id}`, undefined, 'GET');
+  expect(saved.records.find((r: any) => r.kind === 'contact').data).toMatchObject({
+    name: 'Пётр QA',
+    phone: '+79997654321',
+  });
   await page.reload();
   await nav(page, 'Клиенты');
   await row.locator('.pico-client-row').click();
-  await expect(row).toContainText('+79997654321');
+  await contacts.locator(':scope > summary').click();
+  await expect(contact).toContainText('+79997654321');
   await fits(page);
   await page.screenshot({ path: info.outputPath('inline-contact.png'), fullPage: true });
 });
