@@ -25,8 +25,7 @@ for (const width of [320, 390])
       .locator('.company-form-accordion > summary')
       .filter({ hasText: 'Дополнительные поля' })
       .click();
-    await dialog.getByRole('button', { name: 'Добавить контакт', exact: true }).click();
-    await dialog.getByLabel('Имя', { exact: true }).fill('Контакт');
+    await dialog.getByLabel('Контакт', { exact: true }).fill('Контакт');
     const before = await dialog.locator('.section-head').boundingBox();
     const footerBefore = await dialog.locator('.company-form-footer').boundingBox();
     await dialog.locator('.company-form-body').evaluate((el) => {

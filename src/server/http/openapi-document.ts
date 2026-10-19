@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   companySchema,
+  holdingAllocationSchema,
   contactSchema,
   projectSchema,
   taskSchema,
@@ -45,6 +46,7 @@ const object = (
 const recordKinds = ['contact', 'project', 'task', 'activity', 'file'];
 const namedInput = {
   CompanyInput: companySchema,
+  HoldingAllocationInput: holdingAllocationSchema,
   CompanyCreateInput: companySchema.extend({
     initialContacts: z.array(contactSchema).max(20).default([]),
   }),
@@ -679,6 +681,19 @@ add(
   {
     description:
       'Сохраняет исходный ACL. Чужая недоступная компания — 404. Служебный глобальный порядок аудита и файловые storage keys не сериализуются.',
+  },
+);
+add(
+  'post',
+  '/companies/{id}/holding-allocation',
+  'allocateHoldingPotential',
+  'Распределить временный потенциал холдинга',
+  'Компании',
+  ref('CompanyDetail'),
+  {
+    body: jsonBody(ref('HoldingAllocationInput')),
+    description:
+      'Явное распределение между всеми доступными действующими заказчиками. Проверяются версии и суммы общего потенциала и направлений. Старые значения заменяются только после подтверждения; временная оценка холдинга очищается одной транзакцией.',
   },
 );
 add(

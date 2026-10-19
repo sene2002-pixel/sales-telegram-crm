@@ -29,7 +29,7 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
     )
     .sort();
   assert.deepEqual(actual, declared);
-  assert.equal(actual.length, 54);
+  assert.equal(actual.length, 55);
   const ids = Object.values(document.paths).flatMap((methods: any) =>
     Object.values(methods).map((operation: any) => operation.operationId),
   );

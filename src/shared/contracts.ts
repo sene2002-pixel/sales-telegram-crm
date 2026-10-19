@@ -101,6 +101,11 @@ export const companySchema = z
       }, 'Нужен адрес сайта http(s)')
       .optional(),
     holdingId: idSchema.nullable().optional(),
+    legalForm: z.string().trim().max(50).optional(),
+    registrationCity: z.string().trim().max(150).optional(),
+    okved: z.string().trim().max(50).optional(),
+    alternativeNames: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
+    sites: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
     city: z.string().trim().max(150).default(''),
     segment: z.enum(segments).default('end_client'),
     industry: z.string().trim().max(150).default(''),
@@ -110,6 +115,24 @@ export const companySchema = z
     potential: money.nullable().default(null),
     divisions: z.partialRecord(z.enum(divisions), money).default({}),
     notes: text.default(''),
+  })
+  .strict();
+export const holdingAllocationSchema = z
+  .object({
+    version: z.number().int().positive(),
+    allocations: z
+      .array(
+        z
+          .object({
+            companyId: idSchema,
+            version: z.number().int().positive(),
+            potential: money.nullable(),
+            divisions: z.partialRecord(z.enum(divisions), money),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
   })
   .strict();
 export type CompanyData = z.infer<typeof companySchema>;
@@ -126,6 +149,10 @@ export const contactSchema = z
     name,
     role: z.string().max(200).default(''),
     phone: z.string().max(100).default(''),
+    extension: z
+      .string()
+      .regex(/^\d{1,20}$/)
+      .optional(),
     email: z.union([z.literal(''), z.email()]).default(''),
   })
   .strict();

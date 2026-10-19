@@ -8,6 +8,9 @@ export function confidentialValues(config: Config): string[] {
     config.sessionSecret,
     config.webhookSecret,
     config.databaseUrl,
+    config.sabyAccessToken,
+    config.sabyClientSecret,
+    config.sabyServiceKey,
   ];
   try {
     const password = new URL(config.databaseUrl).password;

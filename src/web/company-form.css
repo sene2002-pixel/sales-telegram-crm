@@ -178,3 +178,140 @@
     font-size: 11px;
   }
 }
+/* Final new-client sheet specification. */
+.modal:has(> .company-form) {
+  border-radius: 28px 28px 0 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.modal:has(> .company-form) > .section-head h2 {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 800;
+}
+.company-form.pico-compact-form .field > span {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: #2b3258;
+}
+.company-form.pico-compact-form input,
+.company-form.pico-compact-form select {
+  height: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+}
+.company-form.pico-compact-form input::placeholder {
+  color: #8a92a8;
+  font-size: 14px;
+  font-weight: 500;
+}
+.company-form.pico-compact-form .pico-chips {
+  row-gap: 6px;
+}
+.company-form.pico-compact-form .pico-chips > button {
+  font-weight: 600;
+  color: #4a5370;
+  border-color: #dde4f0;
+  background: #fff;
+}
+.company-form.pico-compact-form .pico-chips > button.active {
+  background: #1f7aea;
+  color: #fff;
+  font-weight: 700;
+}
+.company-form-accordion > summary {
+  border-color: #eef2f8;
+  color: #2b3258;
+}
+.company-form-accordion > summary > strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1f7aea;
+}
+.company-equipment {
+  padding: 0;
+  gap: 0;
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.company-equipment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 32px;
+  background: #f7faff;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.company-equipment-row {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-top: 1px solid #eef2f8;
+  color: #4a5370;
+  font-weight: 600;
+}
+.company-equipment-row.is-filled {
+  color: #1a2151;
+  font-weight: 700;
+}
+.company-form.pico-compact-form .company-equipment-row > input {
+  height: 32px;
+  min-height: 32px;
+  border-radius: 10px;
+  background: #f3f6fb;
+  font-size: 14px;
+  font-weight: 800;
+}
+.company-form.pico-compact-form .company-equipment-row > input::placeholder {
+  color: #b3b9ca;
+}
+.company-form.pico-compact-form .company-equipment-row.is-filled > input {
+  background: #e4effd;
+}
+.company-contacts fieldset {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.company-contacts fieldset > .field:first-of-type,
+.company-contacts fieldset > .field:last-of-type {
+  grid-column: 1/-1;
+}
+.company-form.pico-compact-form .company-contacts .pico-add-row {
+  min-height: 28px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f7aea;
+  justify-content: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.company-form.pico-compact-form textarea {
+  min-height: 64px;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  background: #f3f6fb;
+}
+.company-form-footer {
+  padding: 12px 0 max(28px, env(safe-area-inset-bottom));
+  border-color: #eef2f8;
+}
+.company-form-footer > .primary {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 14px;
+  background: #1f7aea;
+  font-size: 15px;
+  font-weight: 800;
+}

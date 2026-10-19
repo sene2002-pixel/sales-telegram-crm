@@ -221,7 +221,7 @@ test('Design fidelity: inline equipment editor saves split voltage without overw
   const selector = direction.getByRole('combobox', { name: 'Оборудование', exact: true });
   await expect(selector.getByRole('option')).toHaveCount(5);
   await selector.selectOption('drives_mv');
-  await direction.getByRole('textbox', { name: 'Потенциал, ₽', exact: true }).fill('90000000');
+  await direction.getByRole('textbox', { name: 'Потенциал, млн ₽', exact: true }).fill('90');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await screenshot(page, 'client-new-equipment-inline');
   await direction.getByRole('button', { name: 'Добавить', exact: true }).click();
@@ -390,3 +390,180 @@ test('Design fidelity: each filter sheet and postpone keeps its full-width actio
   await fullWidthAction(page, 'Отложить');
   await screenshot(page, 'task-postpone-preview');
 });
+
+test('Design fidelity: long card swipe moves whole cell and keeps neutral trash in visible center', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, 'Администратор');
+  const { company } = await fixture(page, `Длинная карточка ${info.project.name}-${Date.now()}`);
+  for (let i = 0; i < 4; i++)
+    await api(page, `/companies/${company.id}/records/contact`, {
+      data: {
+        name: `Контакт ${i + 1}`,
+        role: 'Руководитель направления закупок оборудования и комплектующих',
+        phone: '+79161234567',
+        email: `contact${i}@example.com`,
+      },
+    });
+  await page.reload();
+  await navigate(page, 'Клиенты');
+  const card = page.locator('.cc-card').filter({ hasText: company.name });
+  await card.locator('.pico-client-row').click();
+  await card
+    .locator('.cc-section > summary')
+    .filter({ hasText: /^Контакты/ })
+    .click();
+  await expect(card.locator('.cc-contact')).toHaveCount(5);
+  const cell = card.locator(':scope > .cc-swipe');
+  const content = cell.locator(':scope > .cc-swipe-content');
+  await cell.dispatchEvent('touchstart', {
+    touches: [{ identifier: 0, clientX: 300, clientY: 400 }],
+  });
+  await cell.dispatchEvent('touchmove', {
+    touches: [{ identifier: 0, clientX: 295, clientY: 500 }],
+  });
+  await cell.dispatchEvent('touchend', {
+    changedTouches: [{ identifier: 0, clientX: 210, clientY: 410 }],
+  });
+  await expect(cell).not.toHaveClass(/cc-revealed/);
+  await cell.dispatchEvent('touchstart', {
+    touches: [{ identifier: 0, clientX: 300, clientY: 400 }],
+  });
+  await cell.dispatchEvent('touchend', {
+    changedTouches: [{ identifier: 0, clientX: 100, clientY: 402 }],
+  });
+  await expect(cell).toHaveClass(/cc-revealed/);
+  await expect
+    .poll(() =>
+      content.evaluate((el) => {
+        const transform = new DOMMatrix(getComputedStyle(el).transform);
+        return Math.abs(transform.m41 + el.getBoundingClientRect().width);
+      }),
+    )
+    .toBeLessThan(1);
+  const trash = cell.locator(':scope > .cc-trash-track > .cc-trash');
+  await expect(trash).toHaveCSS('color', 'rgb(107, 115, 144)');
+  await expect(trash).toHaveCSS('width', '64px');
+  for (const scroll of [0, 350]) {
+    await page.evaluate((y) => window.scrollBy(0, y), scroll);
+    await expect
+      .poll(async () => {
+        return cell.evaluate((el) => {
+          const bounds = el.getBoundingClientRect();
+          const button = el
+            .querySelector(':scope > .cc-trash-track > .cc-trash')!
+            .getBoundingClientRect();
+          return Math.abs(
+            button.top +
+              button.height / 2 -
+              (Math.max(0, bounds.top) + Math.min(innerHeight, bounds.bottom)) / 2,
+          );
+        });
+      })
+      .toBeLessThan(2);
+  }
+  await screenshot(page, 'long-client-swipe-neutral-trash');
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  expect((await api(page, `/companies/${company.id}`, undefined, 'GET')).company.archived).toBe(
+    false,
+  );
+});
+
+test('Design fidelity: holding allocation replaces estimates and linked customer repeatedly opens inline', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, 'Администратор');
+  const suffix = `${info.project.name}-${Date.now()}`;
+  const holding = await api(page, '/companies', {
+    name: `Холдинг QA ${suffix}`,
+    segment: 'holding',
+    potential: 100000000,
+    divisions: { lv: 100000000 },
+  });
+  const child = await api(page, '/companies', {
+    name: `Заказчик QA ${suffix}`,
+    segment: 'end_client',
+    holdingId: holding.id,
+    potential: 30000000,
+    divisions: { lv: 30000000 },
+  });
+  await page.reload();
+  await navigate(page, 'Клиенты');
+  const parent = page
+    .locator('.cc-card')
+    .filter({ has: page.locator('.pico-client-row strong', { hasText: holding.name }) });
+  await parent.locator('.pico-client-row').click();
+  await expect(parent.locator('.holding-members')).toContainText('Временная оценка холдинга');
+  await parent
+    .getByRole('button', { name: 'Распределить временный потенциал', exact: true })
+    .click();
+  const allocation = parent.locator('.holding-allocation');
+  await allocation.getByRole('spinbutton').fill('100');
+  await expect(allocation).toContainText('заменят прежние суммы');
+  await screenshot(page, 'holding-explicit-allocation');
+  await allocation.getByRole('button', { name: 'Подтвердить распределение', exact: true }).click();
+  await expect(allocation).toHaveCount(0);
+  const saved = await api(page, `/companies/${child.id}`, undefined, 'GET');
+  expect(saved.company.potential).toBe(100000000);
+  expect(saved.company.divisions.lv).toBe(100000000);
+  const cleared = await api(page, `/companies/${holding.id}`, undefined, 'GET');
+  expect(cleared.company.potential).toBeNull();
+  expect(cleared.company.divisions).toEqual({});
+  const customer = page
+    .locator('.cc-card')
+    .filter({ has: page.locator('.pico-client-row strong', { hasText: child.name }) });
+  const link = parent
+    .locator('.holding-members')
+    .getByRole('button', { name: child.name, exact: true });
+  await link.click();
+  await expect(customer.locator('.pico-client-row')).toHaveAttribute('aria-expanded', 'true');
+  await customer.locator('.pico-client-row').click();
+  await expect(customer.locator('.pico-client-row')).toHaveAttribute('aria-expanded', 'false');
+  await link.click();
+  await expect(customer.locator('.pico-client-row')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await screenshot(page, 'holding-customer-inline');
+});
+
+for (const width of [320, 390])
+  test(`Design fidelity: final new client sheet matches three states at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await login(page);
+    await navigate(page, 'Клиенты');
+    await page.getByRole('button', { name: 'Добавить клиента', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Новый клиент', exact: true });
+    await expect(
+      sheet.getByRole('group', { name: 'Категория клиента', exact: true }).getByRole('button'),
+    ).toHaveCount(8);
+    await screenshot(page, `new-client-start-${width}`);
+    await sheet
+      .locator('.company-form-accordion > summary')
+      .filter({ hasText: /^Потенциал/ })
+      .click();
+    await expect(sheet.getByRole('spinbutton')).toHaveCount(8);
+    await sheet.getByRole('spinbutton').first().fill('2.5');
+    await expect(sheet.locator('.company-form-accordion > summary').first()).toContainText(
+      '2.5 млн ₽',
+    );
+    await screenshot(page, `new-client-potential-${width}`);
+    await sheet
+      .locator('.company-form-accordion > summary')
+      .filter({ hasText: /^Дополнительные поля/ })
+      .click();
+    await sheet.getByLabel('Контакт', { exact: true }).fill('Тестовый контакт');
+    await sheet.getByRole('button', { name: /Ещё контакт/ }).click();
+    await expect(sheet.getByLabel('Контакт', { exact: true })).toHaveCount(2);
+    const footerBefore = await sheet.locator('.company-form-footer').boundingBox();
+    await sheet.locator('.company-form-body').evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    const footerAfter = await sheet.locator('.company-form-footer').boundingBox();
+    expect(footerAfter!.y).toBe(footerBefore!.y);
+    expect(footerAfter!.y + footerAfter!.height).toBeLessThanOrEqual(844);
+    expect(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await screenshot(page, `new-client-extra-${width}`);
+  });

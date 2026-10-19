@@ -1,4 +1,5 @@
 import { CompanyImports } from '../services/company-imports';
+import { SabyRegistry } from '../services/company-registry';
 import { assertImportPrivacy } from '../services/company-import-parser';
 import { mountApiDocs } from './api-docs';
 import { employeeFilterOptions } from '../services/employee-filter';
@@ -131,7 +132,17 @@ export class Services {
       this.diagnostics,
       this.voiceContacts,
       this.dialogue,
-      new CompanyImports(db, this.crm, assertImportPrivacy),
+      new CompanyImports(
+        db,
+        this.crm,
+        assertImportPrivacy,
+        new SabyRegistry({
+          accessToken: config.sabyAccessToken,
+          clientId: config.sabyClientId,
+          clientSecret: config.sabyClientSecret,
+          serviceKey: config.sabyServiceKey,
+        }),
+      ),
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.commercial = new CommercialReportService(db);
@@ -357,6 +368,13 @@ class CrmController {
   }
   @Get('companies/:id') detail(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.detail(r.actor, id);
+  }
+  @Post('companies/:id/holding-allocation') allocateHolding(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.s.crm.allocateHolding(r.actor, id, body);
   }
   @Patch('companies/:id') update(
     @Req() r: AuthedRequest,

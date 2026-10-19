@@ -1089,6 +1089,19 @@
                           { "type": "null" }
                         ]
                       },
+                      "legalForm": { "type": "string", "maxLength": 50 },
+                      "registrationCity": { "type": "string", "maxLength": 150 },
+                      "okved": { "type": "string", "maxLength": 50 },
+                      "alternativeNames": {
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+                      },
+                      "sites": {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+                      },
                       "city": { "default": "", "type": "string", "maxLength": 150 },
                       "segment": {
                         "default": "end_client",
@@ -1161,6 +1174,89 @@
                 "required": ["version", "data"],
                 "additionalProperties": false
               }
+            }
+          }
+        }
+      }
+    },
+    "/companies/{id}/holding-allocation": {
+      "post": {
+        "operationId": "allocateHoldingPotential",
+        "summary": "Распределить временный потенциал холдинга",
+        "tags": ["Компании"],
+        "description": "Явное распределение между всеми доступными действующими заказчиками. Проверяются версии и суммы общего потенциала и направлений. Старые значения заменяются только после подтверждения; временная оценка холдинга очищается одной транзакцией.",
+        "security": [{ "SessionBearer": [] }],
+        "x-roles": ["manager", "supervisor", "admin"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Идентификатор существующей доступной записи."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CompanyDetail" } }
+            }
+          },
+          "400": {
+            "description": "Невалидные данные или недопустимая операция",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Отсутствует/истекла/неверна сессия или webhook-secret",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Доступ не выдан/отозван либо роль/фильтр недоступны",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Объект недоступен или ссылка истекла (не раскрывает чужую запись)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Конфликт версии, состояния или лимита записей",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит запросов; повторить после Retry-After",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Задержка в секундах перед повтором",
+                "schema": { "type": "integer" }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; диагностические подробности скрыты",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HoldingAllocationInput" }
             }
           }
         }
@@ -5831,6 +5927,19 @@
               { "type": "null" }
             ]
           },
+          "legalForm": { "type": "string", "maxLength": 50 },
+          "registrationCity": { "type": "string", "maxLength": 150 },
+          "okved": { "type": "string", "maxLength": 50 },
+          "alternativeNames": {
+            "maxItems": 20,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+          },
+          "sites": {
+            "maxItems": 100,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
           "city": { "default": "", "type": "string", "maxLength": 150 },
           "segment": {
             "default": "end_client",
@@ -5896,6 +6005,64 @@
         "additionalProperties": false,
         "examples": [{ "name": "ООО «Пример»", "inn": "", "potential": 0, "divisions": {} }]
       },
+      "HoldingAllocationInput": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 },
+          "allocations": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "companyId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "potential": {
+                  "anyOf": [
+                    { "type": "number", "minimum": 0, "maximum": 1000000000000 },
+                    { "type": "null" }
+                  ]
+                },
+                "divisions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "enum": [
+                      "lv",
+                      "mv",
+                      "drives",
+                      "drives_lv",
+                      "drives_mv",
+                      "cells",
+                      "automation_cabinets",
+                      "heat",
+                      "services"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  }
+                }
+              },
+              "required": ["companyId", "version", "potential", "divisions"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["version", "allocations"],
+        "additionalProperties": false
+      },
       "CompanyCreateInput": {
         "type": "object",
         "properties": {
@@ -5911,6 +6078,19 @@
               },
               { "type": "null" }
             ]
+          },
+          "legalForm": { "type": "string", "maxLength": 50 },
+          "registrationCity": { "type": "string", "maxLength": 150 },
+          "okved": { "type": "string", "maxLength": 50 },
+          "alternativeNames": {
+            "maxItems": 20,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+          },
+          "sites": {
+            "maxItems": 100,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 200 }
           },
           "city": { "default": "", "type": "string", "maxLength": 150 },
           "segment": {
@@ -5982,6 +6162,7 @@
                 "name": { "type": "string", "minLength": 1, "maxLength": 200 },
                 "role": { "default": "", "type": "string", "maxLength": 200 },
                 "phone": { "default": "", "type": "string", "maxLength": 100 },
+                "extension": { "type": "string", "pattern": "^\\d{1,20}$" },
                 "email": {
                   "default": "",
                   "anyOf": [
@@ -6008,6 +6189,7 @@
           "name": { "type": "string", "minLength": 1, "maxLength": 200 },
           "role": { "default": "", "type": "string", "maxLength": 200 },
           "phone": { "default": "", "type": "string", "maxLength": 100 },
+          "extension": { "type": "string", "pattern": "^\\d{1,20}$" },
           "email": {
             "default": "",
             "anyOf": [
@@ -10104,6 +10286,19 @@
               },
               { "type": "null" }
             ]
+          },
+          "legalForm": { "type": "string", "maxLength": 50 },
+          "registrationCity": { "type": "string", "maxLength": 150 },
+          "okved": { "type": "string", "maxLength": 50 },
+          "alternativeNames": {
+            "maxItems": 20,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+          },
+          "sites": {
+            "maxItems": 100,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 200 }
           },
           "city": { "default": "", "type": "string", "maxLength": 150 },
           "segment": {
