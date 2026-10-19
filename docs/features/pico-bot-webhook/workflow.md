@@ -10,6 +10,6 @@ Change: preserve only the configured webhook secret in the top-level secret_toke
 
 Operations: installed webhook directly using runtime credentials after checking public health HTTP 200. No pending updates were dropped.
 
-Validation: pending regression check and final Telegram configuration readback.
+Validation: Telegram readback confirms the intended webhook, zero pending updates, commands and web app menu. All Node tests passed after integrating current origin/main, including the webhook transport regression. npm run check reached test:ops, where the container's Python failed an existing backup test because TarFile.extractall lacks the filter parameter; the final build step was therefore not reached. Docker production build passed for the public-assets fix before this adapter change. git diff --check passed.
 
 Rollback: revert the adapter exception; bot configuration can be reset with setup-telegram using the intended bot credentials and public URL.
