@@ -45,6 +45,9 @@ const object = (
 const recordKinds = ['contact', 'project', 'task', 'activity', 'file'];
 const namedInput = {
   CompanyInput: companySchema,
+  CompanyCreateInput: companySchema.extend({
+    initialContacts: z.array(contactSchema).max(20).default([]),
+  }),
   ContactInput: contactSchema,
   ProjectInput: projectSchema,
   TaskInput: taskSchema,
@@ -153,6 +156,9 @@ schemas.CompanyDetail = object({
   company: ref('Company'),
   records: array(ref('Record')),
   audit: array(ref('AuditEvent')),
+  holdingMembers: array(ref('Company')),
+  holdingPotential: nullable({ type: 'number', minimum: 0 }),
+  holdingDivisions: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
 });
 schemas.SignatureDraft = object({ id: uuid, data: ref('RecognizedCard'), transcript: string });
 schemas.Report = object({
@@ -658,7 +664,7 @@ add(
   'Компании',
   ref('Company'),
   {
-    body: jsonBody(ref('CompanyInput')),
+    body: jsonBody(ref('CompanyCreateInput')),
     description:
       'В HTTP нет ownerId. Реквизиты и ИНН проверяются сервером (включая контрольную сумму). Начальный архив разрешён только администратору.',
   },

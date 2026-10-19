@@ -1,5 +1,3 @@
-# Workflow: новая функция
+# Новая функция
 
-`analyst → product-manager → ux-expert → architect → security → developer → qa → product-owner → release-manager`
-
-Артефакты создаются в `docs/features/<feature>/`: requirements, prd, design, tasks, test-plan, security-review, test-report. Переход к коду разрешён после согласования требований и дизайна.
+Применяй глобальный development-orchestrator, указанный в AGENTS.md. Зафиксируй достаточные требования и дизайн до реализации, выполни предусмотренные ревью и проверки. Один workflow.md может объединять артефакты; отдельные файлы нужны только когда полезны задаче. Авторизация пользователя сохраняется между этапами.
