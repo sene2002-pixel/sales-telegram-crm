@@ -82,9 +82,7 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
   assert.equal(document.components.schemas.Record.properties.contactSource.readOnly, true);
 });
 
-test('committed artifact stays derived from source validators and synthetic examples remain valid', async () => {
-  const artifact = JSON.parse(await readFile('docs/api/openapi.json', 'utf8'));
-  assert.deepEqual(artifact, document);
+test('source schemas and synthetic examples remain valid without a JSON export', async () => {
   for (const [schema, key] of [
     [companySchema, 'CompanyInput'],
     [contactSchema, 'ContactInput'],
@@ -154,8 +152,8 @@ test('documentation schema requires a real current active administrator; public 
     await db.close();
     await rm(dir, { recursive: true, force: true });
   });
-  await request(app.getHttpServer()).get('/api/docs').expect(404);
-  await request(app.getHttpServer()).get('/api/docs/openapi.json').expect(404);
+  await request(app.getHttpServer()).get('/api/docs').expect(200);
+  await request(app.getHttpServer()).get('/api/docs/openapi.json').expect(401);
   const admin = await s.auth.dev('admin', '127.0.0.1'),
     manager = await s.auth.dev('manager', '127.0.0.1'),
     supervisor = await s.auth.dev('supervisor', '127.0.0.1');
@@ -370,4 +368,18 @@ test('actual generator accepts JSON formatting and key-order changes but detects
     /artifact is stale/,
   );
   assert.throws(() => assertArtifactCurrent('{', document), /not valid JSON/);
+});
+
+test('OpenAPI export creates missing directories and matches the runtime schema', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'crm-openapi-export-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const target = join(dir, 'api', 'openapi.json');
+  const { exportDocument } = require('../../scripts/generate-openapi.cjs');
+  await exportDocument(document, target);
+  assert.deepEqual(JSON.parse(await readFile(target, 'utf8')), document);
+});
+
+test('Swagger is enabled by default and can explicitly be disabled', () => {
+  assert.equal(makeConfig({ NODE_ENV: 'test' }).apiDocsEnabled, true);
+  assert.equal(makeConfig({ NODE_ENV: 'test', API_DOCS_ENABLED: 'false' }).apiDocsEnabled, false);
 });
