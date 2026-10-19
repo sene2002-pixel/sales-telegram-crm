@@ -1223,6 +1223,7 @@ export class DialogueService {
     });
   }
   private async execute(tx: Sql, actor: Actor, row: any) {
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const a = dialogueActionSchema.parse(row.payload);
     const s = row.snapshot;
     await requestEvent(tx, row.report_id, row.id, 'confirmed', {
@@ -1327,6 +1328,8 @@ export class DialogueService {
         tx,
       );
     } else if (a.kind === 'company_update') {
+      const data = companySchema.parse(s.data);
+      await this.crm.validateHolding(actor, data, s.company.ownerId, tx, s.company);
       await tx.query(
         'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
         [JSON.stringify(companySchema.parse(s.data)), row.company.id],

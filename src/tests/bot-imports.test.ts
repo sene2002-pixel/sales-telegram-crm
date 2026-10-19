@@ -363,7 +363,7 @@ test('Start offers import; its button sends the packaged workbook and creates no
   assert.equal(sent[0]!.chatId, actor.telegramId);
   assert.equal(
     createHash('sha256').update(sent[0]!.bytes).digest('hex'),
-    '41d22c028caa3e4ddecc6fca2a636db583ee9949355d25dae54e63f21536a398',
+    'a3be274a67d0cc8fbd445d65787b8b81ce1c799c77f4fbd7d931ce8cd11a8136',
   );
   assert.equal(sent[0]!.caption, importTemplateCaption);
   assert.ok(sent[0]!.caption.length <= 1024);

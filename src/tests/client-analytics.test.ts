@@ -467,3 +467,25 @@ test('project participant activity follows proven action snapshots even after re
   );
   assert.ok(!JSON.stringify(result).includes('foreign'));
 });
+
+test('holding temporary potential counts only without visible active children', () => {
+  const holding = company('holding', 100);
+  holding.data.segment = 'holding';
+  const child = company('child', 25);
+  child.data.holdingId = holding.id;
+  assert.equal(calculate([holding], []).metrics.potential.value, 100);
+  assert.equal(calculate([holding, child], []).metrics.potential.value, 25);
+  child.data.archived = true;
+  assert.equal(calculate([holding, child], []).metrics.potential.value, 100);
+});
+
+test('range potential ignores holding increases while customers are linked', () => {
+  const holding = company('holding', 200);
+  holding.data.segment = 'holding';
+  const child = company('child', 25);
+  child.data.holdingId = holding.id;
+  const before = { ...holding.data, potential: 100 };
+  const event = changed(holding.id, '2026-03-15', before, holding.data);
+  assert.equal(calculate([holding, child], [], [event], 'range').metrics.potential.value, 0);
+  assert.equal(calculate([holding], [], [event], 'range').metrics.potential.value, 100);
+});

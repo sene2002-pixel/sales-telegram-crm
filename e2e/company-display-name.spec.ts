@@ -63,7 +63,7 @@ test('Company labels shorten legal forms while search, editing and stored identi
     .locator('.pico-client-accordion')
     .filter({ has: page.locator('strong', { hasText: names[0][0] }) });
   await row.locator('.pico-client-row').click();
-  await row.getByRole('button', { name: 'Карточка клиента', exact: true }).click();
+  await row.getByRole('button', { name: 'Задачи и проекты', exact: true }).click();
   const card = page.getByRole('dialog', { name: names[0][0], exact: true });
   await openCompanySection(page, 'actions');
   await card.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();

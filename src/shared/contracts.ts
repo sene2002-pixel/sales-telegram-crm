@@ -86,6 +86,21 @@ export const companySchema = z
       .trim()
       .refine((v) => !v || validInn(v), 'Некорректный ИНН')
       .default(''),
+    website: z
+      .string()
+      .trim()
+      .max(2000)
+      .refine((v) => {
+        if (!v) return true;
+        try {
+          const u = new URL(v);
+          return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password;
+        } catch {
+          return false;
+        }
+      }, 'Нужен адрес сайта http(s)')
+      .optional(),
+    holdingId: idSchema.nullable().optional(),
     city: z.string().trim().max(150).default(''),
     segment: z.enum(segments).default('end_client'),
     industry: z.string().trim().max(150).default(''),

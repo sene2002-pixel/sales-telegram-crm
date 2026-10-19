@@ -32,7 +32,7 @@ test('Pico template skips demonstration and empty formatted rows; recalculates t
   assert.equal(row.source, 'Клиенты · строка 5');
   assert.equal(row.data.potential, 6_000_000);
   assert.equal(row.data.divisions!.cells, 0);
-  assert.ok(row.data.notes!.includes('АСУ ТП: 3000000'));
+  assert.equal(row.data.divisions!.automation_cabinets, 3_000_000);
   assert.equal(row.contacts!.length, 1);
   assert.equal(row.projects![0]!.data.amount, 7_000_000);
   assert.equal(row.projects![0]!.data.due, null);

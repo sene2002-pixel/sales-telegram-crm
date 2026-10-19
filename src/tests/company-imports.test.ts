@@ -99,7 +99,7 @@ test('company import parses only supplied facts, quoted CSV and labeled Docs wit
   const names = await parseCompanyImport(bytes('ООО Альфа\nАО Бета'), 'txt', assertImportPrivacy);
   assert.deepEqual(
     names.map((row) => row.data),
-    [{ name: 'ООО Альфа' }, { name: 'АО Бета' }],
+    [{ name: 'Альфа' }, { name: 'Бета' }],
   );
   await assert.rejects(
     parseCompanyImport(bytes('ООО Альфа\nКонтакт +79991234567'), 'txt', assertImportPrivacy),
@@ -246,7 +246,7 @@ test('import preview/confirmation verifies current actor, skips duplicates, owns
   assert.equal((await crm.list(a)).length, 0);
   assert.deepEqual(
     preview.rows.map((r) => r.disposition),
-    ['skip_duplicate', 'create', 'skip_duplicate'],
+    ['skip_duplicate', 'create', 'create'],
   );
   assert.ok(preview.messages.join('\n').includes('Пока ничего не сохранено'));
   assert.equal((await service.prepare(a, input)).id, preview.id);
@@ -254,13 +254,13 @@ test('import preview/confirmation verifies current actor, skips duplicates, owns
   await assert.rejects(service.cancel(b, preview.id, 1), status(403));
   await assert.rejects(service.confirm(a, preview.id, 99), status(409));
   const result = await service.confirm(a, preview.id, 1);
-  assert.equal(result.created.length, 1);
-  assert.equal(result.skipped, 2);
+  assert.equal(result.created.length, 2);
+  assert.equal(result.skipped, 1);
   assert.deepEqual(await service.confirm(a, preview.id, 1), result);
   const stored = await crm.list(a);
-  assert.equal(stored.length, 1);
+  assert.equal(stored.length, 2);
   assert.equal(stored[0]!.ownerId, a.id);
-  assert.equal(stored[0]!.city, 'Казань');
+  assert.deepEqual(stored.map((c) => c.city).sort(), ['Казань', 'Самара']);
   assert.equal(stored[0]!.segment, 'unknown');
   assert.equal(stored[0]!.stage, 'new');
   assert.ok(preview.messages.join('\n').includes('техническую стадию «Новый»'));
@@ -302,10 +302,10 @@ test('confirmation rechecks duplicates inserted since preview and rolls back on 
   });
   const p = await service.prepare(a, {
     sourceKey: 'test:1',
-    bytes: bytes('Название\nПоздний дубль\nНовая'),
+    bytes: bytes('Название;Город\nПоздний дубль;Москва\nНовая;Москва'),
     format: 'csv',
   });
-  await crm.create(a, { name: 'Поздний дубль' });
+  await crm.create(a, { name: 'Поздний дубль', city: 'Москва' });
   block = true;
   await assert.rejects(service.confirm(a, p.id, 1), status(400));
   assert.equal((await crm.list(a)).length, 1);

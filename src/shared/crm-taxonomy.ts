@@ -1,5 +1,7 @@
 // Stable legacy keys stay valid; unspecified legacy drives are never assigned a voltage.
 export const segments = [
+  'holding',
+  'distributor',
   'shchitovik',
   'oem',
   'end_client',
@@ -12,14 +14,14 @@ export const segments = [
   'unknown',
 ] as const;
 export const primarySegments = [
+  'holding',
   'end_client',
   'contractor',
-  'general_contractor',
-  'grid_company',
-  'design_institute',
   'integrator',
-  'commercial',
+  'grid_company',
   'oem',
+  'distributor',
+  'design_institute',
 ] as const;
 export const divisions = [
   'lv',
@@ -28,6 +30,7 @@ export const divisions = [
   'drives_lv',
   'drives_mv',
   'cells',
+  'automation_cabinets',
   'heat',
   'services',
 ] as const;
@@ -37,6 +40,7 @@ export const primaryDivisions = [
   'drives_lv',
   'drives_mv',
   'cells',
+  'automation_cabinets',
   'heat',
   'services',
 ] as const;
@@ -44,6 +48,7 @@ export const projectSupplyTypes = ['automation', 'switchboard', 'generator', 'ot
 export const projectServiceTypes = ['supervision', 'commissioning', 'maintenance'] as const;
 export const equipmentKeys = [...divisions, ...projectSupplyTypes, ...projectServiceTypes] as const;
 export const divisionLabels: Record<string, string> = {
+  automation_cabinets: 'Шкафы АСУ ТП',
   lv: 'Выключатели 0,4 кВ',
   mv: 'Выключатели 6–35 кВ',
   drives: 'ПЧ / УПП · напряжение не указано',
@@ -61,6 +66,8 @@ export const divisionLabels: Record<string, string> = {
   maintenance: 'Сервисное обслуживание',
 };
 export const segmentLabels: Record<string, string> = {
+  holding: 'Холдинг',
+  distributor: 'Дистрибьютор',
   unknown: 'Тип не указан',
   shchitovik: 'Щитовик',
   oem: 'OEM',

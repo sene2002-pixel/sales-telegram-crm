@@ -14,6 +14,7 @@ import {
   divisions,
   divisionLabels,
 } from '../../shared/contracts';
+import { companyDisplayName } from '../../shared/company-display-name';
 import { requireCondition, DomainError } from '../domain/errors';
 
 export const companyImportLimits = {
@@ -106,9 +107,52 @@ const normalize = (s: string) =>
 for (const d of divisions)
   for (const alias of [d, labels[d], divisionLabels[d]])
     if (alias) {
-      for (const suffix of ['', ' руб', ' млн руб', ' млн ₽'])
+      for (const suffix of ['', ' руб', ' млн руб', ' млн ₽', ' тыс', ' тыс руб', ' тыс ₽'])
         aliases[normalize(alias + suffix)] = `division:${d}`;
     }
+// Expand decimal exponents as text: never round or guess missing INN digits.
+export function normalizeImportedInn(value: string): string {
+  const match = value.match(/^(\d+)(?:[.,](\d+))?[eE]([+-]?\d+)$/);
+  if (!match) return value;
+  const integer = match[1]!,
+    fraction = match[2] || '';
+  const exponent = Number(match[3]);
+  requireCondition(Number.isInteger(exponent) && Math.abs(exponent) <= 20, 400, 'Некорректный ИНН');
+  const digits = integer + fraction,
+    point = integer.length + exponent;
+  requireCondition(point > 0 && point <= 12, 400, 'Некорректный ИНН');
+  requireCondition(
+    point >= digits.length || /^0*$/.test(digits.slice(point)),
+    400,
+    'Некорректный ИНН',
+  );
+  return point >= digits.length
+    ? digits + '0'.repeat(point - digits.length)
+    : digits.slice(0, point);
+}
+function importedMoney(value: string, header: string, row: number): number {
+  const match = value
+    .trim()
+    .match(
+      /^(\d[\d\s\u00a0]*(?:[.,]\d+)?(?:[eE][+-]?\d+)?)\s*(млн|тыс|руб(?:лей|ля)?|₽)?\.?(?:\s*(?:руб(?:лей|ля)?|₽)\.?)?$/iu,
+    );
+  requireCondition(match, 400, `Строка ${row}: некорректный потенциал`);
+  const explicit = match[2]?.toLowerCase();
+  const units = explicit || (/млн/.test(header) ? 'млн' : /тыс/.test(header) ? 'тыс' : 'руб');
+  const amount =
+    Number(match[1]!.replace(/[\s\u00a0]/g, '').replace(',', '.')) *
+    (units === 'млн' ? 1_000_000 : units === 'тыс' ? 1_000 : 1);
+  requireCondition(
+    Number.isFinite(amount) && amount >= 0 && amount <= 1e12,
+    400,
+    `Строка ${row}: некорректный потенциал`,
+  );
+  return amount;
+}
+for (const field of ['potential', 'revenue'] as const)
+  for (const alias of [field, field === 'potential' ? 'потенциал' : 'выручка'])
+    for (const suffix of [' тыс', ' тыс руб', ' тыс ₽', ' млн ₽'])
+      aliases[normalize(alias + suffix)] = field;
 const arr = (v: any): any[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 function xml(text: string) {
   requireCondition(
@@ -225,18 +269,18 @@ export function parseCompanyTable(
         requireCondition(key, 400, `Строка ${index + 1}: неизвестная стадия`);
         data.stage = key;
       } else if (field === 'potential' || field === 'revenue' || field.startsWith('division:')) {
-        const valueNumber = Number(value.replace(/[\s\u00a0]/g, '').replace(',', '.'));
-        requireCondition(
-          Number.isFinite(valueNumber) && valueNumber >= 0,
-          400,
-          `Строка ${index + 1}: некорректный потенциал`,
-        );
-        const amount = valueNumber * (header[col]!.includes('млн') ? 1_000_000 : 1);
+        const amount = importedMoney(value, header[col]!, index + 1);
         if (field.startsWith('division:')) {
           data.divisions ??= {};
           data.divisions[field.slice(9)] = amount;
         } else data[field] = amount;
-      } else data[field] = value;
+      } else
+        data[field] =
+          field === 'inn'
+            ? normalizeImportedInn(value)
+            : field === 'name'
+              ? companyDisplayName(value)
+              : value;
     });
     requireCondition(
       typeof data.name === 'string' && data.name.trim(),
@@ -884,12 +928,21 @@ function parsePicoTemplate(
       privacy,
     )[0]!;
     requireCondition(
-      mapped.data.inn && mapped.data.segment,
+      (mapped.data.inn || mapped.data.segment === 'holding') && mapped.data.segment,
       400,
       `Клиенты, строка ${row}: заполните ИНН и тип`,
     );
     const amounts = v.slice(4, 12).map((value) => moneyValue(value, row));
-    const keys = ['lv', 'mv', 'drives_lv', 'drives_mv', 'cells', null, 'services', 'heat'] as const;
+    const keys = [
+      'lv',
+      'mv',
+      'drives_lv',
+      'drives_mv',
+      'cells',
+      'automation_cabinets',
+      'services',
+      'heat',
+    ] as const;
     mapped.data.divisions = {};
     amounts.forEach((amount, i) => {
       if (amount !== undefined && keys[i]) mapped.data.divisions![keys[i]!] = amount;
@@ -903,12 +956,6 @@ function parsePicoTemplate(
       `Клиенты, строка ${row}: слишком большой итог`,
     );
     const notes = [mapped.data.notes || ''];
-    if (amounts[5] !== undefined) {
-      notes.push(`АСУ ТП: ${amounts[5]} ₽/год`);
-      mapped.warnings.push(
-        'АСУ ТП сохранено в заметках и общем потенциале; отдельной категории потенциала компании в CRM нет',
-      );
-    }
     if (v[13]) notes.push(`Якорные заказчики: ${v[13]}`);
     mapped.data.notes = notes.filter(Boolean).join('\n');
     mapped.missing = mapped.missing.filter((field) =>
@@ -927,15 +974,17 @@ function parsePicoTemplate(
     return mapped;
   });
   requireCondition(
-    new Set(result.map((r) => r.data.inn)).size === result.length,
+    new Set(result.filter((r) => r.data.inn).map((r) => r.data.inn)).size ===
+      result.filter((r) => r.data.inn).length,
     400,
     'В листе «Клиенты» повторяется ИНН: объедините данные одной компании',
   );
   for (const { row, values: v } of projects) {
     v.forEach(privacy);
-    const parent = result.find((r) => r.data.inn === v[1]);
+    const parentInn = normalizeImportedInn(v[1]!);
+    const parent = result.find((r) => r.data.inn && r.data.inn === parentInn);
     requireCondition(
-      parent && normalize(parent.data.name) === normalize(v[0]!),
+      parent && normalize(parent.data.name) === normalize(companyDisplayName(v[0]!)),
       400,
       `Проекты, строка ${row}: укажите компанию с тем же ИНН и названием в листе «Клиенты»`,
     );
@@ -988,11 +1037,12 @@ function parsePicoTemplate(
     }
     if (v[3] || v[4])
       notes.push(`Заказчик из источника: ${v[3] || 'не указан'}; ИНН: ${v[4] || 'не указан'}`);
+    if (v[4]) v[4] = normalizeImportedInn(v[4]);
     if (v[4])
       requireCondition(validInn(v[4]!), 400, `Проекты, строка ${row}: проверьте ИНН заказчика`);
     const customer = result.find((r) => r.data.inn === v[4]);
     requireCondition(
-      !customer || !v[3] || normalize(customer.data.name) === normalize(v[3]),
+      !customer || !v[3] || normalize(customer.data.name) === normalize(companyDisplayName(v[3])),
       400,
       `Проекты, строка ${row}: название заказчика не совпадает с ИНН в листе «Клиенты»`,
     );
