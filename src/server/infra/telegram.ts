@@ -64,10 +64,19 @@ export class TelegramAdapter implements Messenger {
   ) {}
   async call(method: string, payload: unknown): Promise<any> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
+    const wirePayload = redactSystemPayload(payload, this.config);
+    // Telegram requires the configured credential verbatim for webhook authentication.
+    if (
+      method === 'setWebhook' &&
+      this.config.webhookSecret &&
+      (payload as { secret_token?: unknown } | null)?.secret_token === this.config.webhookSecret
+    ) {
+      wirePayload.secret_token = this.config.webhookSecret;
+    }
     const response = await fetch(`https://api.telegram.org/bot${this.config.botToken}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(redactSystemPayload(payload, this.config)),
+      body: JSON.stringify(wirePayload),
       signal: AbortSignal.timeout(25_000),
     });
     const result: any = await response.json().catch(() => null);
