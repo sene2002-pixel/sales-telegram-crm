@@ -210,6 +210,9 @@ docker compose stop
 
 ## Проверка
 
+Документация всех HTTP-операций и защищённый Swagger UI: [API](docs/API.md).
+Результаты диагностики, внедрённая защита и незакрытые риски: [аудит безопасности от 15.10.2026](docs/SECURITY_AUDIT_2026-10-15.md).
+
 ```sh
 npm run check
 npm run test:ops
