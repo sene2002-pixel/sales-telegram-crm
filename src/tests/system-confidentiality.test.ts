@@ -139,6 +139,16 @@ test('OpenAI and Telegram redact known credentials in payloads, preserving requi
   for (const secret of confidentialValues(config))
     assert.ok(!String(ai.options.body).includes(secret));
   const telegram = new TelegramAdapter(config);
+  await telegram.call('setWebhook', {
+    url: 'https://example.com/api/telegram/webhook',
+    secret_token: config.webhookSecret,
+    extra: text,
+  });
+  const webhook = JSON.parse(captured.at(-1)!.options.body as string);
+  assert.equal(webhook.secret_token, config.webhookSecret);
+  for (const secret of confidentialValues(config)) assert.ok(!webhook.extra.includes(secret));
+  await telegram.call('sendMessage', { secret_token: config.webhookSecret });
+  assert.equal(JSON.parse(captured.at(-1)!.options.body as string).secret_token, '[REDACTED]');
   await telegram.call('sendMessage', {
     chat_id: '123456',
     text,
