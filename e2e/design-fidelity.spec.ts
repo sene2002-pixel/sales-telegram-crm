@@ -98,19 +98,30 @@ test('Design fidelity: typed badges use distinct reference colors and money is c
   const row = page.locator('.pico-client-accordion').filter({ hasText: company.name });
   await expect(row).toContainText(/730\s*млн/);
   await row.locator('.pico-client-row').click();
+  const sections = row.locator('.cc-section');
+  await expect(sections).toHaveCount(5);
+  const contacts = sections.filter({
+    has: page.locator(':scope > summary', { hasText: /^Контакты/ }),
+  });
+  const potential = sections.filter({
+    has: page.locator(':scope > summary', { hasText: /^Потенциал/ }),
+  });
+  await contacts.locator(':scope > summary').click();
   await expect(row).toContainText('Иванов Сергей');
-  const contacts = row
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Контакты', exact: true }) });
-  const potential = row
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: /^Потенциал/ }) });
-  if (info.project.name === 'mobile') {
-    const [left, right] = await Promise.all([contacts.boundingBox(), potential.boundingBox()]);
-    expect(Math.abs(left!.y - right!.y)).toBeLessThan(15);
-    expect(right!.x).toBeGreaterThan(left!.x + left!.width - 2);
+  await expect(potential).toHaveAttribute('open', '');
+  await expect(contacts).toHaveAttribute('open', '');
+  const [above, below] = await Promise.all([potential.boundingBox(), contacts.boundingBox()]);
+  expect(below!.y).toBeGreaterThanOrEqual(above!.y + above!.height - 1);
+  for (const section of await sections.all()) {
+    const header = await section.locator(':scope > summary').boundingBox();
+    expect(header!.height).toBeGreaterThanOrEqual(46);
+    expect(header!.x + header!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   }
-  await screenshot(page, 'client-two-columns');
+  await contacts.locator(':scope > summary').click();
+  await expect(potential).toHaveAttribute('open', '');
+  await expect(contacts).not.toHaveAttribute('open', '');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await screenshot(page, 'client-independent-sections');
 });
 
 test('Design fidelity: period choices have ranges, cancel preserves data and apply spans sheet', async ({
@@ -196,7 +207,7 @@ test('Design fidelity: compact new forms keep core actions in viewport and task 
   });
 });
 
-test('Design fidelity: direct direction editor saves split voltage without overwriting facts', async ({
+test('Design fidelity: inline equipment editor saves split voltage without overwriting facts', async ({
   page,
 }, info) => {
   await login(page);
@@ -205,16 +216,15 @@ test('Design fidelity: direct direction editor saves split voltage without overw
   await navigate(page, 'Клиенты');
   const row = page.locator('.pico-client-accordion').filter({ hasText: company.name });
   await row.locator('.pico-client-row').click();
-  await row.getByRole('button', { name: 'Добавить направление', exact: true }).click();
-  const direction = page.getByRole('dialog', { name: 'Новое направление', exact: true });
-  await expect(
-    direction.getByRole('group', { name: 'Направление', exact: true }).getByRole('button'),
-  ).toHaveCount(7);
-  await direction.getByRole('button', { name: 'ПЧ и УПП 6–35 кВ', exact: true }).click();
-  await direction.getByLabel('Потенциал, млн ₽').fill('90');
-  await fullWidthAction(page, 'Добавить направление');
-  await screenshot(page, 'client-new-direction');
-  await direction.getByRole('button', { name: 'Добавить направление', exact: true }).click();
+  await row.getByRole('button', { name: 'Добавить оборудование', exact: true }).click();
+  const direction = row.locator('.cc-inline-editor');
+  const selector = direction.getByRole('combobox', { name: 'Оборудование', exact: true });
+  await expect(selector.getByRole('option')).toHaveCount(5);
+  await selector.selectOption('drives_mv');
+  await direction.getByRole('textbox', { name: 'Потенциал, ₽', exact: true }).fill('90000000');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await screenshot(page, 'client-new-equipment-inline');
+  await direction.getByRole('button', { name: 'Добавить', exact: true }).click();
   await expect(direction).toHaveCount(0);
   await page.reload();
   const saved = (await api(page, `/companies/${company.id}`, undefined, 'GET')).company;
@@ -347,7 +357,7 @@ test('Design fidelity: each filter sheet and postpone keeps its full-width actio
     data: { text: 'Перенос ' + company.name, type: 'call', due, time: '12:00' },
   });
   await page.reload();
-  await navigate(page, 'Главная');
+  await navigate(page, 'Задачи');
   const todayTask = page.locator('.task-row').filter({ hasText: 'Перенос ' + company.name });
   await expect(todayTask.locator('.task-text small')).toContainText(project.data.name);
   await expect(todayTask.locator('.task-text small')).not.toContainText(due);

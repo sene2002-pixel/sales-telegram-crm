@@ -346,7 +346,7 @@ class CrmController {
     return this.s.crm.list(r.actor, employeeId);
   }
   @Post('companies') create(@Req() r: AuthedRequest, @Body() b: any) {
-    return this.s.crm.create(r.actor, b);
+    return this.s.crm.createWithContacts(r.actor, b);
   }
   @Get('companies/:id') detail(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.detail(r.actor, id);

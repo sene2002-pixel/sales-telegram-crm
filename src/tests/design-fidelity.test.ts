@@ -87,9 +87,9 @@ function signedUser(id: number, name: string) {
   return params.toString();
 }
 
-test('fidelity taxonomy persists eight categories, seven directions and distinct legacy drives', async () => {
+test('fidelity taxonomy persists eight categories, eight directions and distinct legacy drives', async () => {
   assert.equal(primarySegments.length, 8);
-  assert.equal(primaryDivisions.length, 7);
+  assert.equal(primaryDivisions.length, 8);
   for (const segment of primarySegments)
     assert.equal(companySchema.parse({ name: 'Компания', segment }).segment, segment);
   const values = { drives: 100, drives_lv: 200, drives_mv: 300 };

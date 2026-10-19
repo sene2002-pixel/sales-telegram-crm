@@ -40,7 +40,7 @@ export async function openCompany(page: Page, name: string) {
     .filter({ has: page.locator('strong', { hasText: name }) });
   if ((await row.locator('.pico-client-row').getAttribute('aria-expanded')) !== 'true')
     await row.locator('.pico-client-row').click();
-  await row.getByRole('button', { name: 'Карточка клиента', exact: true }).click();
+  await row.getByRole('button', { name: 'Задачи и проекты', exact: true }).click();
 }
 
 export async function action(page: Page, name: string) {

@@ -1,9 +1,11 @@
+import './company-form.css';
 import { companyDisplayName } from '../shared/company-display-name';
 import { createPortal } from 'react-dom';
 import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react';
 import {
   CompanyData,
   companySchema,
+  contactSchema,
   segments,
   stages,
   divisions,
@@ -225,209 +227,300 @@ export function NewDirectionEditor({
     </Modal>
   );
 }
+export type InitialCompanyContact = { name: string; role: string; phone: string; email: string };
 export function CompanyForm({
   initial,
   onSave,
+  holdings = [],
 }: {
   initial?: CompanyData;
-  onSave: (data: CompanyData) => Promise<void>;
+  holdings?: Company[];
+  onSave: (data: CompanyData & { initialContacts?: InitialCompanyContact[] }) => Promise<void>;
 }) {
   const [data, setData] = useState<CompanyData>(
-      initial
-        ? companySchema.strip().parse(initial)
-        : { ...companySchema.parse({ name: 'Новый клиент' }), name: '' },
-    ),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false),
-    [direction, setDirection] = useState<{ division: string; amount: number } | null | false>(
-      false,
-    );
-  function update(key: keyof CompanyData, value: any) {
+    initial
+      ? companySchema.strip().parse(initial)
+      : { ...companySchema.parse({ name: 'Новый клиент' }), name: '' },
+  );
+  const [contacts, setContacts] = useState<InitialCompanyContact[]>([]);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const update = (key: keyof CompanyData, value: any) =>
     setData((current) => ({ ...current, [key]: value }));
-  }
+  const [equipmentDirty, setEquipmentDirty] = useState(false);
+  const divisionTotal = Object.values(data.divisions).reduce(
+    (sum, amount) => sum + (amount || 0),
+    0,
+  );
+  const savedPotential = equipmentDirty
+    ? Object.keys(data.divisions).length
+      ? divisionTotal
+      : null
+    : (initial?.potential ?? (Object.keys(data.divisions).length ? divisionTotal : null));
+  const total = savedPotential ?? 0;
+  const categoryOptions: readonly string[] =
+    initial && !primarySegments.includes(initial.segment as (typeof primarySegments)[number])
+      ? [...primarySegments, initial.segment]
+      : primarySegments;
+  const inputError = (key: string) =>
+    fieldErrors[key] ? (
+      <span className="error" id={'company-error-' + key}>
+        {fieldErrors[key]}
+      </span>
+    ) : null;
   return (
     <form
-      className="pico-compact-form"
+      ref={formRef}
+      className="pico-compact-form company-form"
       onSubmit={async (e) => {
-        if (e.target !== e.currentTarget) return;
         e.preventDefault();
+        if (busy) return;
         setError('');
+        setFieldErrors({});
+        const parsed = companySchema.safeParse({ ...data, potential: savedPotential });
+        const parsedContacts = contacts.map((contact) => contactSchema.safeParse(contact));
+        const errors: Record<string, string> = {};
+        if (!parsed.success)
+          for (const issue of parsed.error.issues) errors[String(issue.path[0])] = issue.message;
+        parsedContacts.forEach((result, index) => {
+          if (!result.success)
+            for (const issue of result.error.issues)
+              errors[`contact-${index}-${String(issue.path[0])}`] = issue.message;
+        });
+        if (Object.keys(errors).length) {
+          setFieldErrors(errors);
+          requestAnimationFrame(() => {
+            const field = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+            field?.closest('details')?.setAttribute('open', '');
+            field?.focus();
+            field?.scrollIntoView({ block: 'nearest' });
+          });
+          return;
+        }
+        if (!parsed.success) return;
         setBusy(true);
         try {
-          await onSave(companySchema.parse(data));
-        } catch (e) {
-          setError((e as Error).message);
+          await onSave({
+            ...parsed.data,
+            ...(!initial
+              ? {
+                  initialContacts: parsedContacts.map((result) => {
+                    if (!result.success) throw new Error('Проверьте контакты');
+                    return result.data;
+                  }),
+                }
+              : {}),
+          });
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : 'Не удалось сохранить клиента');
         } finally {
           setBusy(false);
         }
       }}
     >
-      <Field label="ИНН">
-        <input
-          inputMode="numeric"
-          value={data.inn}
-          placeholder="10 или 12 цифр"
-          onChange={(e) => update('inn', e.target.value)}
-        />
-      </Field>
-      <div className="pico-form-two">
-        <Field label="Название">
-          <input
-            required
-            value={data.name}
-            placeholder="ООО «Компания»"
-            onChange={(e) => update('name', e.target.value)}
-          />
-        </Field>
-        <Field label="Город">
-          <input
-            value={data.city}
-            placeholder="Город"
-            onChange={(e) => update('city', e.target.value)}
-          />
-        </Field>
-      </div>
-      <Chips
-        label="Категория клиента"
-        options={
-          data.segment === 'shchitovik' ? [...primarySegments, 'shchitovik'] : primarySegments
-        }
-        value={data.segment}
-        onChange={(value) => update('segment', value)}
-      />
-      <section className="pico-form-section">
-        <div className="section-head">
-          <h3>Потенциал</h3>
-          <small>Потребность клиента за год</small>
-        </div>
-        {Object.entries(data.divisions).map(([division, amount]) => (
-          <div className="pico-equipment-entry" key={division}>
-            <button
-              type="button"
-              className="pico-entry-main"
-              onClick={() => setDirection({ division, amount: amount! })}
-            >
-              {divisionLabels[division] || labels[division]}
-            </button>
-            <strong>{money(amount)}</strong>
-            <button
-              type="button"
-              aria-label={'Убрать направление ' + (divisionLabels[division] || labels[division])}
-              onClick={() => {
-                const next = { ...data.divisions };
-                delete next[division as keyof typeof next];
-                update('divisions', next);
-              }}
-            >
-              <Icon name="close" size={14} />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          className="pico-add-row pico-dashed"
-          onClick={() => setDirection(null)}
-        >
-          <Icon name="plus" size={14} /> Добавить оборудование
-        </button>
-      </section>
-      <details className="pico-advanced">
-        <summary>Дополнительные поля</summary>
-        <div className="pico-compact-form">
-          <Field label="Отрасль">
-            <input value={data.industry} onChange={(e) => update('industry', e.target.value)} />
-          </Field>
-          <Field label="Стадия">
-            <Select value={data.stage} onChange={(v) => update('stage', v)} options={stages} />
-          </Field>
-          <Field label="Сегмент">
-            <Select
-              value={data.segment}
-              onChange={(v) => update('segment', v)}
-              options={segments}
-            />
-          </Field>
-          <Field label="Оборот, ₽">
+      <div className="company-form-body">
+        {data.segment !== 'holding' && (
+          <Field label="ИНН">
             <input
-              type="number"
-              min="0"
-              step="any"
-              value={data.revenue ?? ''}
-              onChange={(e) =>
-                update('revenue', e.target.value === '' ? null : Number(e.target.value))
-              }
+              inputMode="numeric"
+              value={data.inn}
+              placeholder="10 или 12 цифр"
+              aria-invalid={!!fieldErrors.inn}
+              aria-describedby={fieldErrors.inn ? 'company-error-inn' : undefined}
+              onChange={(e) => update('inn', e.target.value)}
             />
+            {inputError('inn')}
           </Field>
-          <Field label="Потенциал, ₽">
+        )}
+        <div className="pico-form-two">
+          <Field label="Название">
             <input
-              type="number"
-              min="0"
-              step="any"
-              value={data.potential ?? ''}
-              onChange={(e) =>
-                update('potential', e.target.value === '' ? null : Number(e.target.value))
-              }
+              value={data.name}
+              placeholder="ООО «Компания»"
+              aria-invalid={!!fieldErrors.name}
+              aria-describedby={fieldErrors.name ? 'company-error-name' : undefined}
+              onChange={(e) => update('name', e.target.value)}
             />
+            {inputError('name')}
           </Field>
-          <Field label="Заметки">
-            <textarea
-              rows={2}
-              value={data.notes}
-              onChange={(e) => update('notes', e.target.value)}
-            />
+          <Field label="Город">
+            <input value={data.city} onChange={(e) => update('city', e.target.value)} />
+            {inputError('city')}
           </Field>
-          <details>
-            <summary>Потенциал по направлениям · рубли</summary>
-            {divisions.map((d) => (
-              <Field key={d} label={labels[d] + ' · ₽'}>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={data.divisions[d] ?? ''}
-                  onChange={(e) => {
-                    const next = { ...data.divisions };
-                    if (e.target.value === '') delete next[d];
-                    else next[d] = Number(e.target.value);
-                    setData((current) => ({
-                      ...current,
-                      divisions: next,
-                      potential: Object.values(next).reduce(
-                        (sum, amount) => sum + (amount || 0),
-                        0,
-                      ),
-                    }));
-                  }}
-                />
-              </Field>
-            ))}
-          </details>
         </div>
-      </details>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <button className="primary" disabled={busy}>
-        {busy ? 'Сохраняем…' : 'Сохранить клиента'}
-      </button>
-      {direction !== false && (
-        <NewDirectionEditor
-          initial={direction || undefined}
-          onClose={() => setDirection(false)}
-          onSave={async (value) => {
+        <Chips
+          label="Категория клиента"
+          options={categoryOptions}
+          value={data.segment}
+          onChange={(value) =>
             setData((current) => ({
               ...current,
-              divisions: { ...current.divisions, [value.division]: value.amount },
-              potential: Object.values({
-                ...current.divisions,
-                [value.division]: value.amount,
-              }).reduce((sum, amount) => sum + (amount || 0), 0),
-            }));
-          }}
+              segment: value as CompanyData['segment'],
+              inn: value === 'holding' ? '' : current.inn,
+              holdingId: value === 'end_client' ? current.holdingId : null,
+            }))
+          }
         />
-      )}
+        {data.segment === 'end_client' && (holdings.length > 0 || !!data.holdingId) && (
+          <Field label="Холдинг">
+            <select
+              value={data.holdingId || ''}
+              onChange={(e) => update('holdingId', e.target.value || null)}
+            >
+              <option value="">Без холдинга</option>
+              {data.holdingId && !holdings.some((company) => company.id === data.holdingId) && (
+                <option value={data.holdingId}>Текущий холдинг</option>
+              )}
+              {holdings
+                .filter((company) => company.segment === 'holding' && !company.archived)
+                .map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {companyDisplayName(company.name)}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        )}
+        <details className="company-form-accordion">
+          <summary>
+            <span>Потенциал</span>
+            <strong>{millionValue(total)} млн ₽</strong>
+            <Icon name="chevron" size={16} />
+          </summary>
+          <div className="company-equipment">
+            <p className="muted">Годовая потребность, млн ₽</p>
+            {[
+              ...primaryDivisions,
+              ...(data.divisions.drives !== undefined ? ['drives' as const] : []),
+            ].map((division) => (
+              <label className="company-equipment-row" key={division}>
+                <span>{divisionLabels[division] || labels[division]}</span>
+                <input
+                  aria-label={divisionLabels[division] || labels[division]}
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={
+                    data.divisions[division] === undefined
+                      ? ''
+                      : millionValue(data.divisions[division]!)
+                  }
+                  onChange={(e) => {
+                    setEquipmentDirty(true);
+                    const next = { ...data.divisions };
+                    if (e.target.value === '') delete next[division];
+                    else next[division] = fromMillions(e.target.value) ?? 0;
+                    update('divisions', next);
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        </details>
+        <details className="company-form-accordion">
+          <summary>
+            <span>Дополнительные поля</span>
+            <Icon name="chevron" size={16} />
+          </summary>
+          <div className="company-extra">
+            <Field label="Сайт">
+              <input
+                type="text"
+                inputMode="url"
+                placeholder="https://company.ru"
+                value={data.website || ''}
+                aria-invalid={!!fieldErrors.website}
+                aria-describedby={fieldErrors.website ? 'company-error-website' : undefined}
+                onChange={(e) => update('website', e.target.value)}
+              />
+              {inputError('website')}
+            </Field>
+            {!initial && (
+              <section className="company-contacts">
+                <h3>Контактные лица</h3>
+                {contacts.map((contact, index) => (
+                  <fieldset key={index}>
+                    <legend>Контакт {index + 1}</legend>
+                    {(['name', 'role', 'phone', 'email'] as const).map((key) => (
+                      <Field
+                        key={key}
+                        label={
+                          { name: 'Имя', role: 'Должность', phone: 'Телефон', email: 'Почта' }[key]
+                        }
+                      >
+                        <input
+                          type="text"
+                          inputMode={key === 'phone' ? 'tel' : key === 'email' ? 'email' : 'text'}
+                          value={contact[key]}
+                          aria-invalid={!!fieldErrors[`contact-${index}-${key}`]}
+                          aria-describedby={
+                            fieldErrors[`contact-${index}-${key}`]
+                              ? `company-error-contact-${index}-${key}`
+                              : undefined
+                          }
+                          onChange={(e) =>
+                            setContacts((current) =>
+                              current.map((entry, entryIndex) =>
+                                entryIndex === index ? { ...entry, [key]: e.target.value } : entry,
+                              ),
+                            )
+                          }
+                        />
+                        {inputError(`contact-${index}-${key}`)}
+                      </Field>
+                    ))}
+                    <button
+                      type="button"
+                      className="company-remove-contact"
+                      onClick={() =>
+                        setContacts((current) =>
+                          current.filter((_, entryIndex) => entryIndex !== index),
+                        )
+                      }
+                    >
+                      Удалить контакт
+                    </button>
+                  </fieldset>
+                ))}
+                <button
+                  type="button"
+                  className="pico-add-row"
+                  disabled={contacts.length >= 20}
+                  onClick={() =>
+                    setContacts((current) => [
+                      ...current,
+                      { name: '', role: '', phone: '', email: '' },
+                    ])
+                  }
+                >
+                  <Icon name="plus" size={14} />
+                  Добавить контакт
+                </button>
+              </section>
+            )}
+            <Field label="Заметки">
+              <textarea
+                rows={3}
+                value={data.notes}
+                onChange={(e) => update('notes', e.target.value)}
+              />
+            </Field>
+          </div>
+        </details>
+      </div>
+      <div className="company-form-footer">
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="primary" disabled={busy}>
+          {busy ? 'Сохраняем…' : 'Сохранить клиента'}
+        </button>
+      </div>
     </form>
   );
 }

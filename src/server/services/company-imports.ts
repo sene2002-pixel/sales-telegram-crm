@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { Actor, idSchema, labels, divisionLabels } from '../../shared/contracts';
+import { companyDisplayName } from '../../shared/company-display-name';
+import { Actor, idSchema, labels, divisionLabels, validInn } from '../../shared/contracts';
 import { Database, Sql } from '../infra/database';
 import { CrmService } from './crm';
 import { requireCondition } from '../domain/errors';
@@ -10,6 +11,13 @@ import {
   parseCompanyImport,
   parseBusinessContacts,
 } from './company-import-parser';
+
+const importIdentity = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+const importName = (value: string) => importIdentity(companyDisplayName(value));
+const importNameCity = (row: ImportedCompany) =>
+  row.data.city?.trim()
+    ? JSON.stringify([importName(row.data.name), importIdentity(row.data.city)])
+    : '';
 
 export const importConfirmPrefix = 'ic';
 export const importCancelPrefix = 'ix';
@@ -53,12 +61,23 @@ export class CompanyImports {
   }
   private async duplicate(tx: Sql, row: ImportedCompany) {
     // Generic disposition exposes no other owner's CRM record or values.
-    const found = await tx.query(
-      `SELECT id FROM companies WHERE lower(trim(data->>'name'))=lower(trim($1)) OR ($2<>'' AND data->>'inn'=$2) LIMIT 1`,
-      [row.data.name, row.data.inn || ''],
+    const inn = row.data.inn && validInn(row.data.inn) ? row.data.inn : '';
+    if (inn) {
+      const found = await tx.query(`SELECT id FROM companies WHERE data->>'inn'=$1 LIMIT 1`, [inn]);
+      if (found.length) return true;
+    }
+    const key = importNameCity(row);
+    if (!key) return false;
+    // Legacy legal forms are normalized using the same function as incoming rows.
+    const candidates = await tx.query(
+      `SELECT data->>'name' AS name, data->>'city' AS city FROM companies WHERE lower(regexp_replace(trim(data->>'city'), '\\s+', ' ', 'g'))=$1`,
+      [importIdentity(row.data.city!)],
     );
-    return found.length > 0;
+    return candidates.some(
+      (candidate) => importName(candidate.name || '') === importName(row.data.name),
+    );
   }
+
   private preview(record: any): CompanyImportPreview {
     const rows: CompanyImportDraftRow[] = record.draft.rows;
     const chunks: string[] = [];
@@ -186,11 +205,11 @@ export class CompanyImports {
         inns = new Set<string>(),
         rows: CompanyImportDraftRow[] = [];
       for (const row of parsed) {
-        const key = row.data.name.trim().toLocaleLowerCase(),
+        const key = importNameCity(row),
           inn = row.data.inn || '';
         const duplicate =
-          names.has(key) || (!!inn && inns.has(inn)) || (await this.duplicate(tx, row));
-        names.add(key);
+          (!!key && names.has(key)) || (!!inn && inns.has(inn)) || (await this.duplicate(tx, row));
+        if (key) names.add(key);
         if (inn) inns.add(inn);
         rows.push({ ...row, disposition: duplicate ? 'skip_duplicate' : 'create' });
       }

@@ -363,6 +363,9 @@ export function AnalyticsScreen({
   }, [period, from, to, companies, employeeId, refreshVersion, retry]);
   const data = summary?.clientAnalytics,
     current = companies.filter((c) => !c.archived);
+  const financialCompanies = current.filter(
+    (c) => c.segment !== 'holding' || !current.some((child) => child.holdingId === c.id),
+  );
   const directions: readonly string[] = current.some((c) => c.divisions.drives != null)
     ? [...primaryDivisions, 'drives']
     : primaryDivisions;
@@ -546,7 +549,7 @@ export function AnalyticsScreen({
               Потенциал по оборудованию
             </h2>
             {directions.map((direction) => {
-              const list = current.filter(
+              const list = financialCompanies.filter(
                   (c) => c.divisions[direction as keyof Company['divisions']] != null,
                 ),
                 amount = list.reduce(

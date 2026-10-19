@@ -5,6 +5,7 @@ import {
   Actor,
   Company,
   companySchema,
+  contactSchema,
   CompanyData,
   CrmRecord,
   RecordKind,
@@ -75,6 +76,82 @@ export class CrmService {
     );
     return rows.map(mapCompany);
   }
+  async validateHolding(
+    actor: Actor,
+    data: CompanyData,
+    ownerId: string,
+    tx: Sql,
+    previous?: Company,
+  ) {
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    requireCondition(
+      data.segment !== 'holding' || (!data.inn && !data.holdingId),
+      400,
+      'У холдинга нет ИНН и родительского холдинга',
+    );
+    requireCondition(
+      !data.holdingId || data.segment === 'end_client',
+      400,
+      'Холдинг можно выбрать только для заказчика',
+    );
+    if (data.holdingId) {
+      requireCondition(data.holdingId !== previous?.id, 400, 'Компания не может входить в себя');
+      const parent = await this.company(actor, data.holdingId, tx, true);
+      requireCondition(
+        parent.segment === 'holding' && !parent.archived && parent.ownerId === ownerId,
+        400,
+        'Выберите доступный холдинг с тем же ответственным',
+      );
+      requireCondition(!data.archived, 400, 'Сначала отсоедините заказчика от холдинга');
+    }
+    if (previous) {
+      const children = await tx.query(
+        "SELECT id FROM companies WHERE data->>'holdingId'=$1 FOR UPDATE",
+        [previous.id],
+      );
+      requireCondition(
+        !children.length ||
+          (data.segment === 'holding' && !data.archived && ownerId === previous.ownerId),
+        409,
+        'Сначала отсоедините заказчиков холдинга',
+      );
+      if (previous.segment !== 'holding' && data.segment === 'holding') {
+        const participantProjects = await tx.query(
+          "SELECT id FROM records WHERE kind='project' AND NOT deleted AND data->'participants' @> $1::jsonb LIMIT 1",
+          [JSON.stringify([{ companyId: previous.id }])],
+        );
+        requireCondition(
+          !participantProjects.length,
+          409,
+          'Участника проекта нельзя сделать холдингом',
+        );
+
+        const commercial = await tx.query(
+          "SELECT id FROM records WHERE company_id=$1 AND NOT deleted AND (kind='project' OR (kind='activity' AND data->'sales' IS NOT NULL AND data->'sales'<>'null'::jsonb)) LIMIT 1",
+          [previous.id],
+        );
+        requireCondition(
+          !commercial.length,
+          409,
+          'Компанию с проектами или продажами нельзя сделать холдингом',
+        );
+      }
+    }
+  }
+  async createWithContacts(actor: Actor, raw: unknown): Promise<Company> {
+    const schema = companySchema.extend({
+      initialContacts: z.array(contactSchema).max(20).default([]),
+    });
+    const { initialContacts, ...data } = schema.parse(raw);
+    return this.db.transaction(async (tx) => {
+      const company = await this.create(actor, data, actor.id, tx);
+      for (const contact of initialContacts)
+        await this.createRecord(actor, company.id, 'contact', contact, null, tx, {
+          contactSource: 'user',
+        });
+      return company;
+    });
+  }
   async create(actor: Actor, raw: unknown, ownerId = actor.id, tx?: Sql): Promise<Company> {
     const data = companySchema.parse(raw);
     requireCondition(
@@ -92,6 +169,7 @@ export class CrmService {
       idSchema.parse(ownerId),
     ]);
     requireCondition(owner, 400, 'Ответственный неактивен');
+    await this.validateHolding(actor, data, ownerId, tx);
     const id = randomUUID();
     await tx.query('INSERT INTO companies(id,owner_id,data) VALUES($1,$2,$3)', [
       id,
@@ -107,7 +185,9 @@ export class CrmService {
       .strict()
       .parse(raw);
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const previous = await this.company(actor, id, tx, true);
+      await this.validateHolding(actor, data, previous.ownerId, tx, previous);
       requireCondition(previous.version === version, 409, 'Карточка изменена. Обновите страницу');
       if (previous.archived !== data.archived)
         await this.checkArchivePermission(actor, previous, data.archived, tx);
@@ -129,7 +209,9 @@ export class CrmService {
   async assign(actor: Actor, id: string, ownerId: string, version: number) {
     requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const company = await this.company(actor, id, tx, true);
+      await this.validateHolding(actor, company, ownerId, tx, company);
       if (actor.role === 'supervisor') {
         await this.checkArchivePermission(actor, company, true, tx);
         await this.checkArchivePermission(actor, { ...company, ownerId }, true, tx);
@@ -163,7 +245,23 @@ export class CrmService {
       'SELECT a.id,a.actor_id,a.company_id,a.action,a.entity_id,a.details,a.created_at,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.company_id=$1 ORDER BY a.created_at DESC LIMIT 100',
       [id],
     );
-    return { company, records, audit: events };
+    const holdingMembers =
+      company.segment === 'holding'
+        ? (await this.list(actor)).filter((c) => c.holdingId === id && !c.archived)
+        : [];
+    const holdingDivisions: Record<string, number> = {};
+    let holdingPotential: number | null = null;
+    for (const member of holdingMembers) {
+      const amount =
+        member.potential ??
+        (Object.keys(member.divisions).length
+          ? Object.values(member.divisions).reduce<number>((sum, v) => sum + (v ?? 0), 0)
+          : null);
+      if (amount !== null) holdingPotential = (holdingPotential ?? 0) + amount;
+      for (const [key, value] of Object.entries(member.divisions))
+        holdingDivisions[key] = (holdingDivisions[key] ?? 0) + (value ?? 0);
+    }
+    return { company, records, audit: events, holdingMembers, holdingPotential, holdingDivisions };
   }
   async checkArchivePermission(
     actor: Actor,
@@ -200,7 +298,9 @@ export class CrmService {
     tx?: Sql,
   ): Promise<Company> {
     if (!tx) return this.db.transaction((t) => this.setArchived(actor, id, archived, version, t));
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const company = await this.company(actor, id, tx, true);
+    await this.validateHolding(actor, { ...company, archived }, company.ownerId, tx, company);
     await this.checkArchivePermission(actor, company, archived, tx);
     requireCondition(company.version === version, 409, 'Карточка изменена. Обновите страницу');
     requireCondition(
@@ -309,6 +409,12 @@ export class CrmService {
     tx: Sql,
     previous?: any,
   ) {
+    const owner = await this.company(actor, companyId, tx);
+    requireCondition(
+      owner.segment !== 'holding' || (kind !== 'project' && !(kind === 'activity' && data.sales)),
+      400,
+      'Проекты и продажи относятся к заказчику, а не к холдингу',
+    );
     const checkContact = async (contactId: string | null, ownerCompanyId: string) => {
       if (!contactId) return;
       const [contact] = await tx.query(
@@ -331,6 +437,7 @@ export class CrmService {
         if (existing) continue;
         const company = await this.company(actor, participant.companyId, tx);
         requireCondition(!company.archived, 409, 'Участник проекта находится в архиве');
+        requireCondition(company.segment !== 'holding', 400, 'Укажите заказчика вместо холдинга');
         await checkContact(participant.contactId, participant.companyId);
       }
     }
@@ -351,6 +458,7 @@ export class CrmService {
       return this.db.transaction((t) =>
         this.createRecord(actor, companyId, kind, data, projectId, t, internal),
       );
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const company = await this.company(actor, companyId, tx, true);
     requireCondition(!company.archived, 409, 'Сначала восстановите компанию из архива');
     await this.validateRecordLinks(actor, companyId, kind, data, tx);
@@ -398,6 +506,7 @@ export class CrmService {
           ...(city !== null ? { city } : {}),
           ...(segment !== null ? { segment } : {}),
         });
+        await this.validateHolding(actor, next, company.ownerId, tx, company);
         await tx.query(
           'UPDATE companies SET data=$2,version=version+1,updated_at=now() WHERE id=$1',
           [companyId, JSON.stringify(next)],
@@ -418,6 +527,7 @@ export class CrmService {
       .strict()
       .parse(raw);
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const [row] = await tx.query('SELECT * FROM records WHERE id=$1 AND NOT deleted', [
         idSchema.parse(id),
       ]);

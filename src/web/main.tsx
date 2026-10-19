@@ -90,6 +90,30 @@ function App() {
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
     [taskView, setTaskView] = useState<'open' | 'overdue' | 'today' | 'meetings'>('open');
+  const [creationHoldings, setCreationHoldings] = useState<Company[]>([]);
+  const [holdingsError, setHoldingsError] = useState('');
+  useEffect(() => {
+    setCreationHoldings([]);
+    setHoldingsError('');
+    if (!create || !user) return;
+    let active = true;
+    api<Company[]>('/companies')
+      .then((items) => {
+        if (active)
+          setCreationHoldings(
+            items.filter((c) => c.ownerId === user.id && c.segment === 'holding' && !c.archived),
+          );
+      })
+      .catch(() => {
+        if (active)
+          setHoldingsError(
+            'Не удалось загрузить холдинги. Закройте и откройте форму, чтобы повторить загрузку.',
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [create, user?.id, user?.role]);
   const [employeeId, setEmployeeId] = useState(''),
     [employeeOptions, setEmployeeOptions] = useState<EmployeeFilterOption[]>([]),
     [employeeError, setEmployeeError] = useState(''),
@@ -861,6 +885,14 @@ function App() {
                       <ClientRow
                         key={c.id}
                         company={c}
+                        actorRole={user.role}
+                        holdingMembers={
+                          c.segment === 'holding'
+                            ? companies.filter(
+                                (child) => child.holdingId === c.id && !child.archived,
+                              )
+                            : undefined
+                        }
                         onOpen={openCompany}
                         onChanged={refresh}
                         initiallyOpen={c.id === createdClientId}
@@ -1025,7 +1057,13 @@ function App() {
               Новые клиенты создаются на ваше имя. Фильтр не меняет ответственного.
             </p>
           )}
+          {holdingsError && (
+            <p role="alert" className="error">
+              {holdingsError}
+            </p>
+          )}
           <CompanyForm
+            holdings={creationHoldings}
             onSave={async (data) => {
               const saveGeneration = scopeGeneration.current;
               const c = await api<Company>('/companies', 'POST', data);

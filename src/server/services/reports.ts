@@ -294,6 +294,7 @@ export class ReportService {
       'Для каждого блока выберите компанию',
     );
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const r = await this.get(actor, id, tx, true);
       if (r.status === 'saved') return { id, status: 'saved', result: r.result };
       requireCondition(
@@ -395,6 +396,13 @@ export class ReportService {
         if (block.stage !== null) data.stage = block.stage;
         if (block.potential !== null) data.potential = block.potential;
         for (const d of block.divisions) data.divisions[d.key] = d.amount;
+        await this.crm.validateHolding(
+          actor,
+          companySchema.parse(data),
+          company.ownerId,
+          tx,
+          company,
+        );
         await tx.query(
           'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
           [JSON.stringify(data), companyId],

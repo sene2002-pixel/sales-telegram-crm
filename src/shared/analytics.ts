@@ -457,6 +457,19 @@ export function summarizeClientAnalytics(
   };
   const startDay = (first: string) =>
     new Date(+new Date(first + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const holdingChildrenByDay = new Map<string, Set<string>>();
+  const holdingsWithChildrenAt = (cutoff: string) => {
+    let ids = holdingChildrenByDay.get(cutoff);
+    if (!ids) {
+      ids = new Set<string>();
+      for (const company of companies) {
+        const state = companyAt(company, cutoff);
+        if (state && !state.archived && state.holdingId) ids.add(state.holdingId);
+      }
+      holdingChildrenByDay.set(cutoff, ids);
+    }
+    return ids;
+  };
   const period = (first: string, last: string, all = false) => {
     const end = snapshot(last),
       start = snapshot(startDay(first));
@@ -469,12 +482,17 @@ export function summarizeClientAnalytics(
     );
     let potential: number | null = 0;
     let potentialCompanies = new Set<string>();
+    const financialEntries = end.visible.filter(
+      (entry) =>
+        entry.data!.segment !== 'holding' ||
+        !end.visible.some((child) => child.data!.holdingId === entry.company.id),
+    );
     if (all) {
       potential = end.companyIncomplete
         ? null
-        : end.visible.reduce((sum, entry) => sum + (companyPotential(entry.data!) || 0), 0);
+        : financialEntries.reduce((sum, entry) => sum + (companyPotential(entry.data!) || 0), 0);
       potentialCompanies = new Set(
-        end.visible
+        financialEntries
           .filter((entry) => companyPotential(entry.data!) !== null)
           .map((entry) => entry.company.id),
       );
@@ -493,6 +511,12 @@ export function summarizeClientAnalytics(
               ? companyPotential(event.details.analyticsBefore || event.details.before)
               : undefined;
         const afterData = applyCompany(event.details?.before || null, event);
+        // A group's temporary estimate stops contributing once linked customers are present.
+        if (
+          afterData?.segment === 'holding' &&
+          holdingsWithChildrenAt(day(event.created_at)).has(event.company_id)
+        )
+          continue;
         const after = afterData ? companyPotential(afterData) : undefined;
         if (before === undefined || after === undefined) {
           potential = null;

@@ -233,6 +233,7 @@ export function CompanyDetail({
           )}
           {edit && (
             <CompanyForm
+              holdings={companies.filter((holding) => holding.ownerId === c.ownerId)}
               initial={c}
               onSave={async (data) => {
                 await api(`/companies/${c.id}`, 'PATCH', { version: c.version, data });
