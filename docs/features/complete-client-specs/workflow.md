@@ -52,3 +52,5 @@ No live Saby API or Telegram desktop production verification has been performed.
 ## Release and recovery
 
 Feature branch: codex/complete-client-specs. Preserve unrelated original-checkout changes. Publish only after review/QA gate; production deployment is separate. No data migration; rollback is a normal application revert. Imported data has explicit conditional undo for 24 hours; later edits/references block undo rather than destroying them. Holding allocation uses ordinary versioned audit records; recovery requires an explicit reviewed edit, not silent redistribution.
+
+Main advanced during implementation with the Swagger export change (`424c49f`). Integrated it without reverting its default-enabled docs setting or optional ignored JSON export; resolved the generated artifact modify/delete conflict by preserving main's deletion. Server compilation and the 8 OpenAPI/security integration checks passed after integration. No additional full suite was run for this isolated merge.

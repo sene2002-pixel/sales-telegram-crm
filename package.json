@@ -16,7 +16,8 @@
     "test:e2e": "playwright test",
     "format": "prettier --write src e2e docs *.json *.ts *.mts *.md *.yaml .github",
     "format:check": "prettier --check src e2e docs *.json *.ts *.mts *.md *.yaml .github",
-    "telegram:setup": "node dist/server/setup-telegram.js"
+    "telegram:setup": "node dist/server/setup-telegram.js",
+    "api:export": "npm run build:server && node scripts/generate-openapi.cjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.14",
