@@ -1,3 +1,4 @@
+import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { companyDisplayName } from '../../shared/company-display-name';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -109,6 +110,9 @@ export class DialogueService {
     private diagnostics?: DiagnosticLog,
   ) {}
   private async actor(tx: Sql, id: string): Promise<Actor> {
+    // Match CRM/editor lock ordering. Never hold the actor row while waiting
+    // for the company-write advisory lock in a later dialogue action.
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const [actor] = await tx.query<Actor>(
       `SELECT ${userProjection} FROM users WHERE id=$1 FOR UPDATE`,
       [id],
@@ -670,13 +674,42 @@ export class DialogueService {
         return this.ask(tx, actor, row, 'Для какой компании выполнить действие?');
       if (row.company.inn && !validInn(row.company.inn))
         return this.ask(tx, actor, row, 'Уточните ИНН: распознан некорректный номер.');
+      if (
+        (a.kind === 'company_create' || a.kind === 'company_import') &&
+        a.data.segment === 'holding' &&
+        row.company.inn
+      )
+        return this.ask(
+          tx,
+          actor,
+          row,
+          'У холдинга нет ИНН. Уточните: создать юридическое лицо с указанным ИНН или группу без ИНН?',
+        );
+
+      const mention = classifyHoldingMention(row.company.name);
+      if (
+        (a.kind === 'company_create' || a.kind === 'company_import') &&
+        mention.sites &&
+        !mention.companyName &&
+        !mention.holdingName
+      )
+        return this.ask(
+          tx,
+          actor,
+          row,
+          'Какому юридическому лицу или холдингу принадлежит площадка? Отдельную компанию для площадки не создаю.',
+        );
+      const matchingCompany = {
+        ...row.company,
+        name: mention.companyName || mention.holdingName || row.company.name,
+      };
       const matches = row.company.id
         ? (await this.accessible(tx, actor, a.kind === 'company_restore')).filter(
             (c) => c.id === row.company.id,
           )
         : this.matches(
             await this.accessible(tx, actor, a.kind === 'company_restore'),
-            a.kind === 'company_import' ? { ...row.company, city: '' } : row.company,
+            a.kind === 'company_import' ? { ...matchingCompany, city: '' } : matchingCompany,
           );
       if (matches.length > 1)
         return this.choices(
@@ -806,13 +839,30 @@ export class DialogueService {
       }
     }
     if (a.kind === 'task_create') data = taskSchema.safeParse({ text: a.text, due: a.due });
-    if (a.kind === 'company_create')
+    if (a.kind === 'company_create') {
+      const classified = classifyHoldingMention(row.company.name);
+      const suppliedInn = a.data.inn ?? row.company.inn;
+      const explicitOtherCategory =
+        a.data.segment !== null && !['end_client', 'holding'].includes(a.data.segment);
+      const mention =
+        explicitOtherCategory || (classified.isHolding && suppliedInn) ? {} : classified;
       data = companySchema.safeParse({
         ...supplied(a.data),
-        name: row.company.name,
-        inn: a.data.inn ?? row.company.inn,
+        name: explicitOtherCategory ? classified.companyName || row.company.name : row.company.name,
+        inn: mention.isHolding ? '' : suppliedInn,
         city: a.data.city ?? row.company.city,
+        ...(mention.isHolding
+          ? { segment: 'holding' }
+          : mention.holdingName
+            ? { segment: 'end_client' }
+            : {}),
+        ...(mention.sites ? { sites: mention.sites } : {}),
       });
+      if (mention.holdingName)
+        notice = mention.isHolding
+          ? `Холдинг: ${mention.holdingName}. ИНН не применяется.\n${mention.sites ? 'Площадки: ' + mention.sites.join(', ') + '\n' : ''}`
+          : `Заказчик: ${mention.companyName}. Холдинг: ${mention.holdingName} (будет создан или использован у того же ответственного).\n`;
+    }
     if (a.kind === 'company_update') {
       if (!Object.keys(supplied(a.data)).length)
         return this.ask(tx, actor, row, 'Какие данные компании изменить?');

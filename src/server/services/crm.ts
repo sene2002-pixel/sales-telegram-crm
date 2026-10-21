@@ -1,3 +1,4 @@
+import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { resolveEmployeeFilter } from './employee-filter';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -5,6 +6,7 @@ import {
   Actor,
   Company,
   companySchema,
+  companyEditSchema,
   contactSchema,
   holdingAllocationSchema,
   CompanyData,
@@ -25,6 +27,14 @@ import {
   confirmed,
   normalizeSales,
 } from '../../shared/sales';
+
+const catalogueMention = (data: Pick<CompanyData, 'name' | 'legalForm'>) =>
+  classifyHoldingMention(
+    data.legalForm &&
+      !data.name.toLocaleLowerCase('ru').startsWith(data.legalForm.toLocaleLowerCase('ru') + ' ')
+      ? `${data.legalForm} ${data.name}`
+      : data.name,
+  );
 
 export function mapCompany(row: any): Company {
   return {
@@ -85,6 +95,15 @@ export class CrmService {
     previous?: Company,
   ) {
     await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    if (data.segment === 'holding' && data.potential !== null && Object.keys(data.divisions).length)
+      requireCondition(
+        Math.abs(
+          data.potential -
+            Object.values(data.divisions).reduce((sum, amount) => sum + (amount || 0), 0),
+        ) < 0.01,
+        400,
+        'Общий потенциал холдинга должен совпадать с суммой оборудования. Исправьте оценку перед сохранением',
+      );
     requireCondition(
       data.segment !== 'holding' || (!data.inn && !data.holdingId),
       400,
@@ -139,6 +158,18 @@ export class CrmService {
       }
     }
   }
+  private async assertInnAvailable(tx: Sql, inn: string, ownerId: string, exceptId?: string) {
+    if (!inn) return;
+    const rows = await tx.query(
+      "SELECT id FROM companies WHERE owner_id=$1 AND data->>'inn'=$2 AND ($3::uuid IS NULL OR id<>$3) LIMIT 1",
+      [ownerId, inn, exceptId || null],
+    );
+    requireCondition(
+      !rows.length,
+      409,
+      'Компания с таким ИНН уже существует у этого ответственного. Проверьте существующую карточку',
+    );
+  }
   async createWithContacts(actor: Actor, raw: unknown): Promise<Company> {
     const schema = companySchema.extend({
       initialContacts: z.array(contactSchema).max(20).default([]),
@@ -154,7 +185,7 @@ export class CrmService {
     });
   }
   async create(actor: Actor, raw: unknown, ownerId = actor.id, tx?: Sql): Promise<Company> {
-    const data = companySchema.parse(raw);
+    let data = companySchema.parse(raw);
     requireCondition(
       !data.archived || actor.role === 'admin',
       403,
@@ -170,18 +201,131 @@ export class CrmService {
       idSchema.parse(ownerId),
     ]);
     requireCondition(owner, 400, 'Ответственный неактивен');
-    await this.validateHolding(actor, data, ownerId, tx);
-    if (data.inn && !data.archived) {
-      const duplicates = await tx.query(
-        "SELECT id FROM companies WHERE data->>'inn'=$1 AND COALESCE(data->>'archived','false')='false' LIMIT 1",
-        [data.inn],
-      );
-      requireCondition(
-        !duplicates.length,
-        409,
-        'Компания с таким ИНН уже существует. Проверьте существующую карточку.',
-      );
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    const siteMention = catalogueMention(data);
+    requireCondition(
+      !(siteMention.sites && !siteMention.companyName && !siteMention.holdingName),
+      400,
+      'Укажите юридическое лицо площадки. Добавьте площадку в карточку её владельца, а не как нового заказчика',
+    );
+    if (
+      !data.holdingId &&
+      !data.archived &&
+      ['end_client', 'holding'].includes(data.segment) &&
+      (!data.country || /^(?:россия|рф|ru|russia)$/iu.test(data.country.trim()))
+    ) {
+      let mention = catalogueMention(data);
+      // A supplied INN identifies a legal entity; do not erase it merely because its short name matches a group.
+      if (mention.isHolding && data.inn && data.segment === 'end_client')
+        mention = { companyName: data.name, isHolding: false };
+      if (mention.sites && !mention.companyName && !mention.holdingName)
+        requireCondition(
+          false,
+          400,
+          'Укажите юридическое лицо или холдинг площадки. Новая компания не создана',
+        );
+      if (mention.companyName && !mention.holdingName && mention.sites)
+        data = {
+          ...data,
+          name: mention.companyName,
+          segment: data.segment === 'holding' ? 'holding' : 'end_client',
+          sites: [...new Set([...(data.sites || []), ...mention.sites])],
+        };
+      if (mention.isHolding) {
+        requireCondition(!data.inn, 400, 'У холдинга нет ИНН. Укажите конкретное юридическое лицо');
+        data = {
+          ...data,
+          name: mention.holdingName!,
+          segment: 'holding',
+          sites: [...new Set([...(data.sites || []), ...(mention.sites || [])])],
+        };
+      } else if (mention.companyName && mention.holdingName) {
+        const parent = await this.create(
+          actor,
+          { name: mention.holdingName, segment: 'holding' },
+          ownerId,
+          tx,
+        );
+        data = {
+          ...data,
+          name: mention.companyName,
+          segment: 'end_client',
+          holdingId: parent.id,
+          sites: [...new Set([...(data.sites || []), ...(mention.sites || [])])],
+        };
+      }
+      if (mention.isHolding || mention.companyName || mention.sites?.length) {
+        const rows = await tx.query(
+          "SELECT id,data FROM companies WHERE owner_id=$1 AND COALESCE(data->>'archived','false')='false' ORDER BY id FOR UPDATE",
+          [ownerId],
+        );
+        const candidates = rows.filter((row) => {
+          if (
+            (row.data.country && !/^(?:россия|рф|ru|russia)$/iu.test(row.data.country.trim())) ||
+            row.data.segment !== data.segment ||
+            (data.inn && row.data.inn !== data.inn)
+          )
+            return false;
+          const current = catalogueMention(row.data);
+          const canonical = data.segment === 'holding' ? current.holdingName : current.companyName;
+          return (
+            (canonical || row.data.name).toLocaleLowerCase('ru') ===
+            data.name.toLocaleLowerCase('ru')
+          );
+        });
+        requireCondition(
+          candidates.length <= 1,
+          409,
+          'Несколько юридических лиц с таким названием. Уточните ИНН',
+        );
+        const existing = candidates[0];
+        if (existing) {
+          // Reuse the group. A named site is an append-only confirmed fact, not a new legal entity.
+          requireCondition(
+            !data.holdingId ||
+              !existing.data.holdingId ||
+              data.holdingId === existing.data.holdingId,
+            409,
+            'Заказчик уже входит в другой холдинг. Измените связь вручную',
+          );
+          requireCondition(
+            (data.potential === null || data.potential === existing.data.potential) &&
+              !Object.keys(data.divisions).some(
+                (key) =>
+                  data.divisions[key as keyof typeof data.divisions] !==
+                  existing.data.divisions?.[key],
+              ),
+            409,
+            'Клиент уже существует. Измените потенциал в его карточке',
+          );
+          const sites = [...new Set([...(existing.data.sites || []), ...(data.sites || [])])];
+          if (
+            sites.length !== (existing.data.sites || []).length ||
+            (data.holdingId && !existing.data.holdingId)
+          ) {
+            const before = await this.company(actor, existing.id, tx);
+            const after = companySchema.parse({
+              ...existing.data,
+              sites,
+              ...(data.holdingId ? { holdingId: data.holdingId } : {}),
+            });
+            await tx.query(
+              'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+              [JSON.stringify(after), existing.id],
+            );
+            await audit(tx, actor.id, 'company.updated', existing.id, existing.id, {
+              before,
+              after,
+              beforeVersion: before.version,
+              afterVersion: before.version + 1,
+            });
+          }
+          return this.company(actor, existing.id, tx);
+        }
+      }
     }
+    await this.validateHolding(actor, data, ownerId, tx);
+    await this.assertInnAvailable(tx, data.inn, ownerId);
     const id = randomUUID();
     await tx.query('INSERT INTO companies(id,owner_id,data) VALUES($1,$2,$3)', [
       id,
@@ -200,6 +344,7 @@ export class CrmService {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const previous = await this.company(actor, id, tx, true);
       await this.validateHolding(actor, data, previous.ownerId, tx, previous);
+      await this.assertInnAvailable(tx, data.inn, previous.ownerId, id);
       requireCondition(previous.version === version, 409, 'Карточка изменена. Обновите страницу');
       if (previous.archived !== data.archived)
         await this.checkArchivePermission(actor, previous, data.archived, tx);
@@ -218,6 +363,92 @@ export class CrmService {
       return this.company(actor, id, tx);
     });
   }
+  async updateWithContacts(actor: Actor, id: string, raw: unknown) {
+    const input = companyEditSchema.parse(raw);
+    return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      const [currentActor] = await tx.query<Actor>(
+        'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1 FOR UPDATE',
+        [actor.id],
+      );
+      requireCondition(currentActor?.active, 403, 'Доступ заблокирован');
+      actor = currentActor;
+      const previous = await this.company(actor, id, tx, true);
+      requireCondition(
+        previous.version === input.version,
+        409,
+        'Карточка изменена. Обновите страницу',
+      );
+      requireCondition(!previous.archived, 409, 'Сначала восстановите компанию из архива');
+      await this.validateHolding(actor, input.data, previous.ownerId, tx, previous);
+      await this.assertInnAvailable(tx, input.data.inn, previous.ownerId, id);
+      if (previous.archived !== input.data.archived)
+        await this.checkArchivePermission(actor, previous, input.data.archived, tx);
+      const seen = new Set<string>();
+      const existing = new Map<string, any>();
+      for (const contact of input.contacts)
+        if (contact.id) {
+          requireCondition(!seen.has(contact.id), 400, 'Контакт указан дважды');
+          seen.add(contact.id);
+          const [row] = await tx.query(
+            "SELECT * FROM records WHERE id=$1 AND company_id=$2 AND kind='contact' AND NOT deleted FOR UPDATE",
+            [contact.id, id],
+          );
+          requireCondition(row, 404, 'Контакт не найден');
+          requireCondition(
+            row.version === contact.version,
+            409,
+            'Контакт изменён. Обновите страницу',
+          );
+          existing.set(contact.id, row);
+        }
+      await tx.query(
+        'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+        [JSON.stringify(input.data), id],
+      );
+      await audit(tx, actor.id, 'company.updated', id, id, {
+        before: previous,
+        after: input.data,
+        beforeVersion: previous.version,
+        afterVersion: previous.version + 1,
+      });
+      for (const contact of input.contacts) {
+        if (!contact.id) {
+          await this.createRecord(actor, id, 'contact', contact.data, null, tx, {
+            contactSource: 'user',
+          });
+          continue;
+        }
+        const current = existing.get(contact.id)!;
+        const contactData = {
+          ...contact.data,
+          ...(contact.data.extension === undefined && current.data.extension
+            ? { extension: current.data.extension }
+            : {}),
+        };
+        const [updated] = await tx.query(
+          'UPDATE records SET data=$1,version=version+1 WHERE id=$2 RETURNING *',
+          [JSON.stringify(contactData), contact.id],
+        );
+        await audit(tx, actor.id, 'contact.updated', contact.id, id, {
+          before: current.data,
+          after: contactData,
+          recordVersion: updated.version,
+          recordBefore: {
+            data: current.data,
+            contactSource: current.contact_source,
+            deleted: false,
+          },
+          recordAfter: {
+            data: contactData,
+            contactSource: current.contact_source,
+            deleted: false,
+          },
+        });
+      }
+      return this.company(actor, id, tx);
+    });
+  }
   async assign(actor: Actor, id: string, ownerId: string, version: number) {
     requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
     return this.db.transaction(async (tx) => {
@@ -233,6 +464,7 @@ export class CrmService {
         idSchema.parse(ownerId),
       ]);
       requireCondition(owner, 400, 'Ответственный неактивен');
+      await this.assertInnAvailable(tx, company.inn, ownerId, id);
       await tx.query(
         'UPDATE companies SET owner_id=$1,version=version+1,updated_at=now() WHERE id=$2',
         [ownerId, id],
@@ -273,7 +505,18 @@ export class CrmService {
       for (const [key, value] of Object.entries(member.divisions))
         holdingDivisions[key] = (holdingDivisions[key] ?? 0) + (value ?? 0);
     }
-    return { company, records, audit: events, holdingMembers, holdingPotential, holdingDivisions };
+    return {
+      company,
+      records,
+      audit: events,
+      holdingMembers,
+      holdingPotential,
+      holdingDivisions,
+      holdingAllocationRequired:
+        holdingMembers.length > 0 &&
+        ((company.potential || 0) > 0 ||
+          Object.values(company.divisions).some((amount) => (amount || 0) > 0)),
+    };
   }
   async allocateHolding(actor: Actor, id: string, raw: unknown) {
     const input = holdingAllocationSchema.parse(raw);
@@ -525,7 +768,7 @@ export class CrmService {
       current.deferred = true;
     return { projection, current };
   }
-  private async validateRecordLinks(
+  async validateRecordLinks(
     actor: Actor,
     companyId: string,
     kind: RecordKind,
@@ -670,6 +913,8 @@ export class CrmService {
         'Этот тип записи не редактируется',
       );
       const data: any = recordSchemas[row.kind as RecordKind].parse(input.data);
+      if (row.kind === 'contact' && data.extension === undefined && current.data.extension)
+        data.extension = current.data.extension;
       await this.validateRecordLinks(actor, row.company_id, row.kind, data, tx, current.data);
       if (row.kind === 'task')
         data.completedAt = data.done ? current.data.completedAt || new Date().toISOString() : null;

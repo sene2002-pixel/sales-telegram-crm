@@ -667,7 +667,14 @@ export class LetterService {
         const storeStartedAt = Date.now();
         await this.diagnostics?.record('letter.store.started', { companyId });
         const record = await this.crm.db.transaction(async (tx) => {
-          const latestCompany = await this.crm.company(actor, companyId, tx, true);
+          // All CRM writers acquire the hierarchy lock before actor/company row locks.
+          await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+          const [author] = await tx.query('SELECT active,role FROM users WHERE id=$1 FOR UPDATE', [
+            actor.id,
+          ]);
+          requireCondition(author?.active, 403, 'Доступ сотрудника отозван');
+          const freshActor = { ...actor, role: author.role };
+          const latestCompany = await this.crm.company(freshActor, companyId, tx, true);
           if (roleOnlyFallback)
             requireCondition(
               latestCompany.inn === detail.company.inn &&
@@ -677,11 +684,7 @@ export class LetterService {
               409,
               'Компания изменена во время подготовки письма',
             );
-          const [author] = await tx.query('SELECT active,role FROM users WHERE id=$1 FOR UPDATE', [
-            actor.id,
-          ]);
-          requireCondition(author?.active, 403, 'Доступ сотрудника отозван');
-          await this.crm.company({ ...actor, role: author.role }, companyId, tx);
+
           const [latestSignature] = await tx.query(
             'SELECT data FROM letter_signatures WHERE id=$1 AND user_id=$2',
             [selectedSignatureId, actor.id],

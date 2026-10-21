@@ -315,3 +315,66 @@
   font-size: 15px;
   font-weight: 800;
 }
+/* Sheet controls keep their touch geometry even inside flex containers. */
+.modal:has(> .company-form)::before,
+.modal:has(> .cc-contact-form)::before {
+  width: 36px;
+  height: 4px;
+  min-height: 4px;
+  flex: 0 0 4px;
+  background: #d3d9e6;
+}
+.modal:has(> .company-form) > .section-head > button,
+.modal:has(> .cc-contact-form) > .section-head > button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  flex: 0 0 44px;
+}
+.company-form.pico-compact-form .field > .company-field-error {
+  color: #b42318;
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 500;
+}
+.company-form.pico-compact-form textarea {
+  height: 64px;
+  min-height: 64px;
+  resize: vertical;
+}
+.company-form.pico-compact-form .pico-chips {
+  gap: 6px 8px;
+}
+@media (pointer: coarse) {
+  .company-form.pico-compact-form input,
+  .company-form.pico-compact-form select,
+  .company-form.pico-compact-form textarea,
+  .company-form.pico-compact-form .company-equipment-row > input,
+  .cc-contact-form input {
+    font-size: 16px;
+  }
+}
+.modal-backdrop:has(> .modal > .company-form),
+.modal-backdrop:has(> .modal > .cc-contact-form) {
+  align-items: flex-end;
+  background: rgba(34, 42, 92, 0.42);
+}
+.modal:has(> .company-form)::before,
+.modal:has(> .cc-contact-form)::before {
+  content: '';
+  display: block;
+  border-radius: 4px;
+  margin: -14px auto 18px;
+}
+.modal:has(> .cc-contact-form) {
+  max-height: min(92dvh, var(--pico-view-height, 100dvh));
+  overflow-y: auto;
+}
+.company-form-accordion > .company-field-error {
+  display: block;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 17px;
+  padding-top: 6px;
+}

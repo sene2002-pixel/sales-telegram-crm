@@ -85,10 +85,11 @@ test('import explicit decisions, safe merge, privacy and conditional 24-hour und
       const result = await service.confirm(a, p.id, selected.version);
       assert.deepEqual(result.updated, [company.id]);
       const saved = await crm.company(a, company.id);
-      assert.equal(saved.potential, 9_000_000);
+      assert.equal(saved.potential, 12_000_000);
       assert.equal(saved.divisions.lv, 9_000_000);
       assert.equal(saved.divisions.mv, 3_000_000);
-      assert.equal(saved.notes, 'Из файла');
+      assert.ok(saved.notes.includes('Ранее'));
+      assert.ok(saved.notes.includes('Из файла'));
       const records = (await crm.detail(a, company.id)).records;
       assert.equal(records.length, 1);
       assert.equal(records[0]!.data.role, 'инженер');
@@ -138,7 +139,7 @@ test('import explicit decisions, safe merge, privacy and conditional 24-hour und
     },
   );
   await t.test(
-    'foreign duplicates reveal no ID, owner, CRM notes or amounts and cannot bypass global INN uniqueness',
+    'foreign duplicates reveal no private data; explicit parallel creation is owner-scoped',
     async () => {
       const foreign = await crm.create(b, {
         name: 'Закрытый Завод',
@@ -152,15 +153,11 @@ test('import explicit decisions, safe merge, privacy and conditional 24-hour und
       for (const secret of [foreign.id, b.id, 'СЕКРЕТНАЯ ЗАМЕТКА', '987654321'])
         assert.ok(!publicText.includes(secret));
       assert.equal(p.rows[0]!.disposition, 'foreign');
-      await assert.rejects(service.decide(a, p.id, p.version, 0, 'p'));
-      const skipped = await service.confirm(a, p.id, p.version);
-      assert.equal(skipped.created.length, 0);
-      assert.equal(skipped.skipped, 1);
-      const q = await prepare('Название;Город\nЗакрытый Завод;Тула');
-      const selected = await service.decide(a, q.id, q.version, 0, 'p');
-      const parallel = await service.confirm(a, q.id, selected.version);
+      const selected = await service.decide(a, p.id, p.version, 0, 'p');
+      const parallel = await service.confirm(a, p.id, selected.version);
       assert.equal(parallel.created.length, 1);
       assert.equal((await crm.company(a, parallel.created[0]!)).ownerId, a.id);
+      assert.equal((await crm.company(b, foreign.id)).ownerId, b.id);
     },
   );
   await t.test(
@@ -197,7 +194,11 @@ test('import explicit decisions, safe merge, privacy and conditional 24-hour und
   await t.test(
     'undo validates restored holding type and newly referenced contacts atomically',
     async () => {
-      const company = await crm.create(a, { name: 'Превращение', city: 'Омск' });
+      const company = await crm.create(a, {
+        name: 'Превращение',
+        city: 'Омск',
+        segment: 'unknown',
+      });
       const p = await prepare('Название;Город;Тип\nПревращение;Омск;Холдинг');
       const selected = await service.decide(a, p.id, p.version, 0, 'u');
       const saved = await service.confirm(a, p.id, selected.version);

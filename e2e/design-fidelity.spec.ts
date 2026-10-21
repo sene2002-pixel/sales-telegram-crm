@@ -438,13 +438,13 @@ test('Design fidelity: long card swipe moves whole cell and keeps neutral trash 
     .poll(() =>
       content.evaluate((el) => {
         const transform = new DOMMatrix(getComputedStyle(el).transform);
-        return Math.abs(transform.m41 + el.getBoundingClientRect().width);
+        return Math.abs(transform.m41 + 112);
       }),
     )
     .toBeLessThan(1);
-  const trash = cell.locator(':scope > .cc-trash-track > .cc-trash');
+  const trash = cell.locator(':scope > .cc-trash-track > .cc-swipe-actions > .cc-trash');
   await expect(trash).toHaveCSS('color', 'rgb(107, 115, 144)');
-  await expect(trash).toHaveCSS('width', '64px');
+  await expect(trash).toHaveCSS('width', '56px');
   for (const scroll of [0, 350]) {
     await page.evaluate((y) => window.scrollBy(0, y), scroll);
     await expect
@@ -452,12 +452,20 @@ test('Design fidelity: long card swipe moves whole cell and keeps neutral trash 
         return cell.evaluate((el) => {
           const bounds = el.getBoundingClientRect();
           const button = el
-            .querySelector(':scope > .cc-trash-track > .cc-trash')!
+            .querySelector(':scope > .cc-trash-track > .cc-swipe-actions > .cc-trash')!
             .getBoundingClientRect();
           return Math.abs(
             button.top +
               button.height / 2 -
-              (Math.max(0, bounds.top) + Math.min(innerHeight, bounds.bottom)) / 2,
+              (Math.max(0, bounds.top) +
+                Math.min(
+                  (document.querySelector('.pico-bottom-nav')?.getBoundingClientRect().height ||
+                    0) > 0
+                    ? document.querySelector('.pico-bottom-nav')!.getBoundingClientRect().top
+                    : innerHeight,
+                  bounds.bottom,
+                )) /
+                2,
           );
         });
       })

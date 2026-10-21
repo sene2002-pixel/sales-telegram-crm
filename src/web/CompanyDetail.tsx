@@ -111,14 +111,14 @@ export function CompanyDetail({
   }
   if (!detail)
     return (
-      <Modal title={companyDisplayName(company.name)} onClose={onClose}>
+      <Modal title={companyDisplayName(company.name, company.country)} onClose={onClose}>
         <p>{error || 'Загрузка…'}</p>
       </Modal>
     );
   const c = detail.company,
     projects = detail.records.filter((r) => r.kind === 'project');
   return (
-    <Modal title={companyDisplayName(c.name)} onClose={onClose}>
+    <Modal title={companyDisplayName(c.name, c.country)} onClose={onClose}>
       <div className="company-detail">
         <nav className="tabs company-detail-tabs">
           {Object.entries(names).map(([k, v]) => (
@@ -209,8 +209,8 @@ export function CompanyDetail({
             >
               <p className="company-long-text">
                 {c.archived
-                  ? `Восстановить «${companyDisplayName(c.name)}»?`
-                  : `Перенести «${companyDisplayName(c.name)}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет только суперадмин.`}
+                  ? `Восстановить «${companyDisplayName(c.name, c.country)}»?`
+                  : `Перенести «${companyDisplayName(c.name, c.country)}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет только суперадмин.`}
               </p>
               <button
                 disabled={busy}

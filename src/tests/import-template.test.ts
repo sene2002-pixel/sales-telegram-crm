@@ -54,7 +54,11 @@ test('Pico template rejects malicious structure and contacts, preserves clients 
   );
   const c = syntheticClient();
   c[14] = 'Тестовый Контакт, инженер, отдел, +79990000001, a@example.test';
-  await assert.rejects(parse(picoTemplate({ clients: [c] })), /Контакты:/);
+  const flexible = await parse(picoTemplate({ clients: [c] }));
+  assert.equal(flexible[0]!.contacts![0]!.name, 'Тестовый Контакт');
+  assert.equal(flexible[0]!.contacts![0]!.role, 'инженер, отдел');
+  assert.equal(flexible[0]!.contacts![0]!.phone, '+79990000001');
+  assert.equal(flexible[0]!.contacts![0]!.email, 'a@example.test');
   const project = syntheticProject();
   project[1] = '1234567894';
   const unresolved = await parse(
@@ -74,10 +78,10 @@ test('Pico template rejects malicious structure and contacts, preserves clients 
   assert.ok(invalidMoney[0]!.warnings.some((w) => w.includes('некорректная сумма')));
   const secret = syntheticClient();
   secret[15] = 'password: forbidden';
-  await assert.rejects(
-    parse(picoTemplate({ clients: [secret] })),
-    /без личных контактов и секретов/,
-  );
+  const sanitized = await parse(picoTemplate({ clients: [secret] }));
+  assert.equal(sanitized[0]!.data.name, 'Тестовая компания');
+  assert.ok(!JSON.stringify(sanitized).includes('forbidden'));
+  assert.ok(!JSON.stringify(sanitized).includes('password'));
 });
 
 test('Google Docs structured tables and labeled paragraphs preserve company and business contact fields locally', async () => {
@@ -250,6 +254,6 @@ test('Customer name/INN conflict and omitted DOCX grid columns cannot create wro
       ),
       'csv',
     ),
-    /нет названия/,
+    /нет названия|компаний с заголовком/,
   );
 });

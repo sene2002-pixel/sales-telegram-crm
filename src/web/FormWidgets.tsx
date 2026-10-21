@@ -63,7 +63,7 @@ export function ClientPicker({
     (c) =>
       !c.archived &&
       !exclude.includes(c.id) &&
-      `${c.name} ${companyDisplayName(c.name)} ${c.city} ${c.industry}`
+      `${c.name} ${companyDisplayName(c.name, c.country)} ${c.city} ${c.industry}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
@@ -98,7 +98,7 @@ export function ClientPicker({
                   <Icon name={icon} size={16} />
                 </span>
                 <span>
-                  <strong>{companyDisplayName(c.name)}</strong>
+                  <strong>{companyDisplayName(c.name, c.country)}</strong>
                   <small>
                     {[labels[c.segment], c.city, c.industry].filter(Boolean).join(' · ')}
                   </small>
