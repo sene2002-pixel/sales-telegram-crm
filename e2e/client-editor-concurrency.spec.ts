@@ -60,9 +60,7 @@ for (const mode of ['legacy', 'row', 'contact'] as const)
         .filter({ hasText: /^Контакты/ })
         .click();
       await revealEdit(
-        row
-          .locator('.cc-swipe')
-          .filter({ has: page.locator('.cc-contact', { hasText: 'Исходный контакт' }) }),
+        row.getByRole('group', { name: 'Действия: контакт «Исходный контакт»', exact: true }),
       );
     }
     const dialog = page.getByRole('dialog');
@@ -124,9 +122,7 @@ for (const mode of ['legacy', 'row', 'contact'] as const)
     } else if (mode === 'row') await revealEdit(row.locator(':scope > .cc-swipe'));
     else
       await revealEdit(
-        row
-          .locator('.cc-swipe')
-          .filter({ has: page.locator('.cc-contact', { hasText: 'Исходный контакт' }) }),
+        row.getByRole('group', { name: 'Действия: контакт «Исходный контакт»', exact: true }),
       );
     const reopened = page.getByRole('dialog');
     if (mode === 'contact') {
@@ -142,7 +138,7 @@ for (const mode of ['legacy', 'row', 'contact'] as const)
         .locator('.company-form-accordion > summary')
         .filter({ hasText: /^Дополнительные поля/ })
         .click();
-      await expect(reopened.getByLabel('Комментарий', { exact: true })).toHaveValue(
+      await expect(reopened.getByRole('textbox', { name: 'Комментарий', exact: true })).toHaveValue(
         'Подтверждённые новые заметки B',
       );
     }
