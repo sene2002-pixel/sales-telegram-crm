@@ -1,4 +1,5 @@
 import { companyDisplayName } from '../shared/company-display-name';
+import { companyContactChanges } from '../shared/company-edit-contacts';
 import { useEffect, useRef, useState } from 'react';
 import {
   Actor,
@@ -9,7 +10,7 @@ import {
   RecordKind,
   taskSchema,
 } from '../shared/contracts';
-import { api, download, money } from './api';
+import { api, ApiError, download, money } from './api';
 import { CompanyForm, Field, Modal, RecordForm } from './forms';
 import { LetterForm } from './LetterForm';
 import { CompanySales } from './SalesCard';
@@ -85,6 +86,8 @@ export function CompanyDetail({
     [projectId, setProjectId] = useState('');
   const [deleteContactId, setDeleteContactId] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [editorCompany, setEditorCompany] = useState<Company | null>(null);
+  const [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]);
   const refreshSequence = useRef(0);
   async function refresh() {
     const sequence = ++refreshSequence.current;
@@ -92,6 +95,7 @@ export function CompanyDetail({
     if (sequence !== refreshSequence.current) return;
     setDetail(d);
     setOwner(d.company.ownerId);
+    return d;
   }
   useEffect(() => {
     refresh().catch((e) => setError(e.message));
@@ -185,7 +189,25 @@ export function CompanyDetail({
               }}
             />
           )}
-          <button onClick={() => setEdit(!edit)}>
+          <button
+            onClick={async () => {
+              if (edit) {
+                setEdit(false);
+                return;
+              }
+              try {
+                const latest = await refresh();
+                if (!latest) return;
+                setEditorCompany(structuredClone(latest.company));
+                setEditorContacts(
+                  structuredClone(latest.records.filter((record) => record.kind === 'contact')),
+                );
+                setEdit(true);
+              } catch (cause) {
+                setError((cause as Error).message);
+              }
+            }}
+          >
             {edit ? 'Скрыть форму' : 'Редактировать компанию'}
           </button>
           {(user.role === 'admin' ||
@@ -234,9 +256,29 @@ export function CompanyDetail({
           {edit && (
             <CompanyForm
               holdings={companies.filter((holding) => holding.ownerId === c.ownerId)}
-              initial={c}
-              onSave={async (data) => {
-                await api(`/companies/${c.id}`, 'PATCH', { version: c.version, data });
+              initial={editorCompany || c}
+              initialContacts={editorContacts.map((record) => ({
+                id: record.id,
+                version: record.version,
+                name: record.data.name || '',
+                role: record.data.role || '',
+                phone: record.data.phone || '',
+                email: record.data.email || '',
+              }))}
+              onSave={async ({ initialContacts = [], ...data }) => {
+                try {
+                  await api(`/companies/${c.id}/editor`, 'PATCH', {
+                    version: (editorCompany || c).version,
+                    data,
+                    contacts: companyContactChanges(initialContacts, editorContacts),
+                  });
+                } catch (cause) {
+                  if (cause instanceof ApiError && cause.status === 409)
+                    throw new Error(
+                      'Карточка или контакты изменились. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+                    );
+                  throw cause;
+                }
                 setEdit(false);
                 await refresh();
                 await onChanged();

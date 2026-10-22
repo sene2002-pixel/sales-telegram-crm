@@ -193,7 +193,7 @@ test('Mockups: project equipment, participant and typed timed task persist; reje
   const project = page.getByRole('dialog', { name: 'Новый проект', exact: true });
   await pickInline(page, project, 'Заказчик', company.name);
   await project.getByLabel('Название проекта').fill('Поставка ' + suffix);
-  await project.getByLabel('Город проекта').fill('Казань');
+  await project.getByLabel('Город', { exact: true }).fill('Казань');
   await project.getByLabel('Тип объекта').fill('ТЭЦ');
   await project.getByLabel('Дата закупки').fill('2027-03-01');
   await project.getByRole('button', { name: 'Добавить оборудование', exact: true }).click();
@@ -317,9 +317,17 @@ test('Mockups: inline contact sheets save, retain edits on failure and refresh a
   await expect(form).toHaveCount(0);
   const contact = contacts.locator('.cc-contact').filter({ hasText: 'Пётр QA' });
   await expect(contact).toContainText('+79991234567');
-  await contact.getByRole('button', { name: 'Изменить Телефон', exact: true }).click();
-  const edit = contact.locator('.cc-inline-editor');
-  await edit.getByRole('textbox', { name: 'Телефон', exact: true }).fill('+79997654321');
+  const contactSwipe = contacts
+    .locator('.cc-swipe')
+    .filter({ has: page.locator('.cc-contact', { hasText: 'Пётр QA' }) });
+  await contactSwipe.focus();
+  await contactSwipe.press('ArrowLeft');
+  await contactSwipe
+    .locator(':scope > .cc-trash-track')
+    .getByRole('button', { name: /Редактировать/ })
+    .click();
+  const edit = page.getByRole('dialog', { name: 'Контакт', exact: true });
+  await edit.getByRole('textbox', { name: 'Контакт · Телефон', exact: true }).fill('+79997654321');
   await page.route('**/api/records/*', (r) =>
     r.request().method() === 'PATCH'
       ? r.fulfill({ status: 503, json: { message: 'QA temporary contact failure' } })
@@ -327,7 +335,7 @@ test('Mockups: inline contact sheets save, retain edits on failure and refresh a
   );
   await edit.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(edit.getByRole('alert')).toHaveText('QA temporary contact failure');
-  await expect(edit.getByRole('textbox', { name: 'Телефон', exact: true })).toHaveValue(
+  await expect(edit.getByRole('textbox', { name: 'Контакт · Телефон', exact: true })).toHaveValue(
     '+79997654321',
   );
   await page.unroute('**/api/records/*');

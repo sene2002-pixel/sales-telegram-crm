@@ -1,4 +1,5 @@
 import { companyDisplayName } from '../shared/company-display-name';
+import { companyContactChanges } from '../shared/company-edit-contacts';
 import { useEffect, useRef, useState } from 'react';
 import {
   Company,
@@ -82,8 +83,8 @@ export function ClientRow({
     [score, setScore] = useState<ClientScore | undefined>(providedScore),
     [scoreError, setScoreError] = useState(false),
     [editingClient, setEditingClient] = useState(false),
-    [editorVersion, setEditorVersion] = useState<number | null>(null),
-    [editorContactVersions, setEditorContactVersions] = useState<Record<string, number>>({}),
+    [editorCompany, setEditorCompany] = useState<Company | null>(null),
+    [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]),
     [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
     [addingContact, setAddingContact] = useState(false),
     [newEquipment, setNewEquipment] = useState(false),
@@ -231,12 +232,8 @@ export function ClientRow({
         onEdit={() => {
           void read()
             .then((d) => {
-              setEditorVersion(d.company.version);
-              setEditorContactVersions(
-                Object.fromEntries(
-                  d.records.filter((r) => r.kind === 'contact').map((r) => [r.id, r.version]),
-                ),
-              );
+              setEditorCompany(structuredClone(d.company));
+              setEditorContacts(structuredClone(d.records.filter((r) => r.kind === 'contact')));
               setEditingClient(true);
             })
             .catch((e) => setError(e.message));
@@ -405,7 +402,18 @@ export function ClientRow({
                         key={r.id}
                         label={`контакт «${r.data.name}»`}
                         onDelete={() => deleteRecord(r)}
-                        onEdit={() => setEditingContact(r)}
+                        onEdit={() => {
+                          void read()
+                            .then((latest) => {
+                              const contact = latest.records.find(
+                                (record) => record.id === r.id && record.kind === 'contact',
+                              );
+                              if (!contact)
+                                throw new Error('Контакт больше недоступен. Обновите карточку.');
+                              setEditingContact(structuredClone(contact));
+                            })
+                            .catch((cause) => setError((cause as Error).message));
+                        }}
                       >
                         <div className="cc-contact">
                           <div className="cc-contact-name">
@@ -587,8 +595,8 @@ export function ClientRow({
       {editingClient && (
         <Modal title="Редактирование карточки" onClose={() => setEditingClient(false)}>
           <CompanyForm
-            initial={c}
-            initialContacts={contacts.map((r) => ({
+            initial={editorCompany || c}
+            initialContacts={editorContacts.map((r) => ({
               id: r.id,
               version: r.version,
               name: r.data.name || '',
@@ -599,23 +607,15 @@ export function ClientRow({
             onSave={async ({ initialContacts = [], ...data }) => {
               try {
                 await api(`/companies/${c.id}/editor`, 'PATCH', {
-                  version: editorVersion ?? c.version,
+                  version: (editorCompany || c).version,
                   data,
-                  contacts: initialContacts.map(({ id, version, ...data }) => ({
-                    ...(id ? { id, version: editorContactVersions[id] ?? version } : {}),
-                    data,
-                  })),
+                  contacts: companyContactChanges(initialContacts, editorContacts),
                 });
               } catch (error) {
-                if (error instanceof ApiError && error.status === 409) {
-                  const d = await read();
-                  setEditorVersion(d.company.version);
-                  setEditorContactVersions(
-                    Object.fromEntries(
-                      d.records.filter((r) => r.kind === 'contact').map((r) => [r.id, r.version]),
-                    ),
+                if (error instanceof ApiError && error.status === 409)
+                  throw new Error(
+                    'Карточка или контакты изменились. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
                   );
-                }
                 throw error;
               }
               await changed();
@@ -636,12 +636,10 @@ export function ClientRow({
                   data,
                 });
               } catch (error) {
-                if (error instanceof ApiError && error.status === 409) {
-                  await read();
-                  const fresh = await api<Detail>(`/companies/${c.id}`);
-                  const updated = fresh.records.find((r) => r.id === editingContact.id);
-                  if (updated) setEditingContact(updated);
-                }
+                if (error instanceof ApiError && error.status === 409)
+                  throw new Error(
+                    'Контакт изменился. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+                  );
                 throw error;
               }
               await changed();
