@@ -1,3 +1,4 @@
+import { referenceHoldingKey } from '../../shared/holding-catalog';
 import {
   industryGroups,
   normalizeIndustry,
@@ -58,9 +59,9 @@ const words = (text: string) =>
     text
       .toLocaleLowerCase('ru')
       .replace(/ё/g, 'е')
-    .replace(/дэс/g, 'дгу')
-    .replace(/золот[а-я]*/g, 'золото')
-    .replace(/дизель[ -]генератор[а-я]*(?:\s+установ[а-я]*)?/g, 'дгу')
+      .replace(/дэс/g, 'дгу')
+      .replace(/золот[а-я]*/g, 'золото')
+      .replace(/дизель[ -]генератор[а-я]*(?:\s+установ[а-я]*)?/g, 'дгу')
       .match(/дгу|цод|гок|упп|пч|[а-яa-z0-9]{4,}/g) ?? []
   ).filter((word) => !/^(оборудован|производ|предприят|компани|промышлен)/.test(word));
 const overlap = (a: string, b: string) =>
@@ -98,12 +99,22 @@ export function selectReferences(
     return catalog.indexOf(a) - catalog.indexOf(b);
   };
   const main = eligible.filter((entry) => entry.group === group.id).sort(sort);
-  const selected: SelectedReference[] = main
-    .slice(0, 3)
-    .map((entry) => ({ ...entry, adjacent: false }));
-  if (main.length < 2) {
-    const adjacent = eligible.filter((entry) => entry.group !== group.id).sort(sort)[0];
-    if (adjacent) selected.push({ ...adjacent, adjacent: true });
+  const selected: SelectedReference[] = [];
+  const usedHoldings = new Set<string>();
+  const add = (entry: ReferenceEntry, adjacent: boolean) => {
+    const holding = referenceHoldingKey(entry.name);
+    if (holding && usedHoldings.has(holding)) return false;
+    if (holding) usedHoldings.add(holding);
+    selected.push({ ...entry, adjacent });
+    return true;
+  };
+  for (const entry of main) {
+    add(entry, false);
+    if (selected.length === 3) break;
+  }
+  if (selected.length < 2) {
+    for (const entry of eligible.filter((entry) => entry.group !== group.id).sort(sort))
+      if (add(entry, true)) break;
   }
   // Drop only complete, least-relevant objects; never cut a name, quantity, or factual clause.
   while (selected.length > 1 && renderReferences(selected).length > 420)

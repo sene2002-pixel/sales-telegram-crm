@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   companySchema,
+  companyEditSchema,
   holdingAllocationSchema,
   contactSchema,
   projectSchema,
@@ -46,6 +47,7 @@ const object = (
 const recordKinds = ['contact', 'project', 'task', 'activity', 'file'];
 const namedInput = {
   CompanyInput: companySchema,
+  CompanyEditInput: companyEditSchema,
   HoldingAllocationInput: holdingAllocationSchema,
   CompanyCreateInput: companySchema.extend({
     initialContacts: z.array(contactSchema).max(20).default([]),
@@ -159,6 +161,7 @@ schemas.CompanyDetail = object({
   records: array(ref('Record')),
   audit: array(ref('AuditEvent')),
   holdingMembers: array(ref('Company')),
+  holdingAllocationRequired: boolean,
   holdingPotential: nullable({ type: 'number', minimum: 0 }),
   holdingDivisions: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
 });
@@ -709,6 +712,19 @@ add(
     ),
     description:
       'Полные data с дефолтами валидатора; stale version — 409. Изменение archived дополнительно проверяет архивные полномочия.',
+  },
+);
+add(
+  'patch',
+  '/companies/{id}/editor',
+  'updateCompanyWithContacts',
+  'Атомарно изменить компанию и контакты',
+  'Компании',
+  ref('Company'),
+  {
+    body: jsonBody(ref('CompanyEditInput')),
+    description:
+      'Одна транзакция для компании и переданных контактов. Проверяются актуальные права, принадлежность и версии всех записей; конфликт — 409 без частичного сохранения. Пропущенные контакты не удаляются; служебные сведения контактов сохраняются сервером.',
   },
 );
 add(

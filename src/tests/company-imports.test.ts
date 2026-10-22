@@ -116,13 +116,19 @@ test('company import parses only supplied facts, quoted CSV and labeled Docs wit
 
 test('company import rejects private data, malformed headers, formulas and limits; omits invalid INN with warning', async () => {
   for (const input of [
-    'Название;Телефон\nАльфа;89991234567',
-    'Название;Email\nАльфа;a@example.com',
     'Название;Город\nАльфа;=WEBSERVICE("http://localhost")',
     'Название;Название\nАльфа;Бета',
     'Город\nМосква',
   ])
     await assert.rejects(parseCompanyImport(bytes(input), 'csv', assertImportPrivacy), status(400));
+  for (const input of [
+    'Название;Телефон\nАльфа;89991234567',
+    'Название;Email\nАльфа;a@example.com',
+  ]) {
+    const rows = await parseCompanyImport(bytes(input), 'csv', assertImportPrivacy);
+    assert.equal(rows[0]!.data.name, 'Альфа');
+    assert.equal(rows[0]!.contacts, undefined, 'Do not invent a person from a phone/email alone');
+  }
   const invalidInn = await parseCompanyImport(
     bytes('Название;ИНН\nАльфа;123'),
     'csv',
@@ -276,10 +282,22 @@ test('import preview/confirmation verifies current actor, skips duplicates, owns
   assert.equal(stored[0]!.segment, 'unknown');
   assert.equal(stored[0]!.stage, 'new');
   assert.ok(preview.messages.join('\n').includes('техническую стадию «Новый»'));
-  const cancel = await service.prepare(a, { ...input, sourceKey: 'telegram:2' });
+  const repeatedFile = await service.prepare(a, { ...input, sourceKey: 'telegram:2' });
+  assert.equal(repeatedFile.id, preview.id);
+  assert.ok(repeatedFile.messages.join('\n').includes('уже загружался'));
+  assert.equal((await crm.list(a)).length, 2);
+  const cancel = await service.prepare(a, {
+    ...input,
+    sourceKey: 'telegram:cancel',
+    bytes: bytes('Название\nНовая для отмены'),
+  });
   await service.cancel(a, cancel.id, 1);
   await assert.rejects(service.confirm(a, cancel.id, 1), status(409));
-  const stale = await service.prepare(a, { ...input, sourceKey: 'telegram:3' });
+  const stale = await service.prepare(a, {
+    ...input,
+    sourceKey: 'telegram:3',
+    bytes: bytes('Название\nНовая для проверки отзыва доступа'),
+  });
   await db.query('UPDATE users SET active=false WHERE id=$1', [a.id]);
   await assert.rejects(service.confirm(a, stale.id, 1), status(403));
   await assert.rejects(service.prepare(a, { ...input, sourceKey: 'telegram:4' }), status(403));

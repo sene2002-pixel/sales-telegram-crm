@@ -227,13 +227,22 @@ export function NewDirectionEditor({
     </Modal>
   );
 }
-export type InitialCompanyContact = { name: string; role: string; phone: string; email: string };
+export type InitialCompanyContact = {
+  id?: string;
+  version?: number;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+};
 export function CompanyForm({
   initial,
+  initialContacts,
   onSave,
   holdings = [],
 }: {
   initial?: CompanyData;
+  initialContacts?: InitialCompanyContact[];
   holdings?: Company[];
   onSave: (data: CompanyData & { initialContacts?: InitialCompanyContact[] }) => Promise<void>;
 }) {
@@ -242,9 +251,9 @@ export function CompanyForm({
       ? companySchema.strip().parse(initial)
       : { ...companySchema.parse({ name: 'Новый клиент' }), name: '' },
   );
-  const [contacts, setContacts] = useState<InitialCompanyContact[]>([
-    { name: '', role: '', phone: '', email: '' },
-  ]);
+  const [contacts, setContacts] = useState<InitialCompanyContact[]>(
+    initialContacts?.length ? initialContacts : [{ name: '', role: '', phone: '', email: '' }],
+  );
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -260,7 +269,11 @@ export function CompanyForm({
     ? Object.keys(data.divisions).length
       ? divisionTotal
       : null
-    : (initial?.potential ?? (Object.keys(data.divisions).length ? divisionTotal : null));
+    : initial
+      ? initial.potential
+      : Object.keys(data.divisions).length
+        ? divisionTotal
+        : null;
   const total = savedPotential ?? 0;
   const categoryOptions: readonly string[] =
     initial && !primarySegments.includes(initial.segment as (typeof primarySegments)[number])
@@ -268,7 +281,7 @@ export function CompanyForm({
       : primarySegments;
   const inputError = (key: string) =>
     fieldErrors[key] ? (
-      <span className="error" id={'company-error-' + key}>
+      <span className="error company-field-error" role="alert" id={'company-error-' + key}>
         {fieldErrors[key]}
       </span>
     ) : null;
@@ -276,6 +289,7 @@ export function CompanyForm({
     <form
       ref={formRef}
       className="pico-compact-form company-form"
+      noValidate
       onSubmit={async (e) => {
         e.preventDefault();
         if (busy) return;
@@ -283,17 +297,43 @@ export function CompanyForm({
         setFieldErrors({});
         const parsed = companySchema.safeParse({ ...data, potential: savedPotential });
         const parsedContacts = contacts.map((contact) =>
-          Object.values(contact).some((value) => value.trim())
-            ? contactSchema.safeParse(contact)
+          [contact.name, contact.role, contact.phone, contact.email].some((value) => value.trim())
+            ? contactSchema.safeParse({
+                name: contact.name,
+                role: contact.role,
+                phone: contact.phone,
+                email: contact.email,
+              })
             : null,
         );
         const errors: Record<string, string> = {};
         if (!parsed.success)
-          for (const issue of parsed.error.issues) errors[String(issue.path[0])] = issue.message;
+          for (const issue of parsed.error.issues) {
+            const key = String(issue.path[0]);
+            errors[key] =
+              (
+                {
+                  name: 'Укажите название клиента (до 200 символов)',
+                  inn: 'Введите корректный ИНН из 10 или 12 цифр',
+                  city: 'Город — не более 150 символов',
+                  divisions: 'Введите суммы от 0 до 1 000 000 млн ₽',
+                  potential: 'Общий потенциал не должен превышать 1 000 000 млн ₽',
+                  website: 'Проверьте адрес сайта',
+                } as Record<string, string>
+              )[key] || issue.message;
+          }
         parsedContacts.forEach((result, index) => {
           if (result && !result.success)
             for (const issue of result.error.issues)
-              errors[`contact-${index}-${String(issue.path[0])}`] = issue.message;
+              errors[`contact-${index}-${String(issue.path[0])}`] =
+                (
+                  {
+                    name: 'Укажите ФИО контакта (до 200 символов)',
+                    email: 'Проверьте email контакта',
+                    phone: 'Телефон — не более 100 символов',
+                    role: 'Должность — не более 200 символов',
+                  } as Record<string, string>
+                )[String(issue.path[0])] || issue.message;
         });
         if (Object.keys(errors).length) {
           setFieldErrors(errors);
@@ -310,16 +350,17 @@ export function CompanyForm({
         try {
           await onSave({
             ...parsed.data,
-            ...(!initial
-              ? {
-                  initialContacts: parsedContacts
-                    .filter((result): result is NonNullable<typeof result> => result !== null)
-                    .map((result) => {
-                      if (!result.success) throw new Error('Проверьте контакты');
-                      return result.data;
-                    }),
-                }
-              : {}),
+            initialContacts: parsedContacts.flatMap((result, index) => {
+              if (!result) return [];
+              if (!result.success) throw new Error('Проверьте контакты');
+              const original = contacts[index];
+              return [
+                {
+                  ...result.data,
+                  ...(original?.id ? { id: original.id, version: original.version } : {}),
+                },
+              ];
+            }),
           });
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : 'Не удалось сохранить клиента');
@@ -333,6 +374,7 @@ export function CompanyForm({
           <Field label="ИНН">
             <input
               inputMode="numeric"
+              aria-label="ИНН"
               value={data.inn}
               placeholder="10 или 12 цифр"
               aria-invalid={!!fieldErrors.inn}
@@ -345,6 +387,7 @@ export function CompanyForm({
         <div className="pico-form-two">
           <Field label="Название">
             <input
+              aria-label="Название"
               value={data.name}
               placeholder="ООО «Компания»"
               aria-invalid={!!fieldErrors.name}
@@ -394,7 +437,9 @@ export function CompanyForm({
         <details className="company-form-accordion">
           <summary>
             <span>Потенциал</span>
-            <strong>{millionValue(total)} млн ₽</strong>
+            <strong>
+              {savedPotential === null ? 'Не указан' : `${millionValue(total)} млн ₽`}
+            </strong>
             <Icon name="chevron-down" size={18} />
           </summary>
           <div className="company-equipment">
@@ -414,6 +459,8 @@ export function CompanyForm({
                 <input
                   placeholder="0"
                   aria-label={divisionLabels[division] || labels[division]}
+                  aria-invalid={!!fieldErrors.divisions}
+                  aria-describedby={fieldErrors.divisions ? 'company-error-divisions' : undefined}
                   type="number"
                   inputMode="decimal"
                   min="0"
@@ -434,6 +481,8 @@ export function CompanyForm({
               </label>
             ))}
           </div>
+          {inputError('divisions')}
+          {inputError('potential')}
         </details>
         <details className="company-form-accordion">
           <summary>
@@ -446,6 +495,7 @@ export function CompanyForm({
                 type="text"
                 inputMode="url"
                 placeholder="https://company.ru"
+                aria-label="Сайт"
                 value={data.website || ''}
                 aria-invalid={!!fieldErrors.website}
                 aria-describedby={fieldErrors.website ? 'company-error-website' : undefined}
@@ -453,7 +503,7 @@ export function CompanyForm({
               />
               {inputError('website')}
             </Field>
-            {!initial && (
+            {
               <section className="company-contacts">
                 {contacts.map((contact, index) => (
                   <fieldset key={index}>
@@ -487,17 +537,19 @@ export function CompanyForm({
                         {inputError(`contact-${index}-${key}`)}
                       </Field>
                     ))}
-                    <button
-                      type="button"
-                      className="company-remove-contact"
-                      onClick={() =>
-                        setContacts((current) =>
-                          current.filter((_, entryIndex) => entryIndex !== index),
-                        )
-                      }
-                    >
-                      Удалить контакт
-                    </button>
+                    {!contact.id && (
+                      <button
+                        type="button"
+                        className="company-remove-contact"
+                        onClick={() =>
+                          setContacts((current) =>
+                            current.filter((_, entryIndex) => entryIndex !== index),
+                          )
+                        }
+                      >
+                        Удалить контакт
+                      </button>
+                    )}
                   </fieldset>
                 ))}
                 <button
@@ -515,7 +567,7 @@ export function CompanyForm({
                   Ещё контакт
                 </button>
               </section>
-            )}
+            }
             <Field label="Комментарий">
               <textarea
                 rows={3}
@@ -1121,6 +1173,7 @@ export function RecordForm({
           <div className="pico-form-two">
             <Field label="Город проекта">
               <input
+                aria-label="Город"
                 value={data.city}
                 placeholder="Калининград"
                 onChange={(e) => change('city', e.target.value)}

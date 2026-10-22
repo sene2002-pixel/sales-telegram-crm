@@ -69,12 +69,24 @@ test('Company labels shorten legal forms while search, editing and stored identi
   await card.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();
   await expect(card.getByLabel('Название', { exact: true })).toHaveValue(names[0][1]);
   await card.getByLabel('Город', { exact: true }).fill('Москва');
+  await page.route(`**/api/companies/${company.id}/editor`, (route) =>
+    route.fulfill({ status: 409, json: { message: 'QA company editor conflict' } }),
+  );
+  await card.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+  await expect(card.getByRole('alert')).toHaveText(
+    'Карточка или контакты изменились. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+  );
+  await expect(card.getByLabel('Название', { exact: true })).toHaveValue(names[0][1]);
+  await expect(card.getByLabel('Город', { exact: true })).toHaveValue('Москва');
+  expect((await request(`/companies/${company.id}`)).company.city).not.toBe('Москва');
+  await page.unroute(`**/api/companies/${company.id}/editor`);
   await card.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
   await expect(
     card.getByRole('button', { name: 'Редактировать компанию', exact: true }),
   ).toBeVisible();
   const detail = await request(`/companies/${company.id}`);
   expect(detail.company.name).toBe(names[0][1]);
+  expect(detail.company.city).toBe('Москва');
   await card.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await navigate(page, 'Задачи');
   await page.getByRole('button', { name: 'Добавить задачу', exact: true }).click();

@@ -172,7 +172,12 @@ test('company CRUD persists, rejects stale writes and isolates managers', async 
   await request(server)
     .post('/api/companies')
     .set('Authorization', 'Bearer ' + adminToken)
-    .send({ name: 'Дубликат ИНН', inn: '7707083893' })
+    .send({ name: 'Параллельная карточка другого владельца', inn: '7707083893' })
+    .expect(201);
+  await request(server)
+    .post('/api/companies')
+    .set('Authorization', 'Bearer ' + managerToken)
+    .send({ name: 'Дубликат в своей базе', inn: '7707083893' })
     .expect(409);
   assert.equal((await s.crm.company(manager, id)).name, 'Обновлено');
 });
@@ -449,7 +454,7 @@ test('audio pipeline calls download, transcription and extraction before review'
     {
       transcribe: async (audio) => {
         calls.push('transcribe');
-        assert.equal(audio.length, 3);
+        assert.deepEqual([...audio], [1, 2, 3, 4]);
         return 'Распознанная речь';
       },
     },
@@ -465,7 +470,7 @@ test('audio pipeline calls download, transcription and extraction before review'
       download: async (id) => {
         calls.push('download');
         assert.equal(id, 'audio-id');
-        return new Uint8Array([1, 2, 3]);
+        return new Uint8Array([1, 2, 3, 4]);
       },
     },
     config,
@@ -561,5 +566,5 @@ test('database survives reopening and migrations are repeatable', async () => {
   const companies = await s.crm.list(manager);
   assert.ok(companies.some((c) => c.name === 'Голосовая компания'));
   const versions = await db.query('SELECT version FROM schema_migrations');
-  assert.deepEqual(versions.map((v) => v.version).sort(), [1, 2, 3]);
+  assert.deepEqual(versions.map((v) => v.version).sort(), [1, 2, 3, 4]);
 });

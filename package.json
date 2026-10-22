@@ -10,7 +10,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:server && tsc -p tsconfig.web.json && vite build",
     "start": "node dist/server/main.js",
-    "test": "npm run build:server && node --test dist/tests/*.test.js",
+    "test": "npm run build:server && node --test --test-concurrency=2 dist/tests/*.test.js",
     "check": "npm test && npm run test:ops && npm run build",
     "test:ops": ".venv/bin/python -m unittest discover -s scripts -p 'test_*.py'",
     "test:e2e": "playwright test",

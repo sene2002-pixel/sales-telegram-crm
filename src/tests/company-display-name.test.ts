@@ -70,3 +70,14 @@ test('sales feedback shortens the company heading while preserving project names
   assert.deepEqual(sales, before);
   assert.equal(rawCompany, 'ООО «Энергия»');
 });
+
+test('foreign countries distinguish company labels without changing legal identity', () => {
+  assert.equal(companyDisplayName('ООО «Сервис»', 'Беларусь'), 'Сервис (Беларусь)');
+  assert.equal(companyDisplayName('ООО «Сервис»', 'Россия'), 'Сервис');
+  assert.equal(companyDisplayName('ООО «Сервис»', 'РФ'), 'Сервис');
+  assert.equal(companyDisplayName('ООО «Сервис»', 'RU'), 'Сервис');
+  assert.equal(companyDisplayName('', 'Беларусь'), '');
+  const company = { name: 'ООО «Сервис»', country: 'Беларусь' };
+  companyDisplayName(company.name, company.country);
+  assert.equal(company.name, 'ООО «Сервис»');
+});

@@ -1,4 +1,5 @@
 import { companyDisplayName } from '../shared/company-display-name';
+import { companyContactChanges } from '../shared/company-edit-contacts';
 import { useEffect, useRef, useState } from 'react';
 import {
   Company,
@@ -21,10 +22,12 @@ import { millionValue } from './FormWidgets';
 import { HoldingMembers } from './HoldingMembers';
 import { FileUpload } from './FileUpload';
 import { Icon, industryIcon } from './Icons';
+import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import './client-card.css';
 
 type Detail = CompanyDetail & {
+  holdingAllocationRequired?: boolean;
   holdingMembers?: Company[];
   holdingPotential?: number | null;
   holdingDivisions?: Record<string, number>;
@@ -79,6 +82,10 @@ export function ClientRow({
     [error, setError] = useState(''),
     [score, setScore] = useState<ClientScore | undefined>(providedScore),
     [scoreError, setScoreError] = useState(false),
+    [editingClient, setEditingClient] = useState(false),
+    [editorCompany, setEditorCompany] = useState<Company | null>(null),
+    [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]),
+    [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
     [addingContact, setAddingContact] = useState(false),
     [newEquipment, setNewEquipment] = useState(false),
     [uploading, setUploading] = useState(false),
@@ -111,6 +118,7 @@ export function ClientRow({
     const seq = ++sequence.current;
     const d = await api<Detail>(`/companies/${company.id}`);
     if (seq === sequence.current) setDetail(d);
+    return d;
   }
   async function changed() {
     analyticsRequest = undefined;
@@ -177,20 +185,6 @@ export function ClientRow({
     setDetail((d) => (d ? { ...d, company: saved } : d));
     await changed();
   }
-  async function editRecord(r: CrmRecord, key: string, value: string) {
-    const data = contactSchema.parse({ ...r.data, [key]: value });
-    let saved: CrmRecord;
-    try {
-      saved = await api<CrmRecord>(`/records/${r.id}`, 'PATCH', { version: r.version, data });
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) await read();
-      throw error;
-    }
-    setDetail((d) =>
-      d ? { ...d, records: d.records.map((row) => (row.id === saved.id ? saved : row)) } : d,
-    );
-    await changed();
-  }
   async function deleteRecord(r: CrmRecord) {
     await api(`/${r.kind === 'file' ? 'files' : 'contacts'}/${r.id}`, 'DELETE');
     setDetail((d) => (d ? { ...d, records: d.records.filter((row) => row.id !== r.id) } : d));
@@ -234,7 +228,16 @@ export function ClientRow({
   return (
     <article ref={articleRef} className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
       <SwipeAction
-        label={`клиента «${companyDisplayName(c.name)}» в архив`}
+        label={`клиента «${companyDisplayName(c.name, c.country)}» в архив`}
+        onEdit={() => {
+          void read()
+            .then((d) => {
+              setEditorCompany(structuredClone(d.company));
+              setEditorContacts(structuredClone(d.records.filter((r) => r.kind === 'contact')));
+              setEditingClient(true);
+            })
+            .catch((e) => setError(e.message));
+        }}
         onDelete={
           canArchive
             ? async () => {
@@ -252,7 +255,7 @@ export function ClientRow({
             <Icon name={icon} />
           </span>
           <span className="pico-client-copy">
-            <strong className="pico-two-lines">{companyDisplayName(c.name)}</strong>
+            <strong className="pico-two-lines">{companyDisplayName(c.name, c.country)}</strong>
             <small className="pico-client-metadata">
               <span>{[labels[c.segment], c.city].filter(Boolean).join(' · ')}</span>
               {c.industry && <span>{c.industry}</span>}
@@ -316,8 +319,11 @@ export function ClientRow({
               <>
                 <details className="cc-section" open>
                   <summary>
-                    Потенциал <span>{millionValue(potential || 0)} млн ₽</span>
-                    <Icon name="chevron-down" size={16} />
+                    Потенциал{' '}
+                    <span>
+                      {potential === null ? 'Не указан' : `${millionValue(potential)} млн ₽`}
+                    </span>
+                    <Icon name="chevron-down" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {isHolding ? (
@@ -329,6 +335,12 @@ export function ClientRow({
                             <strong>{millionValue(value)} млн ₽</strong>
                           </div>
                         ))}
+                        {detail.holdingAllocationRequired && (
+                          <p className="cc-allocation-warning" role="status">
+                            У холдинга есть нераспределённый потенциал. Распределите его по
+                            заказчикам, чтобы включить в итог группы.
+                          </p>
+                        )}
                         <HoldingMembers
                           company={c}
                           members={members}
@@ -382,7 +394,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Контакты <span>{contacts.length}</span>
-                    <Icon name="chevron-down" size={16} />
+                    <Icon name="chevron-down" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {contacts.map((r) => (
@@ -390,21 +402,38 @@ export function ClientRow({
                         key={r.id}
                         label={`контакт «${r.data.name}»`}
                         onDelete={() => deleteRecord(r)}
+                        onEdit={() => {
+                          void read()
+                            .then((latest) => {
+                              const contact = latest.records.find(
+                                (record) => record.id === r.id && record.kind === 'contact',
+                              );
+                              if (!contact)
+                                throw new Error('Контакт больше недоступен. Обновите карточку.');
+                              setEditingContact(structuredClone(contact));
+                            })
+                            .catch((cause) => setError((cause as Error).message));
+                        }}
                       >
                         <div className="cc-contact">
-                          {[
-                            ['name', 'ФИО'],
-                            ['role', 'Должность'],
-                            ['phone', 'Телефон'],
-                            ['email', 'E-mail'],
-                          ].map(([key, label]) => (
-                            <InlineValue
-                              key={key}
-                              label={label}
-                              value={r.data[key] || ''}
-                              onSave={(value) => editRecord(r, key, value)}
-                            />
-                          ))}
+                          <div className="cc-contact-name">
+                            <span>ФИО</span>
+                            <strong>{r.data.name}</strong>
+                          </div>
+                          <div className="cc-contact-columns">
+                            <div>
+                              <span>Должность</span>
+                              <span>{r.data.role || 'Не указана'}</span>
+                            </div>
+                            <div>
+                              <span>Телефон</span>
+                              <span>{r.data.phone || 'Не указан'}</span>
+                            </div>
+                          </div>
+                          <div className="cc-contact-email">
+                            <span>E-mail</span>
+                            <span>{r.data.email || 'Не указан'}</span>
+                          </div>
                         </div>
                       </SwipeAction>
                     ))}
@@ -429,7 +458,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Файлы <span>{files.length}</span>
-                    <Icon name="chevron-down" size={16} />
+                    <Icon name="chevron-down" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {files.map((f) => (
@@ -485,7 +514,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Заметки
-                    <Icon name="chevron-down" size={16} />
+                    <Icon name="chevron-down" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     <InlineValue
@@ -499,7 +528,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Данные
-                    <Icon name="chevron-down" size={16} />
+                    <Icon name="chevron-down" size={18} />
                   </summary>
                   <div className="cc-section-body cc-data">
                     {[
@@ -558,22 +587,90 @@ export function ClientRow({
           </div>
         )}
       </SwipeAction>
+      {!open && error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {editingClient && (
+        <Modal title="Редактирование карточки" onClose={() => setEditingClient(false)}>
+          <CompanyForm
+            initial={editorCompany || c}
+            initialContacts={editorContacts.map((r) => ({
+              id: r.id,
+              version: r.version,
+              name: r.data.name || '',
+              role: r.data.role || '',
+              phone: r.data.phone || '',
+              email: r.data.email || '',
+            }))}
+            onSave={async ({ initialContacts = [], ...data }) => {
+              try {
+                await api(`/companies/${c.id}/editor`, 'PATCH', {
+                  version: (editorCompany || c).version,
+                  data,
+                  contacts: companyContactChanges(initialContacts, editorContacts),
+                });
+              } catch (error) {
+                if (error instanceof ApiError && error.status === 409)
+                  throw new Error(
+                    'Карточка или контакты изменились. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+                  );
+                throw error;
+              }
+              await changed();
+              setEditingClient(false);
+            }}
+          />
+        </Modal>
+      )}
+      {editingContact && (
+        <Modal title="Контакт" onClose={() => setEditingContact(null)}>
+          <ContactForm
+            initial={editingContact.data}
+            onCancel={() => setEditingContact(null)}
+            onSave={async (data) => {
+              try {
+                await api(`/records/${editingContact.id}`, 'PATCH', {
+                  version: editingContact.version,
+                  data,
+                });
+              } catch (error) {
+                if (error instanceof ApiError && error.status === 409)
+                  throw new Error(
+                    'Контакт изменился. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+                  );
+                throw error;
+              }
+              await changed();
+              setEditingContact(null);
+            }}
+          />
+        </Modal>
+      )}
     </article>
   );
 }
 function ContactForm({
+  initial,
   onSave,
   onCancel,
 }: {
+  initial?: Record<string, string>;
   onSave: (data: Record<string, string>) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState({ name: '', role: '', phone: '', email: '' }),
+  const [draft, setDraft] = useState({
+      name: initial?.name || '',
+      role: initial?.role || '',
+      phone: initial?.phone || '',
+      email: initial?.email || '',
+    }),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (
     <form
-      className="cc-inline-editor"
+      className={`cc-inline-editor ${initial ? 'cc-contact-form' : ''}`}
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -591,12 +688,13 @@ function ContactForm({
         ['name', 'ФИО'],
         ['role', 'Должность'],
         ['phone', 'Телефон'],
-        ['email', 'Email'],
+        ['email', 'E-mail'],
       ].map(([key, label]) => (
         <label key={key}>
           {label}
           <input
-            aria-label={`Новый контакт · ${label}`}
+            aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
+            type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
             value={draft[key as keyof typeof draft]}
             required={key === 'name'}
             disabled={busy}
@@ -610,7 +708,9 @@ function ContactForm({
         </p>
       )}
       <div className="cc-editor-actions">
-        <button disabled={busy}>Сохранить контакт</button>
+        <button className="primary" disabled={busy}>
+          {initial ? 'Сохранить' : 'Сохранить контакт'}
+        </button>
         <button type="button" disabled={busy} onClick={onCancel}>
           Отмена
         </button>

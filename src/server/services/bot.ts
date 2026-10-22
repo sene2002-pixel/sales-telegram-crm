@@ -204,17 +204,21 @@ export class BotService {
         } else if (action === 'ic') {
           const result = await this.imports.confirm(actor, id || '', Number(version));
           await this.telegram.send(chatId, {
-            text: `Импорт завершён: создано ${result.created.length}, обновлено ${result.updated?.length || 0}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}. Отменить можно в течение 24 часов, если данные не изменены.`,
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: 'Отменить импорт · 24 часа',
-                    callback_data: `iz:${id}:${result.version}`,
-                  },
-                ],
-              ],
-            },
+            text: result.unchanged
+              ? 'Этот файл уже импортирован. Изменений нет.'
+              : `Импорт завершён: создано ${result.created.length}, обновлено ${result.updated?.length || 0}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}. Отменить можно в течение 24 часов, если данные не изменены.`,
+            reply_markup: result.undoUntil
+              ? {
+                  inline_keyboard: [
+                    [
+                      {
+                        text: 'Отменить импорт · 24 часа',
+                        callback_data: `iz:${id}:${result.version}`,
+                      },
+                    ],
+                  ],
+                }
+              : undefined,
           });
         } else await this.imports.cancel(actor, id || '', Number(version));
         await this.telegram.call('answerCallbackQuery', {
@@ -231,12 +235,13 @@ export class BotService {
         return { ok: true };
       }
       if (!callback && msg?.document && this.imports) {
-        const extension = /\.(xlsx|csv|txt|docx)$/i
+        const extension = /\.(xlsx|ods|csv|txt|docx)$/i
           .exec(msg.document.file_name || '')?.[1]
-          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | 'docx' | undefined;
+          ?.toLowerCase() as 'xlsx' | 'ods' | 'csv' | 'txt' | 'docx' | undefined;
         const mimeFormat = (
           {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+            'application/vnd.oasis.opendocument.spreadsheet': 'ods',
             'text/csv': 'csv',
             'text/plain': 'txt',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
@@ -270,7 +275,7 @@ export class BotService {
       }
       const googleDocument =
         msg?.text &&
-        /^(?:импорт(?:ировать)?\s+)?(https:\/\/docs\.google\.com\/document\/[^\s]+)$/i.exec(
+        /^(?:импорт(?:ировать)?\s+)?(https:\/\/(?:docs\.google\.com\/(?:document|spreadsheets)\/|drive\.google\.com\/file\/)[^\s]+)$/i.exec(
           msg.text.trim(),
         );
       if (!callback && googleDocument && this.imports) {

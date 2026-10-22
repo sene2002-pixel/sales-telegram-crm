@@ -542,3 +542,144 @@
   color: #2b3258;
   white-space: pre-wrap;
 }
+/* Actions are deliberately unavailable until a completed horizontal swipe. */
+.cc-swipe {
+  --cc-action-width: 64px;
+}
+.cc-swipe.cc-two-actions {
+  --cc-action-width: 112px;
+}
+.cc-swipe > .cc-trash-track,
+.cc-swipe:hover > .cc-trash-track,
+.cc-swipe:focus-within > .cc-trash-track {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.cc-swipe.cc-revealed > .cc-trash-track {
+  visibility: visible;
+  opacity: 1;
+}
+.cc-swipe > .cc-trash-track > .cc-swipe-actions {
+  position: absolute;
+  right: 0;
+  width: var(--cc-action-width);
+  height: 44px;
+  display: flex;
+  pointer-events: none;
+}
+.cc-swipe.cc-revealed > .cc-trash-track > .cc-swipe-actions {
+  pointer-events: auto;
+}
+.cc-swipe-actions > button.cc-trash,
+.cc-swipe-actions > button.cc-swipe-edit {
+  position: static;
+  width: 64px;
+  min-width: 64px;
+  height: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  outline-offset: -2px;
+  border-radius: 0;
+  padding: 0;
+  color: #6b7390;
+  background: transparent;
+  pointer-events: inherit;
+}
+.cc-two-actions > .cc-trash-track > .cc-swipe-actions > button {
+  width: 56px;
+  min-width: 56px;
+}
+.cc-swipe:has(> .cc-trash-track) > .cc-swipe-content {
+  padding-right: 0;
+}
+.cc-swipe.cc-revealed > .cc-swipe-content {
+  transform: translateX(calc(-1 * var(--cc-action-width)));
+  pointer-events: none;
+}
+.cc-section {
+  border-top-color: #eef2f8 !important;
+}
+.cc-section > summary > svg {
+  color: #7a8299;
+}
+.cc-contact {
+  border-radius: 14px;
+}
+.cc-contact > .cc-contact-name,
+.cc-contact > .cc-contact-email,
+.cc-contact-columns > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 4px 12px 5px;
+  overflow-wrap: anywhere;
+}
+.cc-contact > div + div {
+  border-top: 1px solid #eef2f8;
+}
+.cc-contact-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cc-contact-columns > div + div {
+  border-left: 1px solid #eef2f8;
+}
+.cc-contact-name > span:first-child,
+.cc-contact-email > span:first-child,
+.cc-contact-columns > div > span:first-child {
+  font-size: 10.5px;
+  line-height: 14px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.cc-contact-name > strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+.cc-contact-columns > div > span:last-child,
+.cc-contact-email > span:last-child {
+  font-size: 13px;
+  font-weight: 600;
+}
+.modal:has(> .cc-contact-form) {
+  border-radius: 28px 28px 0 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.modal:has(> .cc-contact-form) > .section-head h2 {
+  font-size: 20px;
+  font-weight: 800;
+}
+.cc-contact-form.cc-inline-editor {
+  background: white;
+  padding: 12px 0 0;
+  gap: 12px;
+}
+.cc-contact-form label {
+  color: #2b3258;
+  font-size: 14px;
+  font-weight: 800;
+}
+.cc-contact-form input {
+  height: 40px;
+  min-height: 40px;
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+}
+.cc-contact-form .cc-editor-actions > .primary {
+  flex: 1;
+  height: 48px;
+  border-radius: 14px;
+  background: #1f7aea;
+}
+.cc-swipe.cc-single-edit {
+  --cc-action-width: 56px;
+}
+.cc-single-edit > .cc-trash-track > .cc-swipe-actions > button {
+  width: 56px;
+  min-width: 56px;
+}

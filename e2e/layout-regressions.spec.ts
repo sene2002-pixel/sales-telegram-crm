@@ -63,9 +63,9 @@ for (const width of [360, 390, 1440]) {
     } else {
       const brand = page.locator('.brand-mark:visible').first();
       await expect(brand).toHaveAttribute('src', /\/assets\/pico-avatar-[^/]+\.png$/);
-      expect(
-        await brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0),
-      ).toBeTruthy();
+      await expect
+        .poll(() => brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0))
+        .toBeTruthy();
     }
     await page.screenshot({ path: info.outputPath(`home-${width}.png`), animations: 'disabled' });
     await crown.click();

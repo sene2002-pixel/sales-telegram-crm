@@ -376,6 +376,13 @@ class CrmController {
   ) {
     return this.s.crm.allocateHolding(r.actor, id, body);
   }
+  @Patch('companies/:id/editor') updateEditor(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.s.crm.updateWithContacts(r.actor, id, b);
+  }
   @Patch('companies/:id') update(
     @Req() r: AuthedRequest,
     @Param('id') id: string,
@@ -455,8 +462,17 @@ class CrmController {
     const report = await this.s.reports.get(r.actor, id);
     return {
       ...mapReport(report),
-      candidates: report.draft ? await this.s.reports.candidates(r.actor, report.draft) : [],
-      feedback: report.draft ? await this.s.reports.feedback(r.actor, report.draft) : '',
+      candidates: report.draft
+        ? await this.s.reports.candidates(
+            r.actor,
+            report.draft,
+            this.s.reports.db,
+            report.author_id,
+          )
+        : [],
+      feedback: report.draft
+        ? await this.s.reports.feedback(r.actor, report.draft, this.s.reports.db, report.author_id)
+        : '',
     };
   }
   @Post('reports') enqueue(@Req() r: AuthedRequest, @Body() b: unknown) {

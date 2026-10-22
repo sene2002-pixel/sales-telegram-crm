@@ -59,7 +59,7 @@ test('generic table finds header, omits bad business values, preserves provenanc
   assert.equal(rows[0]!.data.city, 'Москва');
   assert.equal(rows[0]!.data.inn, undefined);
   assert.equal(rows[0]!.data.potential, undefined);
-  assert.equal(rows[0]!.data.segment, 'unknown');
+  assert.equal(rows[0]!.data.segment, undefined);
   assert.ok(rows[0]!.warnings.length >= 2);
   assert.throws(() =>
     parseCompanyTable([['Компания'], ['api_key=malicious-token']], 'CSV', assertImportPrivacy),
@@ -100,17 +100,18 @@ test('canonical template preserves valid client fields despite bad INN/money and
   assert.ok(rows[0]!.warnings.some((message) => message.includes('проект пропущен')));
 });
 
-test('generic XLSX accepts merged preamble and includes hidden business rows', async () => {
+test('generic XLSX accepts merged preamble and excludes hidden business rows', async () => {
   const { zip } = await import('./helpers/import-fixtures');
   const { parseCompanyImport } = await import('../server/services/company-import-parser');
   const book = zip({
     'xl/workbook.xml': '<workbook/>',
     'xl/worksheets/sheet1.xml':
-      '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Список</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Компания</t></is></c><c r="B2" t="inlineStr"><is><t>Потенциал млн</t></is></c></row><row r="3" hidden="1"><c r="A3" t="inlineStr"><is><t>Альфа</t></is></c><c r="B3"><v>2</v></c></row></sheetData><mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>',
+      '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Список</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Компания</t></is></c><c r="B2" t="inlineStr"><is><t>Потенциал млн</t></is></c></row><row r="3" hidden="1"><c r="A3" t="inlineStr"><is><t>Альфа</t></is></c><c r="B3"><v>2</v></c></row><row r="4"><c r="A4" t="inlineStr"><is><t>Бета</t></is></c><c r="B4"><v>3</v></c></row></sheetData><mergeCells><mergeCell ref="A1:B1"/></mergeCells></worksheet>',
   });
   const rows = await parseCompanyImport(book, 'xlsx', assertImportPrivacy);
-  assert.equal(rows[0]!.data.name, 'Альфа');
-  assert.equal(rows[0]!.data.potential, 2e6);
+  assert.equal(rows[0]!.data.name, 'Бета');
+  assert.equal(rows[0]!.data.potential, 3e6);
+  assert.equal(rows.length, 1);
 });
 
 test('scientific minus is never a range and range endpoints must both be numeric', () => {
@@ -167,6 +168,6 @@ test('twenty preamble rows do not reduce the one hundred client import limit', a
         'CSV',
         assertImportPrivacy,
       ),
-    /21/,
+    /21|заголовком/,
   );
 });

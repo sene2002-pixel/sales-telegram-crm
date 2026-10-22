@@ -105,13 +105,32 @@ export function SwipeAction({
   children,
   label,
   onDelete,
+  onEdit,
   disabled = false,
 }: {
   children: ReactNode;
   label: string;
   onDelete?: () => Promise<void>;
+  onEdit?: () => void;
   disabled?: boolean;
 }) {
+  const suppressClick = useRef(false);
+  const mouseStart = useRef<{ x: number; y: number } | null>(null);
+  const revealGesture = (
+    origin: { x: number; y: number },
+    point: { clientX: number; clientY: number },
+  ) => {
+    if (disabled || !(onDelete || onEdit)) return;
+    const dx = point.clientX - origin.x,
+      dy = point.clientY - origin.y;
+    if (Math.abs(dy) < 35 && Math.abs(dx) > Math.max(50, Math.abs(dy) * 2)) {
+      setRevealed(dx < 0);
+      suppressClick.current = true;
+      window.setTimeout(() => {
+        suppressClick.current = false;
+      }, 350);
+    }
+  };
   const start = useRef<{ x: number; y: number; cancelled?: boolean } | null>(null);
   const [revealed, setRevealed] = useState(false),
     [confirm, setConfirm] = useState(false),
@@ -129,6 +148,9 @@ export function SwipeAction({
       const viewport = window.visualViewport;
       let visibleTop = viewport?.offsetTop || 0;
       let visibleBottom = visibleTop + (viewport?.height || window.innerHeight);
+      const navigation = document.querySelector('.pico-bottom-nav')?.getBoundingClientRect();
+      if (navigation && navigation.height > 0 && navigation.top > visibleTop)
+        visibleBottom = Math.min(visibleBottom, navigation.top);
       // Intersect the real scroll viewport as well as the browser viewport.
       for (let parent = element.parentElement; parent; parent = parent.parentElement) {
         if (/(auto|scroll|hidden)/.test(getComputedStyle(parent).overflowY)) {
@@ -169,13 +191,74 @@ export function SwipeAction({
   return (
     <div
       ref={swipeRef}
-      className={`cc-swipe ${revealed ? 'cc-revealed' : ''}`}
+      tabIndex={onEdit || onDelete ? 0 : undefined}
+      role="group"
+      aria-label={`Действия: ${label}`}
+      onKeyDown={(e) => {
+        if ((e.target as Element).closest('input,textarea,select,[contenteditable="true"]')) return;
+        if (e.key === 'ArrowLeft' && !disabled && (onEdit || onDelete)) {
+          e.preventDefault();
+          e.stopPropagation();
+          setRevealed(true);
+        }
+        if (e.key === 'ArrowRight' || e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setRevealed(false);
+        }
+      }}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button === 0) {
+          e.stopPropagation();
+          mouseStart.current = { x: e.clientX, y: e.clientY };
+        }
+      }}
+      onPointerMove={(e) => {
+        const origin = mouseStart.current;
+        if (
+          e.pointerType === 'mouse' &&
+          origin &&
+          Math.abs(e.clientX - origin.x) > 12 &&
+          Math.abs(e.clientX - origin.x) > Math.abs(e.clientY - origin.y)
+        ) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          e.preventDefault();
+        }
+      }}
+      onPointerUp={(e) => {
+        if (e.pointerType === 'mouse' && mouseStart.current) {
+          e.stopPropagation();
+          revealGesture(mouseStart.current, e);
+          mouseStart.current = null;
+          if (e.currentTarget.hasPointerCapture(e.pointerId))
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      }}
+      onPointerCancel={() => {
+        mouseStart.current = null;
+      }}
+      className={`cc-swipe ${onEdit && onDelete ? 'cc-two-actions' : onEdit ? 'cc-single-edit' : ''} ${revealed ? 'cc-revealed' : ''}`}
+      onClickCapture={(e) => {
+        if (suppressClick.current && !(e.target as Element).closest('.cc-trash-track')) {
+          e.preventDefault();
+          e.stopPropagation();
+          suppressClick.current = false;
+        }
+      }}
       onTouchStart={(e) => {
         e.stopPropagation();
+        if (e.touches.length !== 1) {
+          start.current = null;
+          return;
+        }
         const t = e.touches[0];
         start.current = { x: t.clientX, y: t.clientY };
       }}
       onTouchMove={(e) => {
+        if (e.touches.length !== 1) {
+          start.current = null;
+          return;
+        }
         const origin = start.current,
           point = e.touches[0];
         if (
@@ -192,33 +275,49 @@ export function SwipeAction({
         e.stopPropagation();
         const s = start.current,
           t = e.changedTouches[0];
-        if (
-          s &&
-          !s.cancelled &&
-          onDelete &&
-          Math.abs(t.clientY - s.y) < 35 &&
-          Math.abs(t.clientX - s.x) > Math.max(50, Math.abs(t.clientY - s.y) * 2)
-        )
-          setRevealed(t.clientX < s.x);
+        if (s && !s.cancelled && t) revealGesture(s, t);
         start.current = null;
       }}
     >
       <div className="cc-swipe-content">{children}</div>
-      {onDelete && (
-        <div className="cc-trash-track">
-          <button
-            type="button"
-            className="cc-trash"
-            style={{ top: revealed ? trashTop : 0 }}
-            aria-label={`Удалить ${label}`}
-            disabled={disabled || busy}
-            onClick={() => {
-              setConfirm(true);
-              setRevealed(true);
-            }}
-          >
-            <Icon name="trash" size={22} />
-          </button>
+      {(onDelete || onEdit) && (
+        <div className="cc-trash-track" aria-hidden={!revealed}>
+          <div className="cc-swipe-actions" style={{ top: revealed ? trashTop : 0 }}>
+            {onEdit && (
+              <button
+                type="button"
+                className="cc-swipe-edit"
+                aria-label={`Редактировать ${label}`}
+                tabIndex={revealed ? 0 : -1}
+                disabled={disabled || busy}
+                onClick={() => {
+                  if (!revealed) return;
+                  suppressClick.current = false;
+                  setRevealed(false);
+                  onEdit();
+                }}
+              >
+                <Icon name="edit" size={22} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                className="cc-trash"
+                aria-label={`Удалить ${label}`}
+                tabIndex={revealed ? 0 : -1}
+                disabled={disabled || busy}
+                onClick={() => {
+                  if (revealed) {
+                    suppressClick.current = false;
+                    setConfirm(true);
+                  }
+                }}
+              >
+                <Icon name="trash" size={22} />
+              </button>
+            )}
+          </div>
         </div>
       )}
       {confirm && (

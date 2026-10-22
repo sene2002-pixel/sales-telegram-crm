@@ -29,7 +29,7 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
     )
     .sort();
   assert.deepEqual(actual, declared);
-  assert.equal(actual.length, 55);
+  assert.equal(actual.length, 56);
   const ids = Object.values(document.paths).flatMap((methods: any) =>
     Object.values(methods).map((operation: any) => operation.operationId),
   );
@@ -323,6 +323,21 @@ test('real createApp docs integration guards fresh roles and documented public w
     .set('Authorization', `Bearer ${manager.token}`)
     .expect(200);
   assertWire(document.components.schemas.CompanyDetail, detail.body);
+  const editor = await request(server)
+    .patch(`/api/companies/${own.body.id}/editor`)
+    .set('Authorization', `Bearer ${manager.token}`)
+    .send({
+      version: own.body.version,
+      data: companySchema.strip().parse({ ...own.body, name: 'Атомарное редактирование QA' }),
+      contacts: [{ data: { name: 'Контакт QA', extension: '42' } }],
+    })
+    .expect(200);
+  assertWire(document.components.schemas.Company, editor.body);
+  assert.equal(editor.body.name, 'Атомарное редактирование QA');
+  await request(server)
+    .patch(`/api/companies/${own.body.id}/editor`)
+    .send({ version: editor.body.version, data: { name: 'Unauthorized' }, contacts: [] })
+    .expect(401);
   const analytics = await request(server)
     .get('/api/analytics?from=2026-01-01&to=2026-12-31&mode=all')
     .set('Authorization', `Bearer ${manager.token}`)

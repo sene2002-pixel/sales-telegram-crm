@@ -92,7 +92,16 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
   await expect(card.locator('.cc-equipment')).toContainText('1.5');
   await expect(card.locator('.cc-equipment')).toContainText('млн ₽');
   const removeEquipment = card.getByRole('button', { name: /Удалить оборудование/ });
-  await removeEquipment.focus();
+  const equipmentCell = card
+    .locator('.cc-swipe')
+    .filter({ has: page.locator('.cc-equipment') })
+    .last();
+  await equipmentCell.dispatchEvent('touchstart', {
+    touches: [{ identifier: 0, clientX: 300, clientY: 300 }],
+  });
+  await equipmentCell.dispatchEvent('touchend', {
+    changedTouches: [{ identifier: 0, clientX: 100, clientY: 300 }],
+  });
   await removeEquipment.click();
   await expect(card.getByRole('alertdialog')).toBeVisible();
   expect(company.potential).toBe(1500000);

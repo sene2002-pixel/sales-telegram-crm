@@ -103,6 +103,8 @@ export const companySchema = z
     holdingId: idSchema.nullable().optional(),
     legalForm: z.string().trim().max(50).optional(),
     registrationCity: z.string().trim().max(150).optional(),
+    country: z.string().trim().max(150).optional(),
+    region: z.string().trim().max(150).optional(),
     okved: z.string().trim().max(50).optional(),
     alternativeNames: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
     sites: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
@@ -154,6 +156,27 @@ export const contactSchema = z
       .regex(/^\d{1,20}$/)
       .optional(),
     email: z.union([z.literal(''), z.email()]).default(''),
+  })
+  .strict();
+export const companyEditSchema = z
+  .object({
+    version: z.number().int().positive(),
+    data: companySchema,
+    contacts: z
+      .array(
+        z
+          .object({
+            id: idSchema.optional(),
+            version: z.number().int().positive().optional(),
+            data: contactSchema,
+          })
+          .strict()
+          .refine(
+            (value) => Boolean(value.id) === (value.version !== undefined),
+            'Для существующего контакта нужна версия',
+          ),
+      )
+      .max(20),
   })
   .strict();
 export const taskTypes = ['meeting', 'call', 'email', 'reminder'] as const;
