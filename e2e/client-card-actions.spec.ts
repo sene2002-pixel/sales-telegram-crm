@@ -72,15 +72,16 @@ for (const { width, role } of [
       if (p === '/api/companies') return r.fulfill({ json: [company] });
       if (p.endsWith('/editor')) {
         const body = r.request().postDataJSON();
-        expect(body.contacts[0].id).toBe(contact.id);
+        expect(body.contacts).toEqual([]);
         if (editorConflict) {
           editorConflict = false;
           company = { ...company, version: 2 };
           contact = { ...contact, version: 2 };
           return r.fulfill({ status: 409, json: { message: 'QA company conflict' } });
         }
+        if (body.version !== company.version)
+          return r.fulfill({ status: 409, json: { message: 'QA company conflict' } });
         expect(body.version).toBe(2);
-        expect(body.contacts[0].version).toBe(2);
         company = { ...company, ...body.data, version: 2 };
         saved++;
         return r.fulfill({ json: company });
@@ -145,11 +146,21 @@ for (const { width, role } of [
     await expect(sheet.getByRole('textbox', { name: 'Контакт', exact: true })).toHaveValue(
       'QA Person',
     );
+    await sheet.getByRole('textbox', { name: 'Город', exact: true }).fill('Казань');
     await sheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
-    await expect(sheet.getByRole('alert')).toContainText('QA company conflict');
+    await expect(sheet.getByRole('alert')).toContainText('Карточка или контакты изменились');
     await expect(sheet.getByRole('textbox', { name: 'Название', exact: true })).toHaveValue(
       'QA Swipe',
     );
+    await expect(sheet.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Казань');
+    await sheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+    await expect(sheet.getByRole('alert')).toContainText('Карточка или контакты изменились');
+    expect(saved).toBe(0);
+    await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await swipe(page, outer);
+    await edit.click();
+    await expect(sheet.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Москва');
+    await sheet.getByRole('textbox', { name: 'Город', exact: true }).fill('Казань');
     await sheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
     await expect(sheet).toBeHidden();
     expect(saved).toBe(1);
