@@ -41,6 +41,8 @@ test('industry choice requires owner, valid choice and fresh confirmation; missi
         city: 'Москва',
         industry: '',
         activity: 'Производство вентиляционного оборудования',
+        summary:
+          'Компания производит электроэнергию. Сведения о конкретных площадках не подтверждены.',
       },
       recipient: { name: 'Иванов Иван Иванович', role: 'Директор' },
       sources: ['https://example.com'],

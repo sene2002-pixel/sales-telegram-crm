@@ -111,6 +111,8 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
       city: 'Москва',
       industry: 'Энергетика — генерация',
       activity: 'Генерация электроэнергии',
+      summary:
+        'Компания производит электроэнергию. Сведения о конкретных площадках не подтверждены.',
     },
     recipient: { name: 'Иванов Иван Иванович', role: 'Генеральный директор' },
     sources,
@@ -479,6 +481,9 @@ test('default signatures, durable letter queue, sources and PDF delivery', async
         );
         const [company] = await db.query('SELECT * FROM companies');
         assert.equal(company.data.industry, 'Энергетика — генерация');
+        assert.equal(company.data.notes, research.company.summary);
+        assert.ok(!company.data.notes.includes('https://'));
+        assert.ok(preview.research.sources.includes(sources[0]));
         const warning = 'В базе нет референсов по отрасли тест, нужен ручной подбор';
         await db.query(
           "UPDATE audit SET details=details || $2::jsonb WHERE action='letter.references_selected' AND entity_id=$1",
@@ -595,4 +600,30 @@ test('PDF adapter uploads PDF bytes to the employee chat only', async (t) => {
     telegram.sendPdf('12345', Buffer.from('not pdf'), 'letter.pdf'),
     /Некорректный PDF/,
   );
+});
+
+test('company research summary rejects URL dumps and oversized text', () => {
+  const base = {
+    status: 'found',
+    company: {
+      name: 'Компания',
+      inn: '7707083893',
+      city: 'Москва',
+      industry: 'Энергетика',
+      activity: 'Генерация',
+      summary: 'Производит электроэнергию.',
+    },
+    recipient: null,
+    sources: ['https://example.com/company'],
+  };
+  assert.ok(recipientResearchSchema.safeParse(base).success);
+  for (const summary of [
+    'https://example.com/company',
+    'Подробнее www.example.com',
+    'я'.repeat(1201),
+  ])
+    assert.equal(
+      recipientResearchSchema.safeParse({ ...base, company: { ...base.company, summary } }).success,
+      false,
+    );
 });
