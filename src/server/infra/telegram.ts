@@ -64,10 +64,19 @@ export class TelegramAdapter implements Messenger {
   ) {}
   async call(method: string, payload: unknown): Promise<any> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
+    const wirePayload = redactSystemPayload(payload, this.config);
+    // Telegram requires the configured credential verbatim for webhook authentication.
+    if (
+      method === 'setWebhook' &&
+      this.config.webhookSecret &&
+      (payload as { secret_token?: unknown } | null)?.secret_token === this.config.webhookSecret
+    ) {
+      wirePayload.secret_token = this.config.webhookSecret;
+    }
     const response = await fetch(`https://api.telegram.org/bot${this.config.botToken}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(redactSystemPayload(payload, this.config)),
+      body: JSON.stringify(wirePayload),
       signal: AbortSignal.timeout(25_000),
     });
     const result: any = await response.json().catch(() => null);
@@ -164,6 +173,37 @@ export class TelegramAdapter implements Messenger {
     }
     const result = await this.call('sendMessage', { chat_id: chatId, ...payload });
     return result?.message_id as number | undefined;
+  }
+  async sendImportTemplate(chatId: string, content: Uint8Array, caption: string) {
+    requireCondition(this.config.botToken, 503, 'Бот не настроен');
+    requireCondition(
+      content.length > 0 && content.length <= 2 * 1024 * 1024,
+      500,
+      'Шаблон импорта недоступен',
+    );
+    requireCondition(caption.length <= 1024, 500, 'Инструкция к шаблону слишком длинная');
+    const body = new FormData();
+    body.append('chat_id', chatId);
+    body.append(
+      'document',
+      new Blob([new Uint8Array(content)], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      'Pico-import.xlsx',
+    );
+    body.append('caption', caption);
+    const response = await fetch(
+      `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
+      {
+        method: 'POST',
+        body,
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    requireCondition(response.ok, 502, 'Не удалось отправить шаблон. Попробуйте ещё раз');
+    const result: any = await response.json().catch(() => null);
+    requireCondition(result?.ok, 502, 'Telegram отклонил отправку шаблона. Попробуйте ещё раз');
+    return result.result?.message_id as number | undefined;
   }
   async sendDocument(chatId: string, content: string, filename: string) {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');

@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { importTemplateCaption } from '../server/services/import-onboarding';
+import { parseCompanyImport, assertImportPrivacy } from '../server/services/company-import-parser';
 import https from 'node:https';
 import { EventEmitter } from 'node:events';
 import {
@@ -250,7 +253,7 @@ test('Bot Google document import rejects unexpected URL query before DNS or remo
 
 test('Bot accepts the Pico workbook and DOCX upload with linked contacts/projects only after confirmation', async () => {
   input = picoTemplate({ clients: [syntheticClient()], projects: [syntheticProject()] });
-  await webhook(document(actor, { file_name: 'Pico-shablon-perenosa-klientov.xlsx' })).expect(201);
+  await webhook(document(actor, { file_name: 'Pico-import.xlsx' })).expect(201);
   assert.equal((await rows('records')).length, 0);
   await webhook(callback(confirmData())).expect(201);
   assert.equal((await rows('companies')).length, 1);
@@ -322,4 +325,97 @@ test('Bot Google Docs link parses real table structure; webhook retry reuses dra
   await webhook(callback(confirmData())).expect(201);
   assert.equal((await rows('companies')).length, 1);
   assert.equal((await rows('records')).filter((r: any) => r.kind === 'contact').length, 1);
+});
+
+test('Start offers import; its button sends the packaged workbook and creates no CRM data', async (t) => {
+  const sent: { chatId: string; bytes: Uint8Array; caption: string }[] = [];
+  t.mock.method(
+    (services.bot as any).telegram,
+    'sendImportTemplate',
+    async (chatId: string, bytes: Uint8Array, caption: string) => {
+      sent.push({ chatId, bytes, caption });
+      return 123;
+    },
+  );
+  const id = ++sequence;
+  await webhook({
+    update_id: id,
+    message: {
+      message_id: id,
+      date: Math.floor(Date.now() / 1000),
+      from: { id: Number(actor.telegramId), first_name: actor.name },
+      chat: { id: Number(actor.telegramId), type: 'private' },
+      text: '/start',
+    },
+  }).expect(201);
+  const greeting = replies.find((r) =>
+    r.payload.reply_markup?.inline_keyboard?.some((row: any[]) =>
+      row.some((b: any) => b.callback_data === 'import:template'),
+    ),
+  );
+  assert.ok(greeting, 'Import button must survive dynamic CRM-menu fallback');
+  const action = greeting.payload.reply_markup.inline_keyboard
+    .flat()
+    .find((b: any) => b.callback_data === 'import:template');
+  assert.equal(action.text, 'Импортировать компании');
+  await webhook(callback('import:template')).expect(201);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.chatId, actor.telegramId);
+  assert.equal(
+    createHash('sha256').update(sent[0]!.bytes).digest('hex'),
+    'a3be274a67d0cc8fbd445d65787b8b81ce1c799c77f4fbd7d931ce8cd11a8136',
+  );
+  assert.equal(sent[0]!.caption, importTemplateCaption);
+  assert.ok(sent[0]!.caption.length <= 1024);
+  for (const phrase of [
+    'Предзаполненные строки — пример',
+    'в одной ячейке «Контакты»',
+    'с новой строки внутри этой ячейки',
+    'не импортируются',
+    'млн ₽',
+    'Подтвердить импорт',
+  ])
+    assert.ok(sent[0]!.caption.includes(phrase), phrase);
+  await assert.rejects(
+    parseCompanyImport(sent[0]!.bytes, 'xlsx', assertImportPrivacy),
+    /Шаблон не заполнен/,
+  );
+  for (const table of ['companies', 'records', 'reports', 'company_imports'])
+    assert.equal((await rows(table)).length, 0, table);
+  assert.ok(replies.some((r) => r.method === 'answerCallbackQuery'));
+});
+
+test('Template callback refuses blocked users, unauthenticated webhooks, groups and mismatched recipients', async (t) => {
+  let sends = 0;
+  t.mock.method((services.bot as any).telegram, 'sendImportTemplate', async () => {
+    sends++;
+  });
+  await webhook(callback('import:template'), false).expect(401);
+  const group = callback('import:template');
+  group.callback_query.message.chat.type = 'group';
+  await webhook(group).expect(201);
+  const mismatch = callback('import:template');
+  mismatch.callback_query.message.chat.id = Number(foreign.telegramId);
+  await webhook(mismatch).expect(201);
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actor.id]);
+  await webhook(callback('import:template')).expect(201);
+  assert.equal(sends, 0);
+  assert.ok(replies.some((r) => /Доступ не выдан/.test(r.payload.text || '')));
+});
+
+test('Template delivery failure is explained safely and a later button press can retry', async (t) => {
+  let fail = true,
+    sends = 0;
+  t.mock.method((services.bot as any).telegram, 'sendImportTemplate', async () => {
+    sends++;
+    if (fail) throw new Error('internal /private/path synthetic-secret');
+  });
+  await webhook(callback('import:template')).expect(201);
+  const error = replies.find((r) => /Не удалось отправить шаблон/.test(r.payload.text || ''));
+  assert.ok(error);
+  assert.doesNotMatch(error.payload.text, /private|synthetic-secret/);
+  fail = false;
+  await webhook(callback('import:template')).expect(201);
+  assert.equal(sends, 2);
+  assert.equal((await rows('companies')).length, 0);
 });

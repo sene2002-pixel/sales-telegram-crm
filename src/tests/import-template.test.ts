@@ -32,7 +32,7 @@ test('Pico template skips demonstration and empty formatted rows; recalculates t
   assert.equal(row.source, 'Клиенты · строка 5');
   assert.equal(row.data.potential, 6_000_000);
   assert.equal(row.data.divisions!.cells, 0);
-  assert.ok(row.data.notes!.includes('АСУ ТП: 3000000'));
+  assert.equal(row.data.divisions!.automation_cabinets, 3_000_000);
   assert.equal(row.contacts!.length, 1);
   assert.equal(row.projects![0]!.data.amount, 7_000_000);
   assert.equal(row.projects![0]!.data.due, null);
@@ -41,7 +41,7 @@ test('Pico template skips demonstration and empty formatted rows; recalculates t
   assert.equal(row.projects![0]!.data.stage, 'new');
 });
 
-test('Pico template rejects modified formulas/merges, ambiguous contacts, unresolved parents and invalid amounts', async () => {
+test('Pico template rejects malicious structure and contacts, preserves clients while omitting unresolved projects and invalid money', async () => {
   await assert.rejects(
     parse(
       picoTemplate({ clients: [syntheticClient()], formula: 'WEBSERVICE("http://localhost")' }),
@@ -54,22 +54,34 @@ test('Pico template rejects modified formulas/merges, ambiguous contacts, unreso
   );
   const c = syntheticClient();
   c[14] = 'Тестовый Контакт, инженер, отдел, +79990000001, a@example.test';
-  await assert.rejects(parse(picoTemplate({ clients: [c] })), /Контакты:/);
+  const flexible = await parse(picoTemplate({ clients: [c] }));
+  assert.equal(flexible[0]!.contacts![0]!.name, 'Тестовый Контакт');
+  assert.equal(flexible[0]!.contacts![0]!.role, 'инженер, отдел');
+  assert.equal(flexible[0]!.contacts![0]!.phone, '+79990000001');
+  assert.equal(flexible[0]!.contacts![0]!.email, 'a@example.test');
   const project = syntheticProject();
   project[1] = '1234567894';
-  await assert.rejects(
-    parse(picoTemplate({ clients: [syntheticClient()], projects: [project] })),
-    /тем же ИНН/,
+  const unresolved = await parse(
+    picoTemplate({ clients: [syntheticClient()], projects: [project] }),
   );
+  assert.equal(unresolved.length, 1);
+  assert.equal(unresolved[0]!.data.inn, '7707083893');
+  assert.equal(unresolved[0]!.data.name, 'Тестовая компания');
+  assert.equal(unresolved[0]!.projects!.length, 0);
+  assert.ok(unresolved[0]!.warnings.some((w) => w.includes('проект пропущен')));
   const negative = syntheticClient();
   negative[4] = '-1';
-  await assert.rejects(parse(picoTemplate({ clients: [negative] })), /сумма должна/);
+  const invalidMoney = await parse(picoTemplate({ clients: [negative] }));
+  assert.equal(invalidMoney.length, 1);
+  assert.equal(invalidMoney[0]!.data.divisions!.lv, undefined);
+  assert.equal(invalidMoney[0]!.data.potential, 5_000_000);
+  assert.ok(invalidMoney[0]!.warnings.some((w) => w.includes('некорректная сумма')));
   const secret = syntheticClient();
   secret[15] = 'password: forbidden';
-  await assert.rejects(
-    parse(picoTemplate({ clients: [secret] })),
-    /без личных контактов и секретов/,
-  );
+  const sanitized = await parse(picoTemplate({ clients: [secret] }));
+  assert.equal(sanitized[0]!.data.name, 'Тестовая компания');
+  assert.ok(!JSON.stringify(sanitized).includes('forbidden'));
+  assert.ok(!JSON.stringify(sanitized).includes('password'));
 });
 
 test('Google Docs structured tables and labeled paragraphs preserve company and business contact fields locally', async () => {
@@ -157,7 +169,7 @@ test('Template confirmation creates a complete graph once, skips foreign duplica
   assert.ok(records.every((r) => r.company_id === result.created[0] && r.author_id === actor.id));
   assert.equal(records.find((r) => r.kind === 'contact').contact_source, 'user');
   const dupe = await service.prepare(other, { ...input, sourceKey: 'template:2' });
-  assert.equal(dupe.rows[0]!.disposition, 'skip_duplicate');
+  assert.equal(dupe.rows[0]!.disposition, 'foreign');
   const skipped = await service.confirm(other, dupe.id, 1);
   assert.equal(skipped.created.length, 0);
   assert.equal((await db.query('SELECT * FROM records')).length, 2);
@@ -216,10 +228,16 @@ test('Customer name/INN conflict and omitted DOCX grid columns cannot create wro
   const project = syntheticProject();
   project[3] = 'Заказчик Б';
   project[4] = '1234567894';
-  await assert.rejects(
-    parse(picoTemplate({ clients: [syntheticClient(), customer], projects: [project] })),
-    /название заказчика не совпадает/,
+  const conflict = await parse(
+    picoTemplate({ clients: [syntheticClient(), customer], projects: [project] }),
   );
+  assert.equal(conflict.length, 2);
+  const supplier = conflict.find((c) => c.data.inn === '7707083893')!;
+  assert.equal(supplier.projects!.length, 1);
+  assert.equal(supplier.projects![0]!.customerInn, undefined);
+  assert.deepEqual(supplier.projects![0]!.data.participants, []);
+  assert.equal(conflict.find((c) => c.data.inn === '1234567894')!.data.name, 'Заказчик А');
+  assert.ok(supplier.warnings.some((w) => w.includes('ссылка заказчика пропущена')));
   const table = docTable([['Название компании', 'Город'], ['Казань']]);
   for (const tag of ['gridBefore', 'gridAfter'])
     await assert.rejects(
@@ -236,6 +254,6 @@ test('Customer name/INN conflict and omitted DOCX grid columns cannot create wro
       ),
       'csv',
     ),
-    /нет названия/,
+    /нет названия|компаний с заголовком/,
   );
 });

@@ -34,6 +34,7 @@ import {
   ScreenGuide,
 } from './Screens';
 import './styles.css';
+import picoAvatar from '../../public/brand/pico-avatar.png';
 import { configureViewport, TelegramViewport } from './viewport';
 declare global {
   interface Window {
@@ -88,7 +89,32 @@ function App() {
     [clientSort, setClientSort] = useState('name'),
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
-    [taskView, setTaskView] = useState<'open' | 'overdue'>('open');
+    [clientRevealVersion, setClientRevealVersion] = useState(0),
+    [taskView, setTaskView] = useState<'open' | 'overdue' | 'today' | 'meetings'>('open');
+  const [creationHoldings, setCreationHoldings] = useState<Company[]>([]);
+  const [holdingsError, setHoldingsError] = useState('');
+  useEffect(() => {
+    setCreationHoldings([]);
+    setHoldingsError('');
+    if (!create || !user) return;
+    let active = true;
+    api<Company[]>('/companies')
+      .then((items) => {
+        if (active)
+          setCreationHoldings(
+            items.filter((c) => c.ownerId === user.id && c.segment === 'holding' && !c.archived),
+          );
+      })
+      .catch(() => {
+        if (active)
+          setHoldingsError(
+            'Не удалось загрузить холдинги. Закройте и откройте форму, чтобы повторить загрузку.',
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [create, user?.id, user?.role]);
   const [employeeId, setEmployeeId] = useState(''),
     [employeeOptions, setEmployeeOptions] = useState<EmployeeFilterOption[]>([]),
     [employeeError, setEmployeeError] = useState(''),
@@ -344,6 +370,43 @@ function App() {
       setTab('home');
     }
   }, [user?.role, tab]);
+  useEffect(() => {
+    if (!user || tab !== 'home') return;
+    document.documentElement.classList.add('pico-home-active');
+    window.scrollTo(0, 0);
+    const telegram = window.Telegram?.WebApp;
+    let ownsSwipeLock = false;
+    try {
+      if (
+        telegram?.isVerticalSwipesEnabled !== false &&
+        telegram?.disableVerticalSwipes &&
+        (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('7.7'))
+      ) {
+        telegram.disableVerticalSwipes();
+        ownsSwipeLock = true;
+      }
+    } catch {
+      /* Older Telegram clients retain the browser gesture fallback. */
+    }
+    const preventHomeDrag = (event: TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[role="dialog"], .pico-more-menu, aside'))
+        return;
+      if (event.cancelable) event.preventDefault();
+    };
+    document.addEventListener('touchmove', preventHomeDrag, { passive: false });
+    return () => {
+      document.documentElement.classList.remove('pico-home-active');
+      if (ownsSwipeLock) {
+        try {
+          telegram?.enableVerticalSwipes?.();
+        } catch {
+          /* Unsupported native capability. */
+        }
+      }
+      document.removeEventListener('touchmove', preventHomeDrag);
+    };
+  }, [user, tab]);
   async function login(role?: string) {
     setError('');
     setLoading(true);
@@ -406,7 +469,7 @@ function App() {
       <main className="login">
         <img
           className="brand-mark"
-          src="/brand/pico-avatar.png"
+          src={picoAvatar}
           alt="Pico — AI-помощник"
           width="112"
           height="112"
@@ -484,7 +547,7 @@ function App() {
       (clientStatus === 'all' ||
         (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
       (!query ||
-        `${c.name} ${companyDisplayName(c.name)} ${c.inn} ${contacts
+        `${c.name} ${companyDisplayName(c.name)} ${(c.alternativeNames || []).join(' ')} ${c.inn} ${contacts
           .filter((contact) => contact.companyId === c.id)
           .map((contact) => `${contact.data.name} ${contact.data.phone} ${contact.data.email}`)
           .join(' ')}`
@@ -500,7 +563,7 @@ function App() {
     >
       <aside>
         <div className="logo">
-          <img className="brand-mark" src="/brand/pico-avatar.png" alt="" width="40" height="40" />
+          <img className="brand-mark" src={picoAvatar} alt="" width="40" height="40" />
           <strong>Pico</strong>
           <span className="beta">CRM</span>
         </div>
@@ -537,22 +600,13 @@ function App() {
             <strong>{user.name}</strong>
             <small>{labels[user.role]}</small>
           </div>
-          <button title="Выйти" onClick={logout}>
-            ↗
-          </button>
         </div>
       </aside>
       <main className={`workspace ${tab === 'home' ? 'pico-home-workspace' : ''}`}>
         <header>
           <div className="header-leading">
             <div className="mobile-brand" aria-label="Pico CRM">
-              <img
-                className="brand-mark"
-                src="/brand/pico-avatar.png"
-                alt=""
-                width="28"
-                height="28"
-              />
+              <img className="brand-mark" src={picoAvatar} alt="" width="28" height="28" />
               <strong>Pico Bot</strong>
             </div>
             <button className="text-button" onClick={() => setHelp(true)}>
@@ -607,7 +661,6 @@ function App() {
                   Настройки аналитики
                 </button>
               )}
-              <button onClick={logout}>Выйти</button>
             </div>
           )}
           <div className="connection-state">
@@ -626,7 +679,12 @@ function App() {
             <div className="pico-home-greeting">
               <div className="pico-home-welcome">
                 <h1 aria-label={`Привет, ${user.name.split(' ')[0]}!`}>
-                  Привет, {user.name.split(' ')[0]}!
+                  <span
+                    className="pico-home-greeting-text"
+                    title={`Привет, ${user.name.split(' ')[0]}!`}
+                  >
+                    Привет, {user.name.split(' ')[0]}!
+                  </span>
                   {user.role === 'admin' && (
                     <>
                       {' '}
@@ -696,7 +754,12 @@ function App() {
               <HomeScreen
                 {...screenProps}
                 user={user}
-                onNavigate={setTab}
+                onNavigate={(next) => {
+                  if (next === 'tasks' || next === 'calendar') {
+                    setTaskView(next === 'calendar' ? 'meetings' : 'today');
+                    setTab('tasks');
+                  } else setTab(next);
+                }}
                 onOverdue={() => {
                   setTaskView('overdue');
                   setTab('tasks');
@@ -823,7 +886,24 @@ function App() {
                       <ClientRow
                         key={c.id}
                         company={c}
-                        canArchive={user.role === 'admin' || (user.role === 'supervisor' && (c.ownerId === user.id || users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))}
+                        actorRole={user.role}
+                        revealVersion={clientRevealVersion}
+                        onReveal={(id) => {
+                          setQuery('');
+                          setCity('');
+                          setSegment('');
+                          setDivision('');
+                          setClientStatus('all');
+                          setCreatedClientId(id);
+                          setClientRevealVersion((version) => version + 1);
+                        }}
+                        holdingMembers={
+                          c.segment === 'holding'
+                            ? companies.filter(
+                                (child) => child.holdingId === c.id && !child.archived,
+                              )
+                            : undefined
+                        }
                         onOpen={openCompany}
                         onChanged={refresh}
                         initiallyOpen={c.id === createdClientId}
@@ -988,7 +1068,13 @@ function App() {
               Новые клиенты создаются на ваше имя. Фильтр не меняет ответственного.
             </p>
           )}
+          {holdingsError && (
+            <p role="alert" className="error">
+              {holdingsError}
+            </p>
+          )}
           <CompanyForm
+            holdings={creationHoldings}
             onSave={async (data) => {
               const saveGeneration = scopeGeneration.current;
               const c = await api<Company>('/companies', 'POST', data);

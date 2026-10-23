@@ -86,28 +86,55 @@ export const companySchema = z
       .trim()
       .refine((v) => !v || validInn(v), 'Некорректный ИНН')
       .default(''),
-    city: z.string().trim().max(150).default(''),
-    segment: z.enum(segments).default('end_client'),
-    industry: z.string().trim().max(150).default(''),
     website: z
       .string()
       .trim()
-      .max(2048)
-      .refine((value) => {
-        if (!value) return true;
+      .max(2000)
+      .refine((v) => {
+        if (!v) return true;
         try {
-          return ['http:', 'https:'].includes(new URL(value).protocol);
+          const u = new URL(v);
+          return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password;
         } catch {
           return false;
         }
-      }, 'Укажите адрес сайта с http:// или https://')
-      .default(''),
+      }, 'Нужен адрес сайта http(s)')
+      .optional(),
+    holdingId: idSchema.nullable().optional(),
+    legalForm: z.string().trim().max(50).optional(),
+    registrationCity: z.string().trim().max(150).optional(),
+    country: z.string().trim().max(150).optional(),
+    region: z.string().trim().max(150).optional(),
+    okved: z.string().trim().max(50).optional(),
+    alternativeNames: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
+    sites: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
+    city: z.string().trim().max(150).default(''),
+    segment: z.enum(segments).default('end_client'),
+    industry: z.string().trim().max(150).default(''),
     stage: z.enum(stages).default('new'),
     archived: z.boolean().default(false),
     revenue: money.nullable().default(null),
     potential: money.nullable().default(null),
     divisions: z.partialRecord(z.enum(divisions), money).default({}),
     notes: text.default(''),
+  })
+  .strict();
+export const holdingAllocationSchema = z
+  .object({
+    version: z.number().int().positive(),
+    allocations: z
+      .array(
+        z
+          .object({
+            companyId: idSchema,
+            version: z.number().int().positive(),
+            potential: money.nullable(),
+            divisions: z.partialRecord(z.enum(divisions), money),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
   })
   .strict();
 export type CompanyData = z.infer<typeof companySchema>;
@@ -124,7 +151,32 @@ export const contactSchema = z
     name,
     role: z.string().max(200).default(''),
     phone: z.string().max(100).default(''),
+    extension: z
+      .string()
+      .regex(/^\d{1,20}$/)
+      .optional(),
     email: z.union([z.literal(''), z.email()]).default(''),
+  })
+  .strict();
+export const companyEditSchema = z
+  .object({
+    version: z.number().int().positive(),
+    data: companySchema,
+    contacts: z
+      .array(
+        z
+          .object({
+            id: idSchema.optional(),
+            version: z.number().int().positive().optional(),
+            data: contactSchema,
+          })
+          .strict()
+          .refine(
+            (value) => Boolean(value.id) === (value.version !== undefined),
+            'Для существующего контакта нужна версия',
+          ),
+      )
+      .max(20),
   })
   .strict();
 export const taskTypes = ['meeting', 'call', 'email', 'reminder'] as const;
@@ -274,7 +326,6 @@ export interface Report {
   attempts: number;
 }
 export interface CompanyDetail {
-  clientScore?: import('./analytics').ClientScore | null;
   company: Company;
   records: CrmRecord[];
   audit: any[];

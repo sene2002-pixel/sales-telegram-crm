@@ -4,6 +4,7 @@ COPY package*.json ./
 RUN npm ci
 COPY tsconfig*.json vite.config.mts index.html ./
 COPY src ./src
+COPY public ./public
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
@@ -14,6 +15,7 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node assets/esq ./assets/esq
+COPY --chown=node:node assets/import ./assets/import
 RUN mkdir /app/data && chown node:node /app/data
 USER node
 EXPOSE 3000

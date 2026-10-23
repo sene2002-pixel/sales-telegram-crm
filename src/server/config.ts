@@ -5,7 +5,7 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
   const production = env.NODE_ENV === 'production';
   const config = {
     production,
-    apiDocsEnabled: env.API_DOCS_ENABLED === 'true',
+    apiDocsEnabled: env.API_DOCS_ENABLED !== 'false',
     apiUserLimit: Number(env.API_RATE_LIMIT_PER_USER || 3000),
     apiIpLimit: Number(env.API_RATE_LIMIT_PER_IP || 6000),
     port: Number(env.PORT || 3000),
@@ -19,6 +19,10 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminTelegramId: env.BOOTSTRAP_ADMIN_TELEGRAM_ID || '',
     apiKey: env.OPENAI_API_KEY || '',
+    sabyAccessToken: env.SABY_ACCESS_TOKEN || '',
+    sabyClientId: env.SABY_CLIENT_ID || '',
+    sabyClientSecret: env.SABY_CLIENT_SECRET || '',
+    sabyServiceKey: env.SABY_SERVICE_KEY || '',
     transcriptionModel: env.TRANSCRIPTION_MODEL || 'gpt-transcribe',
     extractionModel: env.EXTRACTION_MODEL || 'gpt-6-luna',
     letterModel: env.LETTER_MODEL || 'gpt-6-luna',

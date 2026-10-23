@@ -1,5 +1,5 @@
 // Presentation only: keep the original legal name for storage, editing and documents.
-export function companyDisplayName(name: string | null | undefined): string {
+export function companyDisplayName(name: string | null | undefined, country?: string): string {
   const original = name?.trim() || '';
   const forms =
     '(?:общество\\s+с\\s+ограниченной\\s+ответственностью|(?:публичное|непубличное|открытое|закрытое)\\s+акционерное\\s+общество|акционерное\\s+общество|ООО|ПАО|ОАО|ЗАО|НАО|АО|ИП)';
@@ -17,5 +17,8 @@ export function companyDisplayName(name: string | null | undefined): string {
       }
     }
   }
-  return value || original;
+  const label = value || original;
+  return label && country?.trim() && !/^(?:россия|рф|ru|russia)$/iu.test(country.trim())
+    ? `${label} (${country.trim()})`
+    : label;
 }

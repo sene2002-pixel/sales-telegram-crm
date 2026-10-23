@@ -1,3 +1,4 @@
+import { expireSession } from './helpers';
 import { expect, test, Page } from '@playwright/test';
 import { navigate, prepareDemoAuth } from './helpers';
 
@@ -133,8 +134,8 @@ test('Analytics uses all-period eight-point data, four comparisons and truthful 
   await expect(page.locator('.pico-analytics-limits')).toContainText(
     'Не всю историю можно подтвердить',
   );
-  await expect(page.locator('.pico-analytics-limits')).toContainText(
-    'Контакты с неизвестным источником: 3',
+  await expect(page.locator('.pico-analytics-final')).not.toContainText(
+    'Контакты с неизвестным источником',
   );
   await expect(page.locator('.pico-metric-delta')).toHaveText(
     Array(4).fill('Нет данных для сравнения'),
@@ -177,8 +178,7 @@ test('Analytics settings are versioned, reload on conflict and never expose admi
     { revision: 1, taskDays: 30, meetingMonths: 3, projectMonths: 1 },
     { revision: 2, taskDays: 365, meetingMonths: 3, projectMonths: 1 },
   ]);
-  await page.getByRole('button', { name: 'Дополнительное меню' }).click();
-  await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+  await expireSession(page);
   await page.getByRole('button', { name: 'Менеджер', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
   await page.getByRole('button', { name: 'Дополнительное меню' }).click();
@@ -224,7 +224,7 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
   await navigate(page, 'Аналитика');
   await expect(page.locator('.telegram-native-header')).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  for (const width of [360, 390, 1440]) {
+  for (const width of [320, 360, 390, 1440]) {
     if (width === 1440 && info.project.name === 'mobile') {
       // A portrait tablet with a keyboard-height WebView, matching the other
       // responsive tests; actual landscape rejection has separate coverage.
@@ -253,8 +253,14 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
       if (Math.abs(heading.y - period.y) < 20)
         expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
     }
-    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS('width', '150px');
-    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS('height', '146px');
+    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS(
+      'width',
+      width === 320 ? '138px' : '150px',
+    );
+    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS(
+      'height',
+      width === 320 ? '134.312px' : '146px',
+    );
     expect(
       await page
         .locator('.pico-score-scale > div')
@@ -268,6 +274,13 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,
     );
+    if (width === 390) {
+      const menu = (await page.locator('.pico-bottom-nav').boundingBox())!;
+      const lastMetric = (await page.locator('.pico-client-metric').last().boundingBox())!;
+      const equipment = (await page.locator('.pico-client-equipment').boundingBox())!;
+      expect(lastMetric.y + lastMetric.height).toBeLessThanOrEqual(menu.y - 6);
+      expect(equipment.y).toBeGreaterThanOrEqual(menu.y);
+    }
     await page.screenshot({
       path: info.outputPath(`analytics-native-${width}.png`),
       animations: 'disabled',
@@ -343,7 +356,7 @@ test('Analytics preserves compact white rows, equal empty/populated indentation 
     'rgba(0, 0, 0, 0)',
   );
   await expect(page.locator('.pico-score-explanation')).toHaveCSS('padding', '0px');
-  await expect(page.locator('.pico-score-explanation summary')).toHaveCSS('height', '44px');
+  await expect(page.locator('.pico-score-explanation summary')).toHaveCSS('height', '18px');
   await filled.locator('summary').click();
   await empty.locator('summary').click();
   await expect(filled.locator('summary')).toHaveCSS('height', '44px');
@@ -403,9 +416,162 @@ test('Analytics declines client/project counts and describes incomplete history 
       'Не всю историю можно подтвердить. Для таких данных сравнения недоступны.',
     );
     await expect(page.locator('.pico-analytics-limits')).not.toContainText('999');
-    await expect(page.locator('.pico-analytics-limits')).toContainText(
-      `Контакты с неизвестным источником: ${number}.`,
+    await expect(page.locator('.pico-analytics-final')).not.toContainText(
+      'Контакты с неизвестным источником',
     );
     await navigate(page, 'Главная');
   }
 });
+
+async function levelFixture(page: Page, count: number) {
+  const companies = Array.from({ length: count }, (_, i) => ({
+    id: `level-company-${i}`,
+    name: `Клиент ${String(i + 1).padStart(3, '0')}`,
+    city: 'Москва',
+    industry: '',
+    segment: 'end_client',
+    stage: 'new',
+    potential: i ? 1000000 : null,
+    divisions: {},
+    inn: String(7700000000 + i),
+    notes: '',
+    archived: false,
+    ownerId: 'qa',
+    ownerName: 'Менеджер',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+  await page.route('**/api/companies*', (r) =>
+    r.request().method() === 'GET' ? r.fulfill({ json: companies }) : r.fallback(),
+  );
+  let denied = false;
+  await page.route('**/api/analytics?*', (r) => {
+    if (denied) return r.fulfill({ status: 403, json: { message: 'Доступ к уровню отозван' } });
+    const data = response('all');
+    data.clientAnalytics.clients = companies.map((c) => ({ id: c.id, level: 'new' })) as any;
+    data.clientAnalytics.clientFunnel[0].count = count;
+    return r.fulfill({ json: data });
+  });
+  await login(page);
+  await navigate(page, 'Аналитика');
+  await page.locator('.pico-levels > summary').click();
+  const level = page.locator('.pico-level').first();
+  await level.locator('summary').click();
+  return {
+    level,
+    deny: () => {
+      denied = true;
+    },
+  };
+}
+for (const count of [3, 4, 100]) {
+  test(`Level with ${count} clients expands on the analytics page and collapses`, async ({
+    page,
+  }, info) => {
+    const { level } = await levelFixture(page, count);
+    await expect(level.locator('li')).toHaveCount(3);
+    if (count === 3) {
+      await expect(level.getByRole('button')).toHaveCount(0);
+    } else {
+      const showAll = level.getByRole('button', { name: `Показать всех, ${count}` });
+      await expect(showAll).toHaveCSS('min-height', '44px');
+      await expect(showAll).toHaveCSS('border-width', '0px');
+      await expect(showAll).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await expect(showAll.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+      await page.screenshot({
+        path: info.outputPath(`show-all-${count}.png`),
+        animations: 'disabled',
+      });
+      await showAll.click();
+      await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
+      await expect(level.locator('li')).toHaveCount(count);
+      await expect(level).not.toContainText('Показаны');
+      await expect(level.getByRole('button')).toHaveCount(0);
+      await level.locator('summary').click();
+      await expect(level.locator('ul')).not.toBeVisible();
+      await level.locator('summary').click();
+      await expect(level.locator('ul')).toBeVisible();
+      await expect(level.locator('li')).toHaveCount(count);
+    }
+    await expect(page.locator('.pico-level-empty')).toHaveCount(4);
+  });
+}
+test('Large level caps the inline list at 100, searches beyond the cap and clears on scope rejection', async ({
+  page,
+}, info) => {
+  const { level, deny } = await levelFixture(page, 121);
+  await expect(level.locator('summary strong')).toHaveText('121');
+  await expect(level.locator('li')).toHaveCount(3);
+  await expect(level.locator('li strong').first()).toHaveText('—');
+  await level.getByRole('button', { name: 'Показать до 100' }).click();
+  await expect(level.locator('li')).toHaveCount(100);
+  await expect(level).not.toContainText('Показаны');
+  await expect(level.getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
+  const search = level.getByRole('searchbox', { name: 'Поиск клиентов уровня «Новый»' });
+  await search.fill('  кЛиЕнТ 121  ');
+  await expect(level.locator('li')).toHaveCount(1);
+  await expect(level.locator('li')).toContainText('Клиент 121');
+  await search.fill('7700000120');
+  await expect(level.locator('li')).toHaveCount(1);
+  await search.fill('несуществующий');
+  await expect(level.locator('li')).toHaveCount(0);
+  await expect(level).toContainText('Клиенты не найдены');
+  await search.fill('');
+  await expect(level.locator('li')).toHaveCount(100);
+  await page.screenshot({
+    path: info.outputPath('inline-level-clients.png'),
+    animations: 'disabled',
+  });
+  await level.locator('summary').click();
+  await expect(level.locator('ul')).not.toBeVisible();
+  await level.locator('summary').click();
+  await expect(level.locator('li')).toHaveCount(100);
+  await expect(search).toHaveValue('');
+  await page.getByRole('button', { name: 'Период аналитики' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Период', exact: true });
+  await dialog.getByRole('radio', { name: /^30 дней/ }).click();
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(page.locator('.pico-levels')).not.toHaveAttribute('open');
+  await expect(page.locator('.pico-level-client-list li')).toHaveCount(3);
+  deny();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('alert')).toContainText('Доступ к уровню отозван');
+  await expect(page.locator('.pico-levels')).toHaveCount(0);
+});
+
+for (const count of [6, 121]) {
+  test(`Desktop wheel scrolls the page over a level with ${count} clients`, async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== 'desktop', 'Desktop wheel regression');
+    const { level } = await levelFixture(page, count);
+    await level
+      .getByRole('button', { name: count > 100 ? 'Показать до 100' : `Показать всех, ${count}` })
+      .click();
+    const list = level.locator('ul');
+    const first = list.locator('li').first();
+    await first.scrollIntoViewIfNeeded();
+    const box = (await first.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const top = await page.evaluate(() => document.scrollingElement!.scrollTop);
+    await page.mouse.wheel(0, 240);
+    await expect
+      .poll(() => page.evaluate(() => document.scrollingElement!.scrollTop))
+      .toBeGreaterThan(top);
+    expect(
+      await list.evaluate((el) => ({
+        top: el.scrollTop,
+        height: el.clientHeight,
+        fullHeight: el.scrollHeight,
+      })),
+    ).toEqual({
+      top: 0,
+      height: await list.evaluate((el) => el.scrollHeight),
+      fullHeight: await list.evaluate((el) => el.scrollHeight),
+    });
+    await page.locator('.pico-client-equipment').scrollIntoViewIfNeeded();
+    await expect(page.locator('.pico-client-equipment h2')).toBeVisible();
+  });
+}

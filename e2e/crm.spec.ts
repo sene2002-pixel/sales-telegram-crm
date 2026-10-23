@@ -3,7 +3,12 @@ import { prepareDemoAuth, saveNewClientAndOpen } from './helpers';
 import { clients, navigate, openCompany } from './helpers';
 import { test, expect } from '@playwright/test';
 
-test.beforeEach(async ({ page }) => prepareDemoAuth(page));
+test.beforeEach(async ({ page }) => {
+  await prepareDemoAuth(page);
+  await page.route('https://telegram.org/js/telegram-web-app.js*', (route) =>
+    route.fulfill({ contentType: 'application/javascript', body: '' }),
+  );
+});
 test('manager creates a company and task, then data survives reload', async ({
   page,
 }, testInfo) => {
@@ -16,8 +21,12 @@ test('manager creates a company and task, then data survives reload', async ({
   const name = 'Электрострой ' + testInfo.project.name + ' ' + Date.now();
   await page.getByLabel('Название', { exact: true }).fill(name);
   await page.getByLabel('Город', { exact: true }).fill('Казань');
-  await page.getByText('Дополнительные поля', { exact: true }).click();
-  await page.getByLabel('Потенциал, ₽', { exact: true }).fill('3000000');
+  await page
+    .getByRole('dialog')
+    .locator('.company-form-accordion > summary')
+    .filter({ hasText: /^Потенциал/ })
+    .click();
+  await page.getByLabel('Выключатели 0,4 кВ', { exact: true }).fill('3');
   await saveNewClientAndOpen(page);
   await expect(page.getByRole('dialog')).toContainText(name);
   await page.getByRole('dialog').getByRole('button', { name: 'Задачи', exact: true }).click();

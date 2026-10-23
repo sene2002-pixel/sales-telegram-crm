@@ -1,703 +1,797 @@
 import { companyDisplayName } from '../shared/company-display-name';
-import { ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { companyContactChanges } from '../shared/company-edit-contacts';
+import { useEffect, useRef, useState } from 'react';
 import {
   Company,
   CompanyData,
-  companySchema,
-  CompanyDetail as Detail,
-  labels,
-  divisions,
-  divisionLabels,
+  CompanyDetail,
   CrmRecord,
+  Role,
+  companySchema,
+  contactSchema,
+  labels,
+  segments,
+  divisions,
+  primaryDivisions,
+  primarySegments,
+  divisionLabels,
 } from '../shared/contracts';
-import { companyPotential } from '../shared/analytics';
-import { api, download, compactMoney, fullMoney } from './api';
-import { CompanyForm, Modal, RecordForm, NewDirectionEditor } from './forms';
-import { fromMillions, millionValue } from './FormWidgets';
+import { AnalyticsSummary, ClientScore } from '../shared/analytics';
+import { api, ApiError, download, money, compactMoney, fullMoney, today, token } from './api';
+import { millionValue } from './FormWidgets';
+import { HoldingMembers } from './HoldingMembers';
+import { FileUpload } from './FileUpload';
 import { Icon, industryIcon } from './Icons';
-import { SwipeRow } from './SwipeRow';
+import { CompanyForm, Modal } from './forms';
+import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import './client-card.css';
 
+type Detail = CompanyDetail & {
+  holdingAllocationRequired?: boolean;
+  holdingMembers?: Company[];
+  holdingPotential?: number | null;
+  holdingDivisions?: Record<string, number>;
+};
 const levels = [
-  ['new', 'Новый', '#6B78E8', 1],
-  ['acquaintance', 'Знакомство', '#78A9F0', 2],
-  ['development', 'Развитие', '#6CC3E6', 3],
-  ['partner', 'Партнёр', '#5FCDB8', 2],
-  ['ours', 'Наш клиент', '#22A86B', 1],
-] as const;
-function Section({
-  title,
-  value,
-  children,
-  className = '',
-}: {
-  title: string;
-  value?: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  const id = useId(),
-    [open, setOpen] = useState(false);
-  return (
-    <section className={'client-card-section ' + className}>
-      <button
-        className="client-section-heading"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen(!open)}
-      >
-        <span>{title}</span>
-        <strong>{value}</strong>
-        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} />
-      </button>
-      <div id={id} hidden={!open} className="client-section-body">
-        {children}
-      </div>
-    </section>
-  );
-}
-function Amount({
-  value,
-  label,
-  onSave,
-}: {
-  value: number;
-  label: string;
-  onSave: (amount: number) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false),
-    [draft, setDraft] = useState(millionValue(value)),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
-  const saveSnapshot = useRef(onSave);
-  async function save() {
-    const n = fromMillions(draft.trim().replace(',', '.'));
-    if (n == null || !Number.isFinite(n) || n < 0 || n > 1e12) {
-      setError('Укажите сумму от 0 до 1 000 000 млн ₽');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await saveSnapshot.current(n);
-      setEditing(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  ['new', 'Новый', '#6B78E8'],
+  ['acquaintance', 'Знакомство', '#78A9F0'],
+  ['development', 'Развитие', '#6CC3E6'],
+  ['partner', 'Партнёр', '#5FCDB8'],
+  ['ours', 'Наш клиент', '#22A86B'],
+];
+let analyticsRequest: Promise<AnalyticsSummary> | undefined;
+let analyticsSession = '';
+function loadScores() {
+  if (analyticsSession !== token) {
+    analyticsRequest = undefined;
+    analyticsSession = token;
   }
-  return (
-    <div className="client-inline-amount">
-      {editing ? (
-        <>
-          <input
-            aria-label={'Сумма: ' + label}
-            inputMode="decimal"
-            autoFocus
-            value={draft}
-            disabled={busy}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                void save();
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                setEditing(false);
-                setError('');
-              }
-            }}
-          />
-          <button
-            type="button"
-            disabled={busy}
-            aria-label={'Сохранить сумму: ' + label}
-            onClick={() => void save()}
-          >
-            <Icon name="check" size={16} />
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            aria-label={'Отменить сумму: ' + label}
-            onClick={() => {
-              setEditing(false);
-              setError('');
-            }}
-          >
-            <Icon name="close" size={16} />
-          </button>
-        </>
-      ) : (
-        <button
-          type="button"
-          className="client-amount-value"
-          aria-label={'Изменить сумму: ' + label}
-          onClick={() => {
-            setDraft(millionValue(value));
-            saveSnapshot.current = onSave;
-            setEditing(true);
-          }}
-        >
-          {millionValue(value)}
-        </button>
-      )}
-      <small>млн ₽</small>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-    </div>
-  );
+  if (analyticsRequest) return analyticsRequest;
+  const request = api<AnalyticsSummary>(`/analytics?mode=all&from=${today()}&to=${today()}`);
+  analyticsRequest = request;
+  const clear = () => {
+    if (analyticsRequest === request) analyticsRequest = undefined;
+  };
+  void request.then(clear, clear);
+  return request;
 }
 export function ClientRow({
   company,
   onOpen,
   onChanged,
   initiallyOpen = false,
-  canArchive = false,
+  score: providedScore,
+  actorRole,
+  holdingMembers,
+  onReveal,
+  revealVersion,
 }: {
   company: Company;
   initiallyOpen?: boolean;
-  canArchive?: boolean;
   onChanged: () => Promise<void>;
   onOpen: (c: Company, tab?: string) => void;
+  score?: ClientScore;
+  actorRole?: Role;
+  holdingMembers?: Company[];
+  onReveal?: (id: string) => void;
+  revealVersion?: number;
 }) {
   const [open, setOpen] = useState(initiallyOpen),
     [detail, setDetail] = useState<Detail | null>(null),
-    [error, setError] = useState(''),
     [loading, setLoading] = useState(false),
-    [contact, setContact] = useState<CrmRecord | 'new' | null>(null),
-    [editing, setEditing] = useState<Company | null>(null),
-    [busy, setBusy] = useState(false),
-    [newDirection, setNewDirection] = useState<Company | null>(null),
-    [notesOpen, setNotesOpen] = useState<Company | null>(null),
-    [notes, setNotes] = useState(''),
-    [remove, setRemove] = useState<{ label: string; run: () => Promise<void> } | null>(null);
-  const readSequence = useRef(0);
-  const currentCompany =
-    detail && detail.company.version >= company.version ? detail.company : company;
-  const contacts = detail?.records.filter((r) => r.kind === 'contact') || [],
-    files = detail?.records.filter((r) => r.kind === 'file') || [];
-  const score = detail?.clientScore,
-    levelIndex = levels.findIndex((l) => l[0] === score?.level);
-  const [icon, color] = industryIcon(currentCompany.industry, currentCompany.segment);
-  async function refreshDetail() {
-    const sequence = ++readSequence.current;
-    const fresh = await api<Detail>(`/companies/${company.id}`);
-    if (sequence === readSequence.current) setDetail(fresh);
-    await onChanged();
+    [error, setError] = useState(''),
+    [score, setScore] = useState<ClientScore | undefined>(providedScore),
+    [scoreError, setScoreError] = useState(false),
+    [editingClient, setEditingClient] = useState(false),
+    [editorCompany, setEditorCompany] = useState<Company | null>(null),
+    [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]),
+    [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
+    [addingContact, setAddingContact] = useState(false),
+    [newEquipment, setNewEquipment] = useState<Company | null>(null),
+    [uploading, setUploading] = useState(false),
+    [uploadFile, setUploadFile] = useState<File | null>(null),
+    [fileError, setFileError] = useState('');
+  const articleRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (initiallyOpen) {
+      setOpen(true);
+      requestAnimationFrame(() => articleRef.current?.scrollIntoView({ block: 'nearest' }));
+    }
+  }, [initiallyOpen, revealVersion]);
+  const sequence = useRef(0);
+  const c = detail && detail.company.version >= company.version ? detail.company : company;
+  const isHolding = c.segment === 'holding';
+  const members = detail?.holdingMembers ?? holdingMembers ?? [];
+  const potential =
+    isHolding && members.length
+      ? members.reduce<number | null>((sum, child) => {
+          const amount =
+            child.potential ??
+            (Object.keys(child.divisions).length
+              ? Object.values(child.divisions).reduce<number>((n, v) => n + (v || 0), 0)
+              : null);
+          return amount === null ? sum : (sum ?? 0) + amount;
+        }, null)
+      : c.potential;
+  const [icon, color] = industryIcon(c.industry, c.segment);
+  async function read() {
+    const seq = ++sequence.current;
+    const d = await api<Detail>(`/companies/${company.id}`);
+    if (seq === sequence.current) setDetail(d);
+    return d;
   }
-  async function afterSave() {
+  async function changed() {
+    analyticsRequest = undefined;
     try {
-      await refreshDetail();
+      await read();
+      await onChanged();
+      if (!providedScore) {
+        const a = await loadScores();
+        setScore(a.clientAnalytics?.clients.find((s) => s.id === company.id));
+      }
     } catch (e) {
       setError(`Изменения сохранены, но обновление не удалось: ${(e as Error).message}`);
     }
   }
-  async function saveCompany(data: CompanyData, expectedVersion = currentCompany.version) {
-    const saved = await api<Company>(`/companies/${company.id}`, 'PATCH', {
-      version: expectedVersion,
-      data,
-    });
-    ++readSequence.current;
-    setDetail((d) => (d ? { ...d, company: saved } : { company: saved, records: [], audit: [] }));
-    await afterSave();
-  }
-  async function saveDivisions(next: Company['divisions'], snapshot = currentCompany) {
-    await saveCompany(
-      {
-        ...companySchema.strip().parse(snapshot),
-        divisions: next,
-        potential: Object.values(next).reduce((s, n) => s + (n || 0), 0),
-      },
-      snapshot.version,
-    );
-  }
-  function removeRecord(record: CrmRecord) {
-    setRemove({
-      label: `Удалить ${record.kind === 'file' ? 'файл' : 'контакт'} «${record.data.name}»?`,
-      run: async () => {
-        await api(`/${record.kind === 'file' ? 'files' : 'contacts'}/${record.id}`, 'DELETE');
-        ++readSequence.current;
-        setDetail((d) => (d ? { ...d, records: d.records.filter((r) => r.id !== record.id) } : d));
-        await afterSave();
-      },
-    });
-  }
   useEffect(() => {
+    if (!open) return;
     let current = true;
-    const sequence = ++readSequence.current;
-    if (open) {
-      setLoading(true);
-      api<Detail>(`/companies/${company.id}`)
-        .then((d) => {
-          if (current && sequence === readSequence.current) {
-            setDetail(d);
-            setError('');
-          }
-        })
-        .catch((e) => {
-          if (current && sequence === readSequence.current) setError(e.message);
-        })
-        .finally(() => {
-          if (current && sequence === readSequence.current) setLoading(false);
-        });
+    setLoading(true);
+    setError('');
+    read()
+      .catch((e) => {
+        if (current) setError(e.message);
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+      ++sequence.current;
+    };
+  }, [open, company.id, company.version]);
+  useEffect(() => {
+    if (providedScore) {
+      setScore(providedScore);
+      return;
     }
+    if (!open) return;
+    let current = true;
+    setScoreError(false);
+    loadScores()
+      .then((a) => {
+        if (current) {
+          const found = a.clientAnalytics?.clients.find((s) => s.id === company.id);
+          setScore(found);
+          setScoreError(!found);
+        }
+      })
+      .catch(() => {
+        if (current) setScoreError(true);
+      });
     return () => {
       current = false;
     };
-  }, [open, company.id, company.version]);
+  }, [open, company.id, providedScore]);
+  async function patch(update: Partial<CompanyData>, snapshot = c) {
+    const data = companySchema.strip().parse({ ...snapshot, ...update });
+    let saved: Company;
+    try {
+      saved = await api<Company>(`/companies/${c.id}`, 'PATCH', {
+        version: snapshot.version,
+        data,
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) await read();
+      throw error;
+    }
+    setDetail((d) => (d ? { ...d, company: saved } : d));
+    await changed();
+  }
+  async function deleteRecord(r: CrmRecord) {
+    await api(`/${r.kind === 'file' ? 'files' : 'contacts'}/${r.id}`, 'DELETE');
+    setDetail((d) => (d ? { ...d, records: d.records.filter((row) => row.id !== r.id) } : d));
+    await changed();
+  }
+  async function equipment(key: string, raw: string | null, snapshot = c) {
+    const next = { ...snapshot.divisions };
+    if (raw === null) delete next[key as keyof typeof next];
+    else {
+      const amount = Number(raw.replace(',', '.').replace(/\s/g, ''));
+      if (!raw.trim() || !Number.isFinite(amount) || amount < 0)
+        throw new Error('Введите сумму от 0 до 1 000 000 000 000 ₽');
+      next[key as keyof typeof next] = amount * 1_000_000;
+    }
+    await patch(
+      {
+        divisions: next,
+        potential: Object.values(next).reduce((sum, v) => sum + (v || 0), 0),
+      },
+      snapshot,
+    );
+  }
+  async function upload() {
+    if (!uploadFile) return;
+    setUploading(true);
+    setFileError('');
+    try {
+      const body = new FormData();
+      body.append('file', uploadFile);
+      body.append('category', 'docs');
+      await api(`/companies/${c.id}/files`, 'POST', body);
+      setUploadFile(null);
+      await changed();
+    } catch (e) {
+      setFileError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+  const contacts = detail?.records.filter((r) => r.kind === 'contact') || [],
+    files = detail?.records.filter((r) => r.kind === 'file') || [];
+  const levelIndex = levels.findIndex((l) => l[0] === score?.level);
+  const canArchive = !c.archived && (actorRole === 'admin' || actorRole === 'supervisor');
   return (
-    <>
-      <SwipeRow
-        className={'pico-client-accordion client-card ' + (open ? 'expanded' : '')}
-        label={'клиент ' + companyDisplayName(currentCompany.name)}
-        onEdit={
-          !currentCompany.archived
-            ? () => {
-                setBusy(true);
-                api<Detail>(`/companies/${company.id}`)
-                  .then((fresh) => {
-                    setDetail(fresh);
-                    setEditing(fresh.company);
-                  })
-                  .catch((e) => {
-                    setError(e.message);
-                    setOpen(true);
-                  })
-                  .finally(() => setBusy(false));
+    <article ref={articleRef} className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
+      <SwipeAction
+        label={`клиента «${companyDisplayName(c.name, c.country)}» в архив`}
+        onEdit={() => {
+          void read()
+            .then((d) => {
+              setEditorCompany(structuredClone(d.company));
+              setEditorContacts(structuredClone(d.records.filter((r) => r.kind === 'contact')));
+              setEditingClient(true);
+            })
+            .catch((e) => setError(e.message));
+        }}
+        onDelete={
+          canArchive
+            ? async () => {
+                await api(`/companies/${c.id}/archive`, 'POST', {
+                  archived: true,
+                  version: c.version,
+                });
+                await onChanged();
               }
             : undefined
         }
-        onDelete={
-          canArchive && !currentCompany.archived
-            ? () =>
-                setRemove({
-                  label: `Перенести «${companyDisplayName(currentCompany.name)}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет администратор.`,
-                  run: async () => {
-                    await api(`/companies/${company.id}/archive`, 'POST', {
-                      archived: true,
-                      version: currentCompany.version,
-                    });
-                    await afterSave();
-                  },
-                })
-            : undefined
-        }
-        disabled={busy}
       >
         <button className="pico-client-row" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <span className={'icon-badge badge-' + color}>
+          <span className={`icon-badge badge-${color}`}>
             <Icon name={icon} />
           </span>
           <span className="pico-client-copy">
-            <strong className="pico-two-lines" title={companyDisplayName(currentCompany.name)}>
-              {companyDisplayName(currentCompany.name)}
-            </strong>
-            <small
-              className="pico-client-metadata"
-              title={[labels[currentCompany.segment], currentCompany.city, currentCompany.industry]
-                .filter(Boolean)
-                .join(' · ')}
-            >
-              <span>
-                {[labels[currentCompany.segment], currentCompany.city].filter(Boolean).join(' · ')}
-              </span>
-              {currentCompany.industry && <span>{currentCompany.industry}</span>}
+            <strong className="pico-two-lines">{companyDisplayName(c.name, c.country)}</strong>
+            <small className="pico-client-metadata">
+              <span>{[labels[c.segment], c.city].filter(Boolean).join(' · ')}</span>
+              {c.industry && <span>{c.industry}</span>}
             </small>
           </span>
           <span className="company-money">
             <small>Потенциал</small>
-            <strong title={fullMoney(companyPotential(currentCompany))}>
-              {compactMoney(companyPotential(currentCompany))}
-            </strong>
+            <strong title={fullMoney(potential)}>{compactMoney(potential)}</strong>
           </span>
-          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} />
+          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
         </button>
         {open && (
-          <div className="pico-client-content">
+          <div className="cc-body">
             {loading && <p role="status">Загрузка…</p>}
             {error && (
               <p className="error" role="alert">
                 {error}
-              </p>
-            )}
-            <div className="client-funnel" aria-label="Воронка клиента">
-              {score && levelIndex >= 0 ? (
-                <>
-                  <div className="client-funnel-label">
-                    <strong>
-                      <i style={{ background: levels[levelIndex][2] }} />
-                      {levels[levelIndex][1]}
-                    </strong>
-                    <span>
-                      {score.score}{' '}
-                      {score.score === 1
-                        ? 'балл'
-                        : score.score >= 2 && score.score <= 4
-                          ? 'балла'
-                          : 'баллов'}{' '}
-                      из 8
-                    </span>
-                  </div>
-                  <div className="client-funnel-segments" aria-hidden="true">
-                    {levels.map((l, i) => (
-                      <span
-                        key={l[0]}
-                        style={{ flex: l[3], background: i <= levelIndex ? l[2] : '#E6EBF3' }}
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="muted">
-                  {currentCompany.archived
-                    ? 'Клиент в архиве'
-                    : loading
-                      ? 'Обновляем статус…'
-                      : 'Статус недоступен'}
-                </p>
-              )}
-            </div>
-            <Section
-              title="Потенциал"
-              value={compactMoney(companyPotential(currentCompany))}
-              className="pico-client-potential"
-            >
-              {divisions
-                .filter((d) => currentCompany.divisions[d] != null)
-                .map((d) => (
-                  <SwipeRow
-                    key={d}
-                    label={'оборудование ' + (divisionLabels[d] || labels[d])}
-                    className="client-equipment-swipe"
-                    disabled={busy}
-                    onDelete={
-                      !currentCompany.archived
-                        ? () =>
-                            setRemove({
-                              label: `Убрать оборудование «${divisionLabels[d] || labels[d]}»?`,
-                              run: async () => {
-                                const next = { ...currentCompany.divisions };
-                                delete next[d];
-                                await saveDivisions(next);
-                              },
-                            })
-                        : undefined
-                    }
-                  >
-                    <div className="pico-potential-client">
-                      <span>{divisionLabels[d] || labels[d]}</span>
-                      {currentCompany.archived ? (
-                        <strong>{compactMoney(currentCompany.divisions[d])}</strong>
-                      ) : (
-                        <Amount
-                          value={currentCompany.divisions[d]!}
-                          label={divisionLabels[d] || labels[d]}
-                          onSave={(n) => saveDivisions({ ...currentCompany.divisions, [d]: n })}
-                        />
-                      )}
-                    </div>
-                  </SwipeRow>
-                ))}
-              {!currentCompany.archived && (
-                <button className="client-add-link" onClick={() => setNewDirection(currentCompany)}>
-                  + Добавить оборудование
-                </button>
-              )}
-            </Section>
-            <Section title="Контакты" value={contacts.length} className="pico-client-contacts">
-              {contacts.map((r) => (
-                <SwipeRow
-                  key={r.id}
-                  label={'контакт ' + r.data.name}
-                  className="client-contact-swipe"
-                  onEdit={!currentCompany.archived ? () => setContact(r) : undefined}
-                  onDelete={!currentCompany.archived ? () => removeRecord(r) : undefined}
-                  disabled={busy}
-                >
-                  <div className="client-compact-contact">
-                    <div className="client-contact-field">
-                      <small>ФИО</small>
-                      <strong>{r.data.name}</strong>
-                    </div>
-                    <div className="client-contact-columns">
-                      <div className="client-contact-field">
-                        <small>Должность</small>
-                        <span>{r.data.role || 'Не указана'}</span>
-                      </div>
-                      <div className="client-contact-field">
-                        <small>Телефон</small>
-                        {r.data.phone ? (
-                          <a href={'tel:' + r.data.phone.replace(/[^+\d]/g, '')}>{r.data.phone}</a>
-                        ) : (
-                          <span>Не указан</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="client-contact-field">
-                      <small>E-mail</small>
-                      {r.data.email ? (
-                        <a href={'mailto:' + r.data.email}>{r.data.email}</a>
-                      ) : (
-                        <span>Не указан</span>
-                      )}
-                    </div>
-                  </div>
-                </SwipeRow>
-              ))}
-              {!loading && !contacts.length && <p className="muted">Контактов пока нет</p>}
-              {!currentCompany.archived && (
                 <button
-                  className="client-add-link"
-                  aria-label={'Добавить контакт · ' + company.name}
-                  onClick={() => setContact('new')}
-                >
-                  + Добавить контакт
-                </button>
-              )}
-            </Section>
-            <Section title="Файлы" value={files.length} className="pico-client-files">
-              {files.map((f) => (
-                <SwipeRow
-                  key={f.id}
-                  label={'файл ' + f.data.name}
-                  className="client-file-swipe"
-                  onDelete={!currentCompany.archived ? () => removeRecord(f) : undefined}
-                  disabled={busy}
-                >
-                  <button
-                    className="client-file"
-                    onClick={() =>
-                      download(`/files/${f.id}`, f.data.name).catch((e) => setError(e.message))
-                    }
-                  >
-                    <span className="client-file-icon">
-                      <Icon name="file" size={22} />
-                      <small>
-                        {String(f.data.name).split('.').pop()?.slice(0, 5).toUpperCase()}
-                      </small>
-                    </span>
-                    <span>
-                      <strong title={f.data.name}>{f.data.name}</strong>
-                      <small>{new Date(f.createdAt).toLocaleDateString('ru-RU')}</small>
-                    </span>
-                  </button>
-                </SwipeRow>
-              ))}
-              {!loading && !files.length && <p className="muted">Файлов пока нет</p>}
-              {!currentCompany.archived && (
-                <button className="client-add-link" onClick={() => onOpen(currentCompany, 'file')}>
-                  + Добавить файл
-                </button>
-              )}
-            </Section>
-            <Section title="Заметки" className="pico-client-notes">
-              <p className="client-notes">{currentCompany.notes || 'Заметок пока нет'}</p>
-              {!currentCompany.archived && (
-                <button
-                  className="client-add-link"
-                  aria-label={'Изменить заметки · ' + company.name}
                   onClick={() => {
-                    setNotes(currentCompany.notes);
-                    setNotesOpen(currentCompany);
+                    setError('');
+                    void read().catch((e) => setError(e.message));
                   }}
                 >
-                  Изменить заметки
+                  Повторить
                 </button>
-              )}
-            </Section>
-            <Section title="Данные" className="client-company-data">
-              <dl>
-                <div>
-                  <dt>ИНН</dt>
-                  <dd>{currentCompany.inn || 'Не указан'}</dd>
-                </div>
-                <div className="client-contact-columns">
-                  <div>
-                    <dt>Название</dt>
-                    <dd>{companyDisplayName(currentCompany.name)}</dd>
-                  </div>
-                  <div>
-                    <dt>Город</dt>
-                    <dd>{currentCompany.city || 'Не указан'}</dd>
-                  </div>
-                </div>
-                <div>
-                  <dt>Категория клиента</dt>
-                  <dd>{labels[currentCompany.segment]}</dd>
-                </div>
-                <div>
-                  <dt>Сайт</dt>
-                  <dd>{currentCompany.website || 'Не указан'}</dd>
-                </div>
-              </dl>
-            </Section>
-            <button className="client-open-full" onClick={() => onOpen(currentCompany)}>
-              Карточка клиента
-            </button>
-          </div>
-        )}
-      </SwipeRow>
-      {editing && (
-        <Modal sheet title="Редактирование карточки" onClose={() => setEditing(null)}>
-          <CompanyForm
-            cardMode
-            initial={editing}
-            contactFields={
-              <div className="client-form-contacts">
-                <span className="pico-field-heading">Контакты</span>
-                {contacts.map((r) => (
-                  <button type="button" key={r.id} onClick={() => setContact(r)}>
-                    {r.data.name} <Icon name="edit" size={16} />
-                  </button>
-                ))}
-                <button type="button" className="client-add-link" onClick={() => setContact('new')}>
-                  + Ещё контакт
-                </button>
-              </div>
-            }
-            onSave={async (data) => {
-              await saveCompany(data, editing.version);
-              setEditing(null);
-            }}
-          />
-        </Modal>
-      )}
-      {newDirection && (
-        <NewDirectionEditor
-          onClose={() => setNewDirection(null)}
-          onSave={(v) =>
-            saveDivisions({ ...newDirection.divisions, [v.division]: v.amount }, newDirection)
-          }
-        />
-      )}
-      {contact && (
-        <Modal sheet title="Контакт" onClose={() => setContact(null)}>
-          <RecordForm
-            key={contact === 'new' ? 'new' : contact.id}
-            kind="contact"
-            compactContact
-            initial={contact === 'new' ? undefined : contact}
-            projects={[]}
-            onSave={async (data) => {
-              const saved =
-                contact === 'new'
-                  ? await api<CrmRecord>(`/companies/${company.id}/records/contact`, 'POST', {
-                      data,
-                    })
-                  : await api<CrmRecord>(`/records/${contact.id}`, 'PATCH', {
-                      version: contact.version,
-                      data,
-                    });
-              ++readSequence.current;
-              setDetail((d) =>
-                d
-                  ? {
-                      ...d,
-                      records: d.records.some((r) => r.id === saved.id)
-                        ? d.records.map((r) => (r.id === saved.id ? saved : r))
-                        : [...d.records, saved],
-                    }
-                  : d,
-              );
-              setContact(null);
-              await afterSave();
-            }}
-          />
-        </Modal>
-      )}
-      {notesOpen && (
-        <Modal sheet title="Заметки" onClose={() => setNotesOpen(null)}>
-          <form
-            className="pico-compact-form"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setBusy(true);
-              setError('');
-              try {
-                await saveCompany(
-                  { ...companySchema.strip().parse(notesOpen), notes },
-                  notesOpen.version,
-                );
-                setNotesOpen(null);
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <textarea
-              aria-label="Заметки"
-              rows={4}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-            {error && (
-              <p role="alert" className="error">
-                {error}
               </p>
             )}
-            <button className="primary" disabled={busy}>
-              Сохранить заметки
-            </button>
-          </form>
-        </Modal>
-      )}
-      {remove && (
-        <Modal
-          sheet
-          title="Подтверждение"
-          onClose={() => {
-            if (!busy) {
-              setRemove(null);
-              setError('');
-            }
-          }}
-        >
-          <p>{remove.label}</p>
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
-          <div className="client-confirm-actions">
-            <button
-              disabled={busy}
-              onClick={() => {
-                setRemove(null);
-                setError('');
-              }}
+            <div
+              className="cc-score"
+              aria-label={
+                score
+                  ? `${score.score} из 8 баллов · ${levels[levelIndex]?.[1]}`
+                  : 'Уровень клиента'
+              }
             >
-              Отмена
-            </button>
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError('');
-                try {
-                  await remove.run();
-                  setRemove(null);
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              Подтвердить
-            </button>
+              <div>
+                <strong>
+                  <i style={{ background: levels[levelIndex]?.[2] }} />
+                  {score
+                    ? levels[levelIndex]?.[1]
+                    : scoreError
+                      ? 'Уровень недоступен'
+                      : 'Загрузка уровня…'}
+                </strong>
+                <span>{score ? `${score.score} баллов из 8` : ''}</span>
+              </div>
+              <div className="cc-segments">
+                {levels.map(([key, label, tone], i) => (
+                  <span
+                    key={key}
+                    title={label}
+                    style={{
+                      background: levelIndex >= i ? tone : '#E6EBF3',
+                      flex: [1, 2, 3, 2, 1][i],
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            {detail && (
+              <>
+                <details className="cc-section" open>
+                  <summary>
+                    Потенциал{' '}
+                    <span>
+                      {potential === null ? 'Не указан' : `${millionValue(potential)} млн ₽`}
+                    </span>
+                    <Icon name="chevron-down" size={18} />
+                  </summary>
+                  <div className="cc-section-body">
+                    {isHolding ? (
+                      <>
+                        <p className="muted">Суммарный потенциал заказчиков холдинга</p>
+                        {Object.entries(detail.holdingDivisions || {}).map(([key, value]) => (
+                          <div className="cc-equipment" key={key}>
+                            <span>{divisionLabels[key] || key}</span>
+                            <strong>{millionValue(value)} млн ₽</strong>
+                          </div>
+                        ))}
+                        {detail.holdingAllocationRequired && (
+                          <p className="cc-allocation-warning" role="status">
+                            У холдинга есть нераспределённый потенциал. Распределите его по
+                            заказчикам, чтобы включить в итог группы.
+                          </p>
+                        )}
+                        <HoldingMembers
+                          company={c}
+                          members={members}
+                          onReveal={onReveal}
+                          onChanged={changed}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        {divisions
+                          .filter((key) => c.divisions[key] != null)
+                          .map((key) => (
+                            <SwipeAction
+                              key={key}
+                              label={`оборудование «${divisionLabels[key]}»`}
+                              onDelete={() => equipment(key, null)}
+                            >
+                              <div className="cc-equipment">
+                                <InlineValue
+                                  label={divisionLabels[key]}
+                                  value={millionValue(c.divisions[key])}
+                                  unit="млн ₽"
+                                  numeric
+                                  onSave={(value) => equipment(key, value)}
+                                />
+                              </div>
+                            </SwipeAction>
+                          ))}
+                        {!Object.keys(c.divisions).length && (
+                          <p className="muted">Оборудование пока не добавлено</p>
+                        )}
+                        {newEquipment ? (
+                          <EquipmentForm
+                            keys={primaryDivisions.filter((key) => c.divisions[key] == null)}
+                            onCancel={() => setNewEquipment(null)}
+                            onSave={async (key, value) => {
+                              await equipment(key, value, newEquipment);
+                              setNewEquipment(null);
+                            }}
+                          />
+                        ) : (
+                          <button
+                            className="cc-add"
+                            onClick={() => setNewEquipment(structuredClone(c))}
+                          >
+                            <Icon name="plus" size={14} />
+                            Добавить оборудование
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </details>
+                <details className="cc-section">
+                  <summary>
+                    Контакты <span>{contacts.length}</span>
+                    <Icon name="chevron-down" size={18} />
+                  </summary>
+                  <div className="cc-section-body">
+                    {contacts.map((r) => (
+                      <SwipeAction
+                        key={r.id}
+                        label={`контакт «${r.data.name}»`}
+                        onDelete={() => deleteRecord(r)}
+                        onEdit={() => {
+                          void read()
+                            .then((latest) => {
+                              const contact = latest.records.find(
+                                (record) => record.id === r.id && record.kind === 'contact',
+                              );
+                              if (!contact)
+                                throw new Error('Контакт больше недоступен. Обновите карточку.');
+                              setEditingContact(structuredClone(contact));
+                            })
+                            .catch((cause) => setError((cause as Error).message));
+                        }}
+                      >
+                        <div className="cc-contact">
+                          <div className="cc-contact-name">
+                            <span>ФИО</span>
+                            <strong>{r.data.name}</strong>
+                          </div>
+                          <div className="cc-contact-columns">
+                            <div>
+                              <span>Должность</span>
+                              <span>{r.data.role || 'Не указана'}</span>
+                            </div>
+                            <div>
+                              <span>Телефон</span>
+                              <span>{r.data.phone || 'Не указан'}</span>
+                            </div>
+                          </div>
+                          <div className="cc-contact-email">
+                            <span>E-mail</span>
+                            <span>{r.data.email || 'Не указан'}</span>
+                          </div>
+                        </div>
+                      </SwipeAction>
+                    ))}
+                    {!contacts.length && <p className="muted">Контактов пока нет</p>}
+                    {addingContact ? (
+                      <ContactForm
+                        onCancel={() => setAddingContact(false)}
+                        onSave={async (data) => {
+                          await api(`/companies/${c.id}/records/contact`, 'POST', { data });
+                          setAddingContact(false);
+                          await changed();
+                        }}
+                      />
+                    ) : (
+                      <button className="cc-add" onClick={() => setAddingContact(true)}>
+                        <Icon name="plus" size={14} />
+                        Добавить контакт
+                      </button>
+                    )}
+                  </div>
+                </details>
+                <details className="cc-section">
+                  <summary>
+                    Файлы <span>{files.length}</span>
+                    <Icon name="chevron-down" size={18} />
+                  </summary>
+                  <div className="cc-section-body">
+                    {files.map((f) => (
+                      <SwipeAction
+                        key={f.id}
+                        label={`файл «${f.data.name}»`}
+                        onDelete={() => deleteRecord(f)}
+                      >
+                        <button
+                          className="cc-file"
+                          onClick={() =>
+                            void download(`/files/${f.id}`, f.data.name).catch((e) =>
+                              setError(e.message),
+                            )
+                          }
+                        >
+                          <span className="cc-file-icon">
+                            <Icon name="file" size={20} />
+                          </span>
+                          <span>
+                            <strong>{f.data.name}</strong>
+                            <small>{new Date(f.createdAt).toLocaleDateString('ru-RU')}</small>
+                          </span>
+                        </button>
+                      </SwipeAction>
+                    ))}
+                    {!files.length && <p className="muted">Файлов пока нет</p>}
+                    <FileUpload
+                      label="Добавить файл · до 10 МБ"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        setFileError('');
+                        if (f && f.size > 10 * 1024 * 1024) {
+                          setFileError('Максимальный размер файла — 10 МБ');
+                          setUploadFile(null);
+                        } else setUploadFile(f || null);
+                        e.target.value = '';
+                      }}
+                    />
+                    {uploadFile && (
+                      <button disabled={uploading} onClick={() => void upload()}>
+                        {uploading ? 'Загрузка…' : `Загрузить ${uploadFile.name}`}
+                      </button>
+                    )}
+                    {fileError && (
+                      <p className="error" role="alert">
+                        {fileError}
+                      </p>
+                    )}
+                  </div>
+                </details>
+                <details className="cc-section">
+                  <summary>
+                    Заметки
+                    <Icon name="chevron-down" size={18} />
+                  </summary>
+                  <div className="cc-section-body">
+                    <InlineValue
+                      label="Заметки о клиенте"
+                      value={c.notes}
+                      multiline
+                      onSave={(notes) => patch({ notes })}
+                    />
+                  </div>
+                </details>
+                <details className="cc-section">
+                  <summary>
+                    Данные
+                    <Icon name="chevron-down" size={18} />
+                  </summary>
+                  <div className="cc-section-body cc-data">
+                    {[
+                      ['inn', 'ИНН'],
+                      ['name', 'Название'],
+                      ['city', 'Город'],
+                      ['website', 'Сайт'],
+                    ].map(([key, label]) => (
+                      <InlineValue
+                        key={key}
+                        label={label}
+                        value={String(c[key as keyof Company] || '')}
+                        onSave={(value) => patch({ [key]: value })}
+                      />
+                    ))}
+                    {isHolding && (
+                      <>
+                        <InlineValue
+                          label="Описание деятельности"
+                          value={c.industry}
+                          onSave={(industry) => patch({ industry })}
+                        />
+                        <InlineValue
+                          label="Сайты"
+                          value={(c.sites || []).join('\n')}
+                          multiline
+                          onSave={(value) =>
+                            patch({
+                              sites: value
+                                .split('\n')
+                                .map((site) => site.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                        />
+                      </>
+                    )}
+                    <InlineValue
+                      label="Категория"
+                      value={c.segment}
+                      options={(primarySegments.includes(
+                        c.segment as (typeof primarySegments)[number],
+                      )
+                        ? primarySegments
+                        : [...primarySegments, c.segment]
+                      ).map((value) => ({ value, label: labels[value] }))}
+                      onSave={(value) => patch({ segment: value as Company['segment'] })}
+                    />
+                  </div>
+                </details>
+                <button type="button" className="text-button" onClick={() => onOpen(c, 'task')}>
+                  Задачи и проекты
+                </button>
+              </>
+            )}
           </div>
+        )}
+      </SwipeAction>
+      {!open && error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {editingClient && (
+        <Modal sheet title="Редактирование карточки" onClose={() => setEditingClient(false)}>
+          <CompanyForm
+            initial={editorCompany || c}
+            initialContacts={editorContacts.map((r) => ({
+              id: r.id,
+              version: r.version,
+              name: r.data.name || '',
+              role: r.data.role || '',
+              phone: r.data.phone || '',
+              email: r.data.email || '',
+            }))}
+            onSave={async ({ initialContacts = [], ...data }) => {
+              try {
+                await api(`/companies/${c.id}/editor`, 'PATCH', {
+                  version: (editorCompany || c).version,
+                  data,
+                  contacts: companyContactChanges(initialContacts, editorContacts),
+                });
+              } catch (error) {
+                if (error instanceof ApiError && error.status === 409)
+                  throw new Error(
+                    'Карточка или контакты изменились. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+                  );
+                throw error;
+              }
+              await changed();
+              setEditingClient(false);
+            }}
+          />
         </Modal>
       )}
-    </>
+      {editingContact && (
+        <Modal sheet title="Контакт" onClose={() => setEditingContact(null)}>
+          <ContactForm
+            initial={editingContact.data}
+            onCancel={() => setEditingContact(null)}
+            onSave={async (data) => {
+              try {
+                await api(`/records/${editingContact.id}`, 'PATCH', {
+                  version: editingContact.version,
+                  data,
+                });
+              } catch (error) {
+                if (error instanceof ApiError && error.status === 409)
+                  throw new Error(
+                    'Контакт изменился. Введённые данные сохранены в форме. Закройте форму и заново откройте карточку, чтобы проверить изменения перед сохранением.',
+                  );
+                throw error;
+              }
+              await changed();
+              setEditingContact(null);
+            }}
+          />
+        </Modal>
+      )}
+    </article>
+  );
+}
+function ContactForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: Record<string, string>;
+  onSave: (data: Record<string, string>) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState({
+      name: initial?.name || '',
+      role: initial?.role || '',
+      phone: initial?.phone || '',
+      email: initial?.email || '',
+    }),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  return (
+    <form
+      className={`cc-inline-editor ${initial ? 'cc-contact-form' : ''}`}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError('');
+        try {
+          await onSave(contactSchema.parse(draft));
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {[
+        ['name', 'ФИО'],
+        ['role', 'Должность'],
+        ['phone', 'Телефон'],
+        ['email', 'E-mail'],
+      ].map(([key, label]) => (
+        <label key={key}>
+          {label}
+          <input
+            aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
+            type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+            value={draft[key as keyof typeof draft]}
+            required={key === 'name'}
+            disabled={busy}
+            onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+          />
+        </label>
+      ))}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <div className="cc-editor-actions">
+        <button className="primary" disabled={busy}>
+          {initial ? 'Сохранить' : 'Сохранить контакт'}
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}>
+          Отмена
+        </button>
+      </div>
+    </form>
+  );
+}
+function EquipmentForm({
+  keys,
+  onSave,
+  onCancel,
+}: {
+  keys: readonly string[];
+  onSave: (key: string, value: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [key, setKey] = useState(keys[0] || ''),
+    [amount, setAmount] = useState(''),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="cc-inline-editor"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError('');
+        try {
+          await onSave(key, amount);
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <label>
+        Оборудование
+        <select
+          aria-label="Оборудование"
+          value={key}
+          disabled={busy}
+          onChange={(e) => setKey(e.target.value)}
+        >
+          {keys.map((k) => (
+            <option key={k} value={k}>
+              {divisionLabels[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Потенциал, млн ₽
+        <input
+          aria-label="Потенциал, млн ₽"
+          value={amount}
+          inputMode="decimal"
+          disabled={busy}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="cc-editor-actions">
+        <button disabled={busy || !key}>Добавить</button>
+        <button type="button" disabled={busy} onClick={onCancel}>
+          Отмена
+        </button>
+      </div>
+    </form>
   );
 }

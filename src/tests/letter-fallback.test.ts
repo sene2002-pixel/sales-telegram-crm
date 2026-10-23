@@ -17,6 +17,7 @@ const company = {
   city: 'Москва',
   industry: 'Энергетика — генерация',
   activity: 'Генерация электроэнергии',
+  summary: 'Компания производит электроэнергию. Сведения о конкретных площадках не подтверждены.',
 };
 const sources = ['https://example.test/company'];
 const research = { status: 'found', company, recipient: null, sources };

@@ -451,8 +451,10 @@ test('UI audit gaps: remove direction, refresh menu, project client handoff and 
   await dialog.locator('.company-detail-actions > summary').click();
   await dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();
   await dialog
-    .getByRole('button', { name: 'Убрать направление Выключатели 0,4 кВ', exact: true })
+    .locator('.company-form-accordion > summary')
+    .filter({ hasText: /^Потенциал/ })
     .click();
+  await dialog.getByLabel('Выключатели 0,4 кВ', { exact: true }).fill('');
   await dialog.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
   await page.reload();
   const saved = (await api(page, `/companies/${company.id}`, undefined, 'GET')).company;
@@ -519,7 +521,7 @@ test('UI audit gaps: home onboarding task cancellation and hour/week postponemen
     route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.continue(),
   );
   await page.reload();
-  await page.locator('.pico-home-start > summary').click();
+  await page.locator('.pico-home-start').click();
   await page.getByRole('button', { name: /^Поставить задачу/ }).click();
   await expect(page.getByRole('dialog', { name: 'Новая задача', exact: true })).toBeVisible();
   await page.getByLabel('Задача', { exact: true }).fill('Отменённая из onboarding');

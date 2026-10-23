@@ -62,10 +62,10 @@ for (const width of [360, 390, 1440]) {
       await expect(page.locator('.mobile-brand')).toBeHidden();
     } else {
       const brand = page.locator('.brand-mark:visible').first();
-      await expect(brand).toHaveAttribute('src', '/brand/pico-avatar.png');
-      expect(
-        await brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0),
-      ).toBeTruthy();
+      await expect(brand).toHaveAttribute('src', /\/assets\/pico-avatar-[^/]+\.png$/);
+      await expect
+        .poll(() => brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0))
+        .toBeTruthy();
     }
     await page.screenshot({ path: info.outputPath(`home-${width}.png`), animations: 'disabled' });
     await crown.click();
@@ -78,7 +78,7 @@ for (const width of [360, 390, 1440]) {
       expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThan(1);
     }
     const badges = page.locator('.pico-client-equipment summary .pico-equipment-tile');
-    await expect(badges).toHaveCount(7);
+    await expect(badges).toHaveCount(8);
     const boxes = await badges.evaluateAll((elements) =>
       elements.map((el) => {
         const box = el.getBoundingClientRect();
@@ -138,8 +138,8 @@ for (const width of [360, 390, 1440]) {
       await expect(navigation.getByRole('button')).toHaveCount(5);
       const icon = navigation.getByRole('button', { name: 'Клиенты', exact: true }).locator('svg');
       const box = (await icon.boundingBox())!;
-      expect(box.width).toBe(24);
-      expect(box.height).toBe(24);
+      expect(box.width).toBe(26);
+      expect(box.height).toBe(26);
       await navigation.getByRole('button', { name: 'Клиенты', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Клиенты', exact: true })).toBeVisible();
     }

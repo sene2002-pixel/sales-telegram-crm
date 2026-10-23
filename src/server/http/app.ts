@@ -1,4 +1,5 @@
 import { CompanyImports } from '../services/company-imports';
+import { SabyRegistry } from '../services/company-registry';
 import { assertImportPrivacy } from '../services/company-import-parser';
 import { mountApiDocs } from './api-docs';
 import { employeeFilterOptions } from '../services/employee-filter';
@@ -83,7 +84,7 @@ export class Services {
     this.errors = new ErrorLog(db);
     this.diagnostics = new DiagnosticLog(db, config);
     this.auth = new AuthService(db, config);
-    this.crm = new CrmService(db, config.timezone);
+    this.crm = new CrmService(db);
     this.fileDownloads = new FileDownloads(this.crm, config);
     const ai = new OpenAiAdapter(config, this.diagnostics);
     this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
@@ -131,7 +132,17 @@ export class Services {
       this.diagnostics,
       this.voiceContacts,
       this.dialogue,
-      new CompanyImports(db, this.crm, assertImportPrivacy),
+      new CompanyImports(
+        db,
+        this.crm,
+        assertImportPrivacy,
+        new SabyRegistry({
+          accessToken: config.sabyAccessToken,
+          clientId: config.sabyClientId,
+          clientSecret: config.sabyClientSecret,
+          serviceKey: config.sabyServiceKey,
+        }),
+      ),
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.commercial = new CommercialReportService(db);
@@ -353,10 +364,24 @@ class CrmController {
     return this.s.crm.list(r.actor, employeeId);
   }
   @Post('companies') create(@Req() r: AuthedRequest, @Body() b: any) {
-    return this.s.crm.create(r.actor, b);
+    return this.s.crm.createWithContacts(r.actor, b);
   }
   @Get('companies/:id') detail(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.detail(r.actor, id);
+  }
+  @Post('companies/:id/holding-allocation') allocateHolding(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.s.crm.allocateHolding(r.actor, id, body);
+  }
+  @Patch('companies/:id/editor') updateEditor(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.s.crm.updateWithContacts(r.actor, id, b);
   }
   @Patch('companies/:id') update(
     @Req() r: AuthedRequest,
@@ -437,8 +462,17 @@ class CrmController {
     const report = await this.s.reports.get(r.actor, id);
     return {
       ...mapReport(report),
-      candidates: report.draft ? await this.s.reports.candidates(r.actor, report.draft) : [],
-      feedback: report.draft ? await this.s.reports.feedback(r.actor, report.draft) : '',
+      candidates: report.draft
+        ? await this.s.reports.candidates(
+            r.actor,
+            report.draft,
+            this.s.reports.db,
+            report.author_id,
+          )
+        : [],
+      feedback: report.draft
+        ? await this.s.reports.feedback(r.actor, report.draft, this.s.reports.db, report.author_id)
+        : '',
     };
   }
   @Post('reports') enqueue(@Req() r: AuthedRequest, @Body() b: unknown) {

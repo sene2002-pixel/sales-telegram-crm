@@ -1,4 +1,4 @@
-import { DashboardService } from './dashboard';
+import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { resolveEmployeeFilter } from './employee-filter';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -6,6 +6,9 @@ import {
   Actor,
   Company,
   companySchema,
+  companyEditSchema,
+  contactSchema,
+  holdingAllocationSchema,
   CompanyData,
   CrmRecord,
   RecordKind,
@@ -25,10 +28,17 @@ import {
   normalizeSales,
 } from '../../shared/sales';
 
+const catalogueMention = (data: Pick<CompanyData, 'name' | 'legalForm'>) =>
+  classifyHoldingMention(
+    data.legalForm &&
+      !data.name.toLocaleLowerCase('ru').startsWith(data.legalForm.toLocaleLowerCase('ru') + ' ')
+      ? `${data.legalForm} ${data.name}`
+      : data.name,
+  );
+
 export function mapCompany(row: any): Company {
   return {
     ...row.data,
-    website: row.data.website || '',
     id: row.id,
     ownerId: row.owner_id,
     ownerName: row.owner_name || '',
@@ -55,10 +65,7 @@ export function mapRecord(row: any): CrmRecord {
   };
 }
 export class CrmService {
-  constructor(
-    public db: Database,
-    private timezone = 'Europe/Moscow',
-  ) {}
+  constructor(public db: Database) {}
   async company(actor: Actor, id: string, tx: Sql = this.db, lock = false): Promise<Company> {
     idSchema.parse(id);
     const [row] = await tx.query(
@@ -80,8 +87,105 @@ export class CrmService {
     );
     return rows.map(mapCompany);
   }
+  async validateHolding(
+    actor: Actor,
+    data: CompanyData,
+    ownerId: string,
+    tx: Sql,
+    previous?: Company,
+  ) {
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    if (data.segment === 'holding' && data.potential !== null && Object.keys(data.divisions).length)
+      requireCondition(
+        Math.abs(
+          data.potential -
+            Object.values(data.divisions).reduce((sum, amount) => sum + (amount || 0), 0),
+        ) < 0.01,
+        400,
+        'Общий потенциал холдинга должен совпадать с суммой оборудования. Исправьте оценку перед сохранением',
+      );
+    requireCondition(
+      data.segment !== 'holding' || (!data.inn && !data.holdingId),
+      400,
+      'У холдинга нет ИНН и родительского холдинга',
+    );
+    requireCondition(
+      !data.holdingId || data.segment === 'end_client',
+      400,
+      'Холдинг можно выбрать только для заказчика',
+    );
+    if (data.holdingId) {
+      requireCondition(data.holdingId !== previous?.id, 400, 'Компания не может входить в себя');
+      const parent = await this.company(actor, data.holdingId, tx, true);
+      requireCondition(
+        parent.segment === 'holding' && !parent.archived && parent.ownerId === ownerId,
+        400,
+        'Выберите доступный холдинг с тем же ответственным',
+      );
+      requireCondition(!data.archived, 400, 'Сначала отсоедините заказчика от холдинга');
+    }
+    if (previous) {
+      const children = await tx.query(
+        "SELECT id FROM companies WHERE data->>'holdingId'=$1 FOR UPDATE",
+        [previous.id],
+      );
+      requireCondition(
+        !children.length ||
+          (data.segment === 'holding' && !data.archived && ownerId === previous.ownerId),
+        409,
+        'Сначала отсоедините заказчиков холдинга',
+      );
+      if (previous.segment !== 'holding' && data.segment === 'holding') {
+        const participantProjects = await tx.query(
+          "SELECT id FROM records WHERE kind='project' AND NOT deleted AND data->'participants' @> $1::jsonb LIMIT 1",
+          [JSON.stringify([{ companyId: previous.id }])],
+        );
+        requireCondition(
+          !participantProjects.length,
+          409,
+          'Участника проекта нельзя сделать холдингом',
+        );
+
+        const commercial = await tx.query(
+          "SELECT id FROM records WHERE company_id=$1 AND NOT deleted AND (kind='project' OR (kind='activity' AND data->'sales' IS NOT NULL AND data->'sales'<>'null'::jsonb)) LIMIT 1",
+          [previous.id],
+        );
+        requireCondition(
+          !commercial.length,
+          409,
+          'Компанию с проектами или продажами нельзя сделать холдингом',
+        );
+      }
+    }
+  }
+  private async assertInnAvailable(tx: Sql, inn: string, ownerId: string, exceptId?: string) {
+    if (!inn) return;
+    const rows = await tx.query(
+      "SELECT id FROM companies WHERE owner_id=$1 AND data->>'inn'=$2 AND ($3::uuid IS NULL OR id<>$3) LIMIT 1",
+      [ownerId, inn, exceptId || null],
+    );
+    requireCondition(
+      !rows.length,
+      409,
+      'Компания с таким ИНН уже существует у этого ответственного. Проверьте существующую карточку',
+    );
+  }
+  async createWithContacts(actor: Actor, raw: unknown): Promise<Company> {
+    const schema = companySchema.extend({
+      initialContacts: z.array(contactSchema).max(20).default([]),
+    });
+    const { initialContacts, ...data } = schema.parse(raw);
+    return this.db.transaction(async (tx) => {
+      const company = await this.create(actor, data, actor.id, tx);
+      for (const contact of initialContacts)
+        await this.createRecord(actor, company.id, 'contact', contact, null, tx, {
+          contactSource: 'user',
+        });
+      return company;
+    });
+  }
   async create(actor: Actor, raw: unknown, ownerId = actor.id, tx?: Sql): Promise<Company> {
-    const data = companySchema.parse(raw);
+    let data = companySchema.parse(raw);
     requireCondition(
       !data.archived || actor.role === 'admin',
       403,
@@ -97,6 +201,131 @@ export class CrmService {
       idSchema.parse(ownerId),
     ]);
     requireCondition(owner, 400, 'Ответственный неактивен');
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    const siteMention = catalogueMention(data);
+    requireCondition(
+      !(siteMention.sites && !siteMention.companyName && !siteMention.holdingName),
+      400,
+      'Укажите юридическое лицо площадки. Добавьте площадку в карточку её владельца, а не как нового заказчика',
+    );
+    if (
+      !data.holdingId &&
+      !data.archived &&
+      ['end_client', 'holding'].includes(data.segment) &&
+      (!data.country || /^(?:россия|рф|ru|russia)$/iu.test(data.country.trim()))
+    ) {
+      let mention = catalogueMention(data);
+      // A supplied INN identifies a legal entity; do not erase it merely because its short name matches a group.
+      if (mention.isHolding && data.inn && data.segment === 'end_client')
+        mention = { companyName: data.name, isHolding: false };
+      if (mention.sites && !mention.companyName && !mention.holdingName)
+        requireCondition(
+          false,
+          400,
+          'Укажите юридическое лицо или холдинг площадки. Новая компания не создана',
+        );
+      if (mention.companyName && !mention.holdingName && mention.sites)
+        data = {
+          ...data,
+          name: mention.companyName,
+          segment: data.segment === 'holding' ? 'holding' : 'end_client',
+          sites: [...new Set([...(data.sites || []), ...mention.sites])],
+        };
+      if (mention.isHolding) {
+        requireCondition(!data.inn, 400, 'У холдинга нет ИНН. Укажите конкретное юридическое лицо');
+        data = {
+          ...data,
+          name: mention.holdingName!,
+          segment: 'holding',
+          sites: [...new Set([...(data.sites || []), ...(mention.sites || [])])],
+        };
+      } else if (mention.companyName && mention.holdingName) {
+        const parent = await this.create(
+          actor,
+          { name: mention.holdingName, segment: 'holding' },
+          ownerId,
+          tx,
+        );
+        data = {
+          ...data,
+          name: mention.companyName,
+          segment: 'end_client',
+          holdingId: parent.id,
+          sites: [...new Set([...(data.sites || []), ...(mention.sites || [])])],
+        };
+      }
+      if (mention.isHolding || mention.companyName || mention.sites?.length) {
+        const rows = await tx.query(
+          "SELECT id,data FROM companies WHERE owner_id=$1 AND COALESCE(data->>'archived','false')='false' ORDER BY id FOR UPDATE",
+          [ownerId],
+        );
+        const candidates = rows.filter((row) => {
+          if (
+            (row.data.country && !/^(?:россия|рф|ru|russia)$/iu.test(row.data.country.trim())) ||
+            row.data.segment !== data.segment ||
+            (data.inn && row.data.inn !== data.inn)
+          )
+            return false;
+          const current = catalogueMention(row.data);
+          const canonical = data.segment === 'holding' ? current.holdingName : current.companyName;
+          return (
+            (canonical || row.data.name).toLocaleLowerCase('ru') ===
+            data.name.toLocaleLowerCase('ru')
+          );
+        });
+        requireCondition(
+          candidates.length <= 1,
+          409,
+          'Несколько юридических лиц с таким названием. Уточните ИНН',
+        );
+        const existing = candidates[0];
+        if (existing) {
+          // Reuse the group. A named site is an append-only confirmed fact, not a new legal entity.
+          requireCondition(
+            !data.holdingId ||
+              !existing.data.holdingId ||
+              data.holdingId === existing.data.holdingId,
+            409,
+            'Заказчик уже входит в другой холдинг. Измените связь вручную',
+          );
+          requireCondition(
+            (data.potential === null || data.potential === existing.data.potential) &&
+              !Object.keys(data.divisions).some(
+                (key) =>
+                  data.divisions[key as keyof typeof data.divisions] !==
+                  existing.data.divisions?.[key],
+              ),
+            409,
+            'Клиент уже существует. Измените потенциал в его карточке',
+          );
+          const sites = [...new Set([...(existing.data.sites || []), ...(data.sites || [])])];
+          if (
+            sites.length !== (existing.data.sites || []).length ||
+            (data.holdingId && !existing.data.holdingId)
+          ) {
+            const before = await this.company(actor, existing.id, tx);
+            const after = companySchema.parse({
+              ...existing.data,
+              sites,
+              ...(data.holdingId ? { holdingId: data.holdingId } : {}),
+            });
+            await tx.query(
+              'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+              [JSON.stringify(after), existing.id],
+            );
+            await audit(tx, actor.id, 'company.updated', existing.id, existing.id, {
+              before,
+              after,
+              beforeVersion: before.version,
+              afterVersion: before.version + 1,
+            });
+          }
+          return this.company(actor, existing.id, tx);
+        }
+      }
+    }
+    await this.validateHolding(actor, data, ownerId, tx);
+    await this.assertInnAvailable(tx, data.inn, ownerId);
     const id = randomUUID();
     await tx.query('INSERT INTO companies(id,owner_id,data) VALUES($1,$2,$3)', [
       id,
@@ -112,7 +341,10 @@ export class CrmService {
       .strict()
       .parse(raw);
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const previous = await this.company(actor, id, tx, true);
+      await this.validateHolding(actor, data, previous.ownerId, tx, previous);
+      await this.assertInnAvailable(tx, data.inn, previous.ownerId, id);
       requireCondition(previous.version === version, 409, 'Карточка изменена. Обновите страницу');
       if (previous.archived !== data.archived)
         await this.checkArchivePermission(actor, previous, data.archived, tx);
@@ -131,10 +363,98 @@ export class CrmService {
       return this.company(actor, id, tx);
     });
   }
+  async updateWithContacts(actor: Actor, id: string, raw: unknown) {
+    const input = companyEditSchema.parse(raw);
+    return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      const [currentActor] = await tx.query<Actor>(
+        'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1 FOR UPDATE',
+        [actor.id],
+      );
+      requireCondition(currentActor?.active, 403, 'Доступ заблокирован');
+      actor = currentActor;
+      const previous = await this.company(actor, id, tx, true);
+      requireCondition(
+        previous.version === input.version,
+        409,
+        'Карточка изменена. Обновите страницу',
+      );
+      requireCondition(!previous.archived, 409, 'Сначала восстановите компанию из архива');
+      await this.validateHolding(actor, input.data, previous.ownerId, tx, previous);
+      await this.assertInnAvailable(tx, input.data.inn, previous.ownerId, id);
+      if (previous.archived !== input.data.archived)
+        await this.checkArchivePermission(actor, previous, input.data.archived, tx);
+      const seen = new Set<string>();
+      const existing = new Map<string, any>();
+      for (const contact of input.contacts)
+        if (contact.id) {
+          requireCondition(!seen.has(contact.id), 400, 'Контакт указан дважды');
+          seen.add(contact.id);
+          const [row] = await tx.query(
+            "SELECT * FROM records WHERE id=$1 AND company_id=$2 AND kind='contact' AND NOT deleted FOR UPDATE",
+            [contact.id, id],
+          );
+          requireCondition(row, 404, 'Контакт не найден');
+          requireCondition(
+            row.version === contact.version,
+            409,
+            'Контакт изменён. Обновите страницу',
+          );
+          existing.set(contact.id, row);
+        }
+      await tx.query(
+        'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+        [JSON.stringify(input.data), id],
+      );
+      await audit(tx, actor.id, 'company.updated', id, id, {
+        before: previous,
+        after: input.data,
+        beforeVersion: previous.version,
+        afterVersion: previous.version + 1,
+      });
+      for (const contact of input.contacts) {
+        if (!contact.id) {
+          await this.createRecord(actor, id, 'contact', contact.data, null, tx, {
+            contactSource: 'user',
+          });
+          continue;
+        }
+        const current = existing.get(contact.id)!;
+        const contactData = {
+          ...contact.data,
+          ...(contact.data.extension === undefined && current.data.extension
+            ? { extension: current.data.extension }
+            : {}),
+        };
+        const [updated] = await tx.query(
+          'UPDATE records SET data=$1,version=version+1 WHERE id=$2 RETURNING *',
+          [JSON.stringify(contactData), contact.id],
+        );
+        await audit(tx, actor.id, 'contact.updated', contact.id, id, {
+          before: current.data,
+          after: contactData,
+          recordVersion: updated.version,
+          recordBefore: {
+            data: current.data,
+            contactSource: current.contact_source,
+            deleted: false,
+          },
+          recordAfter: {
+            data: contactData,
+            contactSource: current.contact_source,
+            deleted: false,
+          },
+        });
+      }
+      return this.company(actor, id, tx);
+    });
+  }
   async assign(actor: Actor, id: string, ownerId: string, version: number) {
     requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const company = await this.company(actor, id, tx, true);
+      await this.validateHolding(actor, company, ownerId, tx, company);
       if (actor.role === 'supervisor') {
         await this.checkArchivePermission(actor, company, true, tx);
         await this.checkArchivePermission(actor, { ...company, ownerId }, true, tx);
@@ -144,6 +464,7 @@ export class CrmService {
         idSchema.parse(ownerId),
       ]);
       requireCondition(owner, 400, 'Ответственный неактивен');
+      await this.assertInnAvailable(tx, company.inn, ownerId, id);
       await tx.query(
         'UPDATE companies SET owner_id=$1,version=version+1,updated_at=now() WHERE id=$2',
         [ownerId, id],
@@ -168,10 +489,146 @@ export class CrmService {
       'SELECT a.id,a.actor_id,a.company_id,a.action,a.entity_id,a.details,a.created_at,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.company_id=$1 ORDER BY a.created_at DESC LIMIT 100',
       [id],
     );
-    const clientScore = company.archived
-      ? null
-      : await new DashboardService(this.db, this.timezone).clientScore(actor, company.id);
-    return { company, records, audit: events, clientScore };
+    const holdingMembers =
+      company.segment === 'holding'
+        ? (await this.list(actor)).filter((c) => c.holdingId === id && !c.archived)
+        : [];
+    const holdingDivisions: Record<string, number> = {};
+    let holdingPotential: number | null = null;
+    for (const member of holdingMembers) {
+      const amount =
+        member.potential ??
+        (Object.keys(member.divisions).length
+          ? Object.values(member.divisions).reduce<number>((sum, v) => sum + (v ?? 0), 0)
+          : null);
+      if (amount !== null) holdingPotential = (holdingPotential ?? 0) + amount;
+      for (const [key, value] of Object.entries(member.divisions))
+        holdingDivisions[key] = (holdingDivisions[key] ?? 0) + (value ?? 0);
+    }
+    return {
+      company,
+      records,
+      audit: events,
+      holdingMembers,
+      holdingPotential,
+      holdingDivisions,
+      holdingAllocationRequired:
+        holdingMembers.length > 0 &&
+        ((company.potential || 0) > 0 ||
+          Object.values(company.divisions).some((amount) => (amount || 0) > 0)),
+    };
+  }
+  async allocateHolding(actor: Actor, id: string, raw: unknown) {
+    const input = holdingAllocationSchema.parse(raw);
+    await this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      const holding = await this.company(actor, id, tx, true);
+      requireCondition(
+        holding.segment === 'holding' && !holding.archived,
+        400,
+        'Выберите действующий холдинг',
+      );
+      requireCondition(holding.version === input.version, 409, 'Холдинг изменён. Обновите данные');
+      const rows = await tx.query(
+        "SELECT id FROM companies WHERE data->>'holdingId'=$1 AND COALESCE(data->>'archived','false')='false' ORDER BY id FOR UPDATE",
+        [id],
+      );
+      requireCondition(
+        rows.length > 0 && rows.length <= 100,
+        400,
+        'Укажите от 1 до 100 заказчиков',
+      );
+      const targets = new Map(input.allocations.map((target) => [target.companyId, target]));
+      requireCondition(
+        targets.size === input.allocations.length &&
+          targets.size === rows.length &&
+          rows.every((row) => targets.has(row.id)),
+        409,
+        'Список заказчиков изменён. Обновите данные',
+      );
+      const expected =
+        holding.potential ??
+        (Object.keys(holding.divisions).length
+          ? Object.values(holding.divisions).reduce<number>((n, v) => n + (v || 0), 0)
+          : null);
+      requireCondition(
+        expected !== null && expected > 0,
+        400,
+        'Нет временного потенциала для распределения',
+      );
+      const updates: { before: Company; after: CompanyData }[] = [];
+      const totals: Record<string, number> = {};
+      let total = 0;
+      for (const row of rows) {
+        const before = await this.company(actor, row.id, tx, true);
+        const target = targets.get(row.id)!;
+        requireCondition(
+          before.version === target.version && before.segment === 'end_client',
+          409,
+          'Заказчик изменён. Обновите данные',
+        );
+        const amount = Object.keys(target.divisions).length
+          ? Object.values(target.divisions).reduce<number>((n, v) => n + (v || 0), 0)
+          : target.potential;
+        requireCondition(
+          amount !== null &&
+            amount <= 1e12 &&
+            (target.potential === null || Math.abs(amount - target.potential) < 0.01),
+          400,
+          'Потенциал должен совпадать с суммой оборудования',
+        );
+        total += amount;
+        for (const [key, value] of Object.entries(target.divisions))
+          totals[key] = (totals[key] || 0) + (value || 0);
+        updates.push({
+          before,
+          after: companySchema
+            .strip()
+            .parse({ ...before, divisions: target.divisions, potential: amount }),
+        });
+      }
+      requireCondition(
+        Math.abs(total - expected) < 0.01,
+        400,
+        'Распределите весь временный потенциал без увеличения общей суммы',
+      );
+      if (Object.keys(holding.divisions).length) {
+        for (const key of new Set([...Object.keys(holding.divisions), ...Object.keys(totals)]))
+          requireCondition(
+            Math.abs(
+              (totals[key] || 0) - (holding.divisions[key as keyof typeof holding.divisions] || 0),
+            ) < 0.01,
+            400,
+            'Суммы по оборудованию должны совпадать с временной оценкой холдинга',
+          );
+      }
+      for (const { before, after } of updates) {
+        await tx.query(
+          'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+          [JSON.stringify(after), before.id],
+        );
+        await audit(tx, actor.id, 'company.updated', before.id, before.id, {
+          before,
+          after,
+          beforeVersion: before.version,
+          afterVersion: before.version + 1,
+          holdingAllocation: id,
+        });
+      }
+      const after = companySchema.strip().parse({ ...holding, potential: null, divisions: {} });
+      await tx.query(
+        'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+        [JSON.stringify(after), id],
+      );
+      await audit(tx, actor.id, 'company.updated', id, id, {
+        before: holding,
+        after,
+        beforeVersion: holding.version,
+        afterVersion: holding.version + 1,
+        holdingAllocation: input.allocations.map((target) => target.companyId),
+      });
+    });
+    return this.detail(actor, id);
   }
   async checkArchivePermission(
     actor: Actor,
@@ -208,7 +665,9 @@ export class CrmService {
     tx?: Sql,
   ): Promise<Company> {
     if (!tx) return this.db.transaction((t) => this.setArchived(actor, id, archived, version, t));
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const company = await this.company(actor, id, tx, true);
+    await this.validateHolding(actor, { ...company, archived }, company.ownerId, tx, company);
     await this.checkArchivePermission(actor, company, archived, tx);
     requireCondition(company.version === version, 409, 'Карточка изменена. Обновите страницу');
     requireCondition(
@@ -309,7 +768,7 @@ export class CrmService {
       current.deferred = true;
     return { projection, current };
   }
-  private async validateRecordLinks(
+  async validateRecordLinks(
     actor: Actor,
     companyId: string,
     kind: RecordKind,
@@ -317,6 +776,12 @@ export class CrmService {
     tx: Sql,
     previous?: any,
   ) {
+    const owner = await this.company(actor, companyId, tx);
+    requireCondition(
+      owner.segment !== 'holding' || (kind !== 'project' && !(kind === 'activity' && data.sales)),
+      400,
+      'Проекты и продажи относятся к заказчику, а не к холдингу',
+    );
     const checkContact = async (contactId: string | null, ownerCompanyId: string) => {
       if (!contactId) return;
       const [contact] = await tx.query(
@@ -339,6 +804,7 @@ export class CrmService {
         if (existing) continue;
         const company = await this.company(actor, participant.companyId, tx);
         requireCondition(!company.archived, 409, 'Участник проекта находится в архиве');
+        requireCondition(company.segment !== 'holding', 400, 'Укажите заказчика вместо холдинга');
         await checkContact(participant.contactId, participant.companyId);
       }
     }
@@ -359,6 +825,7 @@ export class CrmService {
       return this.db.transaction((t) =>
         this.createRecord(actor, companyId, kind, data, projectId, t, internal),
       );
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const company = await this.company(actor, companyId, tx, true);
     requireCondition(!company.archived, 409, 'Сначала восстановите компанию из архива');
     await this.validateRecordLinks(actor, companyId, kind, data, tx);
@@ -406,6 +873,7 @@ export class CrmService {
           ...(city !== null ? { city } : {}),
           ...(segment !== null ? { segment } : {}),
         });
+        await this.validateHolding(actor, next, company.ownerId, tx, company);
         await tx.query(
           'UPDATE companies SET data=$2,version=version+1,updated_at=now() WHERE id=$1',
           [companyId, JSON.stringify(next)],
@@ -426,6 +894,7 @@ export class CrmService {
       .strict()
       .parse(raw);
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const [row] = await tx.query('SELECT * FROM records WHERE id=$1 AND NOT deleted', [
         idSchema.parse(id),
       ]);
@@ -444,6 +913,8 @@ export class CrmService {
         'Этот тип записи не редактируется',
       );
       const data: any = recordSchemas[row.kind as RecordKind].parse(input.data);
+      if (row.kind === 'contact' && data.extension === undefined && current.data.extension)
+        data.extension = current.data.extension;
       await this.validateRecordLinks(actor, row.company_id, row.kind, data, tx, current.data);
       if (row.kind === 'task')
         data.completedAt = data.done ? current.data.completedAt || new Date().toISOString() : null;

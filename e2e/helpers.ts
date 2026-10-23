@@ -40,7 +40,7 @@ export async function openCompany(page: Page, name: string) {
     .filter({ has: page.locator('strong', { hasText: name }) });
   if ((await row.locator('.pico-client-row').getAttribute('aria-expanded')) !== 'true')
     await row.locator('.pico-client-row').click();
-  await row.getByRole('button', { name: 'Карточка клиента', exact: true }).click();
+  await row.getByRole('button', { name: 'Задачи и проекты', exact: true }).click();
 }
 
 export async function action(page: Page, name: string) {
@@ -83,4 +83,15 @@ export async function openCompanySection(page: Page, section: 'summary' | 'actio
     .locator(section === 'summary' ? '.company-detail-summary' : '.company-detail-actions');
   if ((await disclosure.getAttribute('open')) === null)
     await disclosure.locator(':scope > summary').click();
+}
+
+// Exercise the real session-expiry path without a user-facing logout action.
+export async function expireSession(page: Page) {
+  await page.route(
+    '**/api/me',
+    (route) => route.fulfill({ status: 401, json: { message: 'Сессия истекла' } }),
+    { times: 1 },
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
 }

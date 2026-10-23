@@ -1,0 +1,380 @@
+.modal:has(> .company-form) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: min(
+    92dvh,
+    calc(
+      var(--pico-view-height, 100dvh) - var(--pico-safe-top, 0px) - var(--pico-safe-bottom, 0px) -
+        24px
+    )
+  );
+}
+.modal:has(> .company-form) > .section-head {
+  flex: none;
+  margin-bottom: 0;
+}
+.company-form.pico-compact-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 0;
+  gap: 0;
+}
+.company-form-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 1px;
+  display: grid;
+  gap: 12px;
+  scroll-padding: 16px;
+}
+.company-form .field {
+  min-width: 0;
+}
+.company-form.pico-compact-form input,
+.company-form.pico-compact-form textarea,
+.company-form.pico-compact-form select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  scroll-margin: 16px;
+}
+.company-form .pico-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.company-form .pico-chips > button {
+  min-height: 30px;
+  border-radius: 10px;
+  font-size: 12px;
+  padding: 5px 8px;
+  overflow-wrap: anywhere;
+}
+.company-form-accordion {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  min-width: 0;
+}
+.company-form-accordion > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: var(--text);
+  border-top: 1px solid var(--line);
+}
+.company-form-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+.company-form-accordion > summary > span {
+  flex: 1;
+  min-width: 0;
+}
+.company-form-accordion > summary > strong {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.company-form-accordion > summary > svg {
+  flex: none;
+  transition: transform 0.15s;
+}
+.company-form-accordion[open] > summary > svg {
+  transform: rotate(180deg);
+}
+.company-equipment,
+.company-extra {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 12px;
+}
+.company-equipment > p {
+  margin: 0;
+  font-size: 11px;
+}
+.company-equipment-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  font-size: 12px;
+}
+.company-equipment-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.company-form .company-equipment-row > input {
+  width: 64px;
+  min-width: 64px;
+  height: 32px;
+  min-height: 32px;
+  padding: 4px;
+  text-align: right;
+}
+.company-form-footer {
+  flex: none;
+  padding: 12px 0 max(4px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface, #fff);
+}
+.company-form-footer > .primary {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+}
+.company-form .error {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.company-form-footer > .error {
+  margin: 0 0 8px;
+}
+.company-contacts {
+  display: grid;
+  gap: 12px;
+}
+.company-contacts h3 {
+  font-size: 12px;
+  margin: 0;
+}
+.company-contacts fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+}
+.company-contacts legend {
+  font-size: 12px;
+  padding: 0 4px;
+}
+.company-remove-contact {
+  justify-self: start;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 36px;
+}
+@media (max-width: 360px) {
+  .company-form .pico-form-two {
+    gap: 8px;
+  }
+  .company-form-accordion > summary {
+    gap: 6px;
+  }
+  .company-form-accordion > summary > strong {
+    font-size: 11px;
+  }
+}
+/* Final new-client sheet specification. */
+.modal:has(> .company-form) {
+  border-radius: 28px 28px 0 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.modal:has(> .company-form) > .section-head h2 {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 800;
+}
+.company-form.pico-compact-form .field > span {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: #2b3258;
+}
+.company-form.pico-compact-form input,
+.company-form.pico-compact-form select {
+  height: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+}
+.company-form.pico-compact-form input::placeholder {
+  color: #8a92a8;
+  font-size: 14px;
+  font-weight: 500;
+}
+.company-form.pico-compact-form .pico-chips {
+  row-gap: 6px;
+}
+.company-form.pico-compact-form .pico-chips > button {
+  font-weight: 600;
+  color: #4a5370;
+  border-color: #dde4f0;
+  background: #fff;
+}
+.company-form.pico-compact-form .pico-chips > button.active {
+  background: #1f7aea;
+  color: #fff;
+  font-weight: 700;
+}
+.company-form-accordion > summary {
+  border-color: #eef2f8;
+  color: #2b3258;
+}
+.company-form-accordion > summary > strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1f7aea;
+}
+.company-equipment {
+  padding: 0;
+  gap: 0;
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.company-equipment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 32px;
+  background: #f7faff;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.company-equipment-row {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-top: 1px solid #eef2f8;
+  color: #4a5370;
+  font-weight: 600;
+}
+.company-equipment-row.is-filled {
+  color: #1a2151;
+  font-weight: 700;
+}
+.company-form.pico-compact-form .company-equipment-row > input {
+  height: 32px;
+  min-height: 32px;
+  border-radius: 10px;
+  background: #f3f6fb;
+  font-size: 14px;
+  font-weight: 800;
+}
+.company-form.pico-compact-form .company-equipment-row > input::placeholder {
+  color: #b3b9ca;
+}
+.company-form.pico-compact-form .company-equipment-row.is-filled > input {
+  background: #e4effd;
+}
+.company-contacts fieldset {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.company-contacts fieldset > .field:first-of-type,
+.company-contacts fieldset > .field:last-of-type {
+  grid-column: 1/-1;
+}
+.company-form.pico-compact-form .company-contacts .pico-add-row {
+  min-height: 28px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f7aea;
+  justify-content: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.company-form.pico-compact-form textarea {
+  min-height: 64px;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  background: #f3f6fb;
+}
+.company-form-footer {
+  padding: 12px 0 max(28px, env(safe-area-inset-bottom));
+  border-color: #eef2f8;
+}
+.company-form-footer > .primary {
+  height: 48px;
+  min-height: 48px;
+  border-radius: 14px;
+  background: #1f7aea;
+  font-size: 15px;
+  font-weight: 800;
+}
+/* Sheet controls keep their touch geometry even inside flex containers. */
+.modal:has(> .company-form)::before,
+.modal:has(> .cc-contact-form)::before {
+  width: 36px;
+  height: 4px;
+  min-height: 4px;
+  flex: 0 0 4px;
+  background: #d3d9e6;
+}
+.modal:has(> .company-form) > .section-head > button,
+.modal:has(> .cc-contact-form) > .section-head > button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  flex: 0 0 44px;
+}
+.company-form.pico-compact-form .field > .company-field-error {
+  color: #b42318;
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 500;
+}
+.company-form.pico-compact-form textarea {
+  height: 64px;
+  min-height: 64px;
+  resize: vertical;
+}
+.company-form.pico-compact-form .pico-chips {
+  gap: 6px 8px;
+}
+@media (pointer: coarse) {
+  .company-form.pico-compact-form input,
+  .company-form.pico-compact-form select,
+  .company-form.pico-compact-form textarea,
+  .company-form.pico-compact-form .company-equipment-row > input,
+  .cc-contact-form input {
+    font-size: 16px;
+  }
+}
+.modal-backdrop:has(> .modal > .company-form),
+.modal-backdrop:has(> .modal > .cc-contact-form) {
+  align-items: flex-end;
+  background: rgba(34, 42, 92, 0.42);
+}
+.modal:has(> .company-form)::before,
+.modal:has(> .cc-contact-form)::before {
+  content: '';
+  display: block;
+  border-radius: 4px;
+  margin: -14px auto 18px;
+}
+.modal:has(> .cc-contact-form) {
+  max-height: min(92dvh, var(--pico-view-height, 100dvh));
+  overflow-y: auto;
+}
+.company-form-accordion > .company-field-error {
+  display: block;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 17px;
+  padding-top: 6px;
+}

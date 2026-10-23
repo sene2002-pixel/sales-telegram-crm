@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   companySchema,
+  companyEditSchema,
+  holdingAllocationSchema,
   contactSchema,
   projectSchema,
   taskSchema,
@@ -45,6 +47,11 @@ const object = (
 const recordKinds = ['contact', 'project', 'task', 'activity', 'file'];
 const namedInput = {
   CompanyInput: companySchema,
+  CompanyEditInput: companyEditSchema,
+  HoldingAllocationInput: holdingAllocationSchema,
+  CompanyCreateInput: companySchema.extend({
+    initialContacts: z.array(contactSchema).max(20).default([]),
+  }),
   ContactInput: contactSchema,
   ProjectInput: projectSchema,
   TaskInput: taskSchema,
@@ -150,10 +157,13 @@ schemas.AuditEvent = object({
   actor_name: nullable(string),
 });
 schemas.CompanyDetail = object({
-  clientScore: nullable(ref('ClientScore')),
   company: ref('Company'),
   records: array(ref('Record')),
   audit: array(ref('AuditEvent')),
+  holdingMembers: array(ref('Company')),
+  holdingAllocationRequired: boolean,
+  holdingPotential: nullable({ type: 'number', minimum: 0 }),
+  holdingDivisions: { type: 'object', additionalProperties: { type: 'number', minimum: 0 } },
 });
 schemas.SignatureDraft = object({ id: uuid, data: ref('RecognizedCard'), transcript: string });
 schemas.Report = object({
@@ -659,7 +669,7 @@ add(
   'Компании',
   ref('Company'),
   {
-    body: jsonBody(ref('CompanyInput')),
+    body: jsonBody(ref('CompanyCreateInput')),
     description:
       'В HTTP нет ownerId. Реквизиты и ИНН проверяются сервером (включая контрольную сумму). Начальный архив разрешён только администратору.',
   },
@@ -677,6 +687,19 @@ add(
   },
 );
 add(
+  'post',
+  '/companies/{id}/holding-allocation',
+  'allocateHoldingPotential',
+  'Распределить временный потенциал холдинга',
+  'Компании',
+  ref('CompanyDetail'),
+  {
+    body: jsonBody(ref('HoldingAllocationInput')),
+    description:
+      'Явное распределение между всеми доступными действующими заказчиками. Проверяются версии и суммы общего потенциала и направлений. Старые значения заменяются только после подтверждения; временная оценка холдинга очищается одной транзакцией.',
+  },
+);
+add(
   'patch',
   '/companies/{id}',
   'updateCompany',
@@ -689,6 +712,19 @@ add(
     ),
     description:
       'Полные data с дефолтами валидатора; stale version — 409. Изменение archived дополнительно проверяет архивные полномочия.',
+  },
+);
+add(
+  'patch',
+  '/companies/{id}/editor',
+  'updateCompanyWithContacts',
+  'Атомарно изменить компанию и контакты',
+  'Компании',
+  ref('Company'),
+  {
+    body: jsonBody(ref('CompanyEditInput')),
+    description:
+      'Одна транзакция для компании и переданных контактов. Проверяются актуальные права, принадлежность и версии всех записей; конфликт — 409 без частичного сохранения. Пропущенные контакты не удаляются; служебные сведения контактов сохраняются сервером.',
   },
 );
 add(

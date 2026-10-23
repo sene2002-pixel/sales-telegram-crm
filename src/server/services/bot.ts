@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { importTemplateAction, importTemplateCaption } from './import-onboarding';
 import { CompanyImports } from './company-imports';
 import { companyImportLimits } from './company-import-parser';
 import { companyDisplayName } from '../../shared/company-display-name';
@@ -166,28 +168,80 @@ export class BotService {
         await this.telegram.send(chatId, { text });
         return { ok: true };
       }
-      if (callback && /^(ic|ix):/.test(callback.data || '') && this.imports) {
-        const [action, id, version] = (callback.data || '').split(':');
-        if (action === 'ic') {
+      if (callback?.data === importTemplateAction && this.imports) {
+        await this.telegram.call('answerCallbackQuery', { callback_query_id: callback.id });
+        try {
+          const bytes = await readFile('assets/import/Pico-import.xlsx');
+          await this.telegram.sendImportTemplate(chatId, bytes, importTemplateCaption);
+        } catch {
+          await this.diagnostics?.record('import.template_failed', { reason: 'delivery_failed' });
+          await this.telegram.send(chatId, {
+            text: 'Не удалось отправить шаблон. Попробуйте ещё раз: нажмите «Импортировать компании».',
+          });
+        }
+        return { ok: true };
+      }
+      if (callback && /^(ic|ix|iu|iz):/.test(callback.data || '') && this.imports) {
+        const [action, id, version, index, decision] = (callback.data || '').split(':');
+        if (action === 'iu') {
+          const preview = await this.imports.decide(
+            actor,
+            id || '',
+            Number(version),
+            Number(index),
+            decision || '',
+          );
+          for (const [i, text] of preview.messages.entries())
+            await this.telegram.send(chatId, {
+              text,
+              ...(i === preview.messages.length - 1 ? { reply_markup: preview.replyMarkup } : {}),
+            });
+        } else if (action === 'iz') {
+          await this.imports.undo(actor, id || '', Number(version));
+          await this.telegram.send(chatId, {
+            text: 'Импорт отменён. Созданные компании перенесены в архив, обновлённые данные восстановлены.',
+          });
+        } else if (action === 'ic') {
           const result = await this.imports.confirm(actor, id || '', Number(version));
           await this.telegram.send(chatId, {
-            text: `Импорт завершён: создано ${result.created.length}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}.`,
-            reply_markup: this.telegram.appButton(),
+            text: result.unchanged
+              ? 'Этот файл уже импортирован. Изменений нет.'
+              : `Импорт завершён: создано ${result.created.length}, обновлено ${result.updated?.length || 0}, пропущено дублей ${result.skipped}. Контактов: ${result.contacts || 0}, проектов: ${result.projects || 0}. Отменить можно в течение 24 часов, если данные не изменены.`,
+            reply_markup: result.undoUntil
+              ? {
+                  inline_keyboard: [
+                    [
+                      {
+                        text: 'Отменить импорт · 24 часа',
+                        callback_data: `iz:${id}:${result.version}`,
+                      },
+                    ],
+                  ],
+                }
+              : undefined,
           });
         } else await this.imports.cancel(actor, id || '', Number(version));
         await this.telegram.call('answerCallbackQuery', {
           callback_query_id: callback.id,
-          text: action === 'ic' ? 'Импорт завершён' : 'Импорт отменён',
+          text:
+            action === 'ic'
+              ? 'Импорт завершён'
+              : action === 'iz'
+                ? 'Импорт отменён'
+                : action === 'iu'
+                  ? 'Выбор сохранён'
+                  : 'Импорт отменён',
         });
         return { ok: true };
       }
       if (!callback && msg?.document && this.imports) {
-        const extension = /\.(xlsx|csv|txt|docx)$/i
+        const extension = /\.(xlsx|ods|csv|txt|docx)$/i
           .exec(msg.document.file_name || '')?.[1]
-          ?.toLowerCase() as 'xlsx' | 'csv' | 'txt' | 'docx' | undefined;
+          ?.toLowerCase() as 'xlsx' | 'ods' | 'csv' | 'txt' | 'docx' | undefined;
         const mimeFormat = (
           {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+            'application/vnd.oasis.opendocument.spreadsheet': 'ods',
             'text/csv': 'csv',
             'text/plain': 'txt',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
@@ -221,7 +275,7 @@ export class BotService {
       }
       const googleDocument =
         msg?.text &&
-        /^(?:импорт(?:ировать)?\s+)?(https:\/\/docs\.google\.com\/document\/[^\s]+)$/i.exec(
+        /^(?:импорт(?:ировать)?\s+)?(https:\/\/(?:docs\.google\.com\/(?:document|spreadsheets)\/|drive\.google\.com\/file\/)[^\s]+)$/i.exec(
           msg.text.trim(),
         );
       if (!callback && googleDocument && this.imports) {
@@ -307,7 +361,14 @@ export class BotService {
       else if (command === '/start')
         await this.telegram.send(chatId, {
           text: picoGreeting,
-          reply_markup: this.telegram.appButton(),
+          reply_markup: {
+            inline_keyboard: [
+              ...this.telegram.appButton().inline_keyboard,
+              ...(this.imports
+                ? [[{ text: 'Импортировать компании', callback_data: importTemplateAction }]]
+                : []),
+            ],
+          },
         });
       else if (command === '/help')
         await this.telegram.send(chatId, {

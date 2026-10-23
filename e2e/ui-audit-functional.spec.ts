@@ -1,3 +1,4 @@
+import { expireSession } from './helpers';
 import { openCompanySection } from './helpers';
 import { createHmac } from 'node:crypto';
 import { expect, Page, test } from '@playwright/test';
@@ -150,7 +151,7 @@ test('UI audit: saved letter stays saved when refreshing fails and cannot submit
   await expect(composer).toContainText('Письмо сохранено');
 });
 
-test('UI audit: logout erases privileged cached data before a different-role login whose refresh fails', async ({
+test('UI audit: session expiry erases privileged cached data before a different-role login whose refresh fails', async ({
   page,
 }) => {
   await login(page, 'Администратор');
@@ -161,15 +162,7 @@ test('UI audit: logout erases privileged cached data before a different-role log
   await navigate(page, 'Клиенты');
   await page.getByLabel('Поиск компаний', { exact: true }).fill(company.name);
   await expect(page.locator('.pico-client-row').filter({ hasText: company.name })).toBeVisible();
-  if (await page.getByTitle('Выйти', { exact: true }).isVisible())
-    await page.getByTitle('Выйти', { exact: true }).click();
-  else {
-    await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
-    await page
-      .locator('.pico-more-menu')
-      .getByRole('button', { name: 'Выйти', exact: true })
-      .click();
-  }
+  await expireSession(page);
   await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
   for (const path of [
     '/api/companies',
@@ -213,7 +206,7 @@ test('UI audit: additional menu closes on Escape and returns keyboard focus to i
 });
 
 for (const role of ['Менеджер', 'Руководитель', 'Администратор']) {
-  test(`UI audit: ${role} can reach every permitted route, help, refresh and logout`, async ({
+  test(`UI audit: ${role} can reach every permitted route, help, refresh and session expiry`, async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -290,15 +283,7 @@ for (const role of ['Менеджер', 'Руководитель', 'Админ�
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await action(page, 'Обновить');
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
-    if (await page.getByTitle('Выйти', { exact: true }).isVisible())
-      await page.getByTitle('Выйти', { exact: true }).click();
-    else {
-      await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
-      await page
-        .locator('.pico-more-menu')
-        .getByRole('button', { name: 'Выйти', exact: true })
-        .click();
-    }
+    await expireSession(page);
     await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
     await expect(page.locator('.app-shell')).toHaveCount(0);
     expect(errors).toEqual([]);
@@ -718,7 +703,7 @@ test('UI audit: legacy project and task edits persist; contact deletion cancel a
   });
 });
 
-test('UI audit: task detail and Home inline deletion accept native confirmation and persist after reload', async ({
+test('UI audit: task detail and Home task navigation deletion accept native confirmation and persist after reload', async ({
   page,
 }) => {
   await isolatedActor(page, 'manager');
@@ -751,10 +736,14 @@ test('UI audit: task detail and Home inline deletion accept native confirmation 
     .click();
   await expect(row).toHaveCount(0);
   await navigate(page, 'Главная');
+  await page.locator('.pico-home-snapshot').first().click();
   const home = page.locator('.pico-task-row').filter({ hasText: 'Удаление с главной' });
   await home.locator('button.task-text').click();
   page.once('dialog', (native) => native.accept());
-  await home.getByRole('button', { name: 'Удалить', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Удалить задачу', exact: true })
+    .click();
   await expect(home).toHaveCount(0);
   await page.reload();
   const records = (await api(page, `/companies/${company.id}`, undefined, 'GET')).records;

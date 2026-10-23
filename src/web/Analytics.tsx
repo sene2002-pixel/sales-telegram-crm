@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   Actor,
   AnalyticsSettings,
@@ -108,13 +108,76 @@ function Metric({
               )}
         </strong>
         {value !== null && <span>{money ? (million ? 'млн ₽' : '₽') : unit}</span>}
+        <Comparison value={delta} />
       </div>
-      <p>{value === null ? 'Недостаточно истории' : detail}</p>
-      <Comparison value={delta} />
+      <p title={detail}>{value === null ? 'Недостаточно истории' : detail}</p>
     </section>
   );
 }
-function Funnel({ data }: { data: ClientAnalytics }) {
+const LEVEL_CLIENT_LIMIT = 100;
+function LevelClients({ clients, label }: { clients: Company[]; label: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery] = useState('');
+  const listId = useId();
+  const normalized = query.trim().toLocaleLowerCase('ru');
+  const matches = clients.filter((company) =>
+    `${companyDisplayName(company.name)} ${company.inn}`
+      .toLocaleLowerCase('ru')
+      .includes(normalized),
+  );
+  const visible = expanded ? matches.slice(0, LEVEL_CLIENT_LIMIT) : clients.slice(0, 3);
+  return (
+    <div className="pico-level-clients">
+      {expanded && clients.length > LEVEL_CLIENT_LIMIT && (
+        <div className="pico-level-search">
+          <label htmlFor={`${listId}-search`}>Найти клиента в этом уровне</label>
+          <input
+            id={`${listId}-search`}
+            type="search"
+            value={query}
+            aria-label={`Поиск клиентов уровня «${label}»`}
+            placeholder="Название или ИНН"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+      )}
+      <ul
+        id={listId}
+        className={`pico-level-client-list${expanded ? ' is-expanded' : ''}`}
+        aria-label={`Клиенты уровня «${label}»`}
+        tabIndex={expanded ? 0 : undefined}
+      >
+        {visible.map((company) => (
+          <li key={company.id}>
+            <span>{companyDisplayName(company.name)}</span>
+            <strong>{company.potential == null ? '—' : compactMoney(company.potential)}</strong>
+          </li>
+        ))}
+      </ul>
+      {expanded && !matches.length && <p className="pico-level-count">Клиенты не найдены</p>}
+      {clients.length > 3 && !expanded && (
+        <button
+          className="pico-level-show-all"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={listId}
+          onClick={() => {
+            setExpanded(true);
+            setQuery('');
+          }}
+        >
+          <span>
+            {clients.length > LEVEL_CLIENT_LIMIT
+              ? 'Показать до 100'
+              : `Показать всех, ${clients.length}`}
+          </span>
+          <Icon name="chevron-down" size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+function Funnel({ data, companies }: { data: ClientAnalytics; companies: Company[] }) {
   return (
     <section className="pico-client-funnel">
       <h2>
@@ -167,6 +230,35 @@ function Funnel({ data }: { data: ClientAnalytics }) {
           ))}
         </div>
       </div>
+      <details className="pico-levels">
+        <summary>
+          Клиенты по уровням <Icon name="chevron-down" size={18} />
+        </summary>
+        {levels.map((level) => {
+          const ids = new Set(data.clients.filter((c) => c.level === level.key).map((c) => c.id));
+          const clients = companies.filter((c) => !c.archived && ids.has(c.id));
+          const heading = (
+            <>
+              <i style={{ background: level.color }} />
+              <span>{level.label}</span>
+              <strong>{clients.length}</strong>
+            </>
+          );
+          return clients.length ? (
+            <details className="pico-level" key={level.key}>
+              <summary>
+                {heading}
+                <Icon name="chevron-down" size={18} />
+              </summary>
+              <LevelClients clients={clients} label={level.label} />
+            </details>
+          ) : (
+            <div className="pico-level-empty" key={level.key}>
+              {heading}
+            </div>
+          );
+        })}
+      </details>
     </section>
   );
 }
@@ -271,6 +363,9 @@ export function AnalyticsScreen({
   }, [period, from, to, companies, employeeId, refreshVersion, retry]);
   const data = summary?.clientAnalytics,
     current = companies.filter((c) => !c.archived);
+  const financialCompanies = current.filter(
+    (c) => c.segment !== 'holding' || !current.some((child) => child.holdingId === c.id),
+  );
   const directions: readonly string[] = current.some((c) => c.divisions.drives != null)
     ? [...primaryDivisions, 'drives']
     : primaryDivisions;
@@ -395,7 +490,7 @@ export function AnalyticsScreen({
       )}
       {data && (
         <>
-          <Funnel data={data} />
+          <Funnel data={data} companies={current} />
           <ScorePath settings={data.settings} />
           <div className="pico-client-metrics">
             <Metric
@@ -406,7 +501,7 @@ export function AnalyticsScreen({
               detail={
                 period === 'all'
                   ? `по ${data.metrics.potential.companies} ${countedWord(data.metrics.potential.companies, 'клиенту', 'клиентам', 'клиентам')}`
-                  : `добавлен за период · по ${data.metrics.potential.companies} ${countedWord(data.metrics.potential.companies, 'клиенту', 'клиентам', 'клиентам')}`
+                  : `добавлено за период`
               }
               delta={data.metrics.potential.delta}
             />
@@ -418,7 +513,7 @@ export function AnalyticsScreen({
               detail={
                 period === 'all'
                   ? `по ${data.metrics.projects.count} ${countedWord(data.metrics.projects.count, 'проекту', 'проектам', 'проектам')}`
-                  : `новых проектов: ${data.metrics.projects.count}`
+                  : `${data.metrics.projects.count} ${countedWord(data.metrics.projects.count, 'новый проект', 'новых проекта', 'новых проектов')}`
               }
               delta={data.metrics.projects.delta}
             />
@@ -430,7 +525,7 @@ export function AnalyticsScreen({
               detail={
                 data.metrics.growth.share === null
                   ? 'Нет данных о доле базы'
-                  : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(data.metrics.growth.share)}% базы ${period === 'all' ? 'выше уровня «Новый»' : 'поднялись'}`
+                  : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(data.metrics.growth.share)}% базы поднялись`
               }
               delta={data.metrics.growth.delta}
             />
@@ -439,21 +534,13 @@ export function AnalyticsScreen({
               label="Активные клиенты"
               value={data.metrics.active.value}
               unit={`из ${data.metrics.active.total}`}
-              detail={period === 'all' ? 'есть действия по клиенту' : 'действия за период'}
+              detail={period === 'all' ? 'ведётся работа' : 'действия за период'}
               delta={data.metrics.active.delta}
             />
           </div>
-          {(data.historyIncomplete > 0 || data.contactSourcesUnknown > 0) && (
+          {data.historyIncomplete > 0 && (
             <div className="pico-analytics-limits" role="note">
-              {data.historyIncomplete > 0 && (
-                <p>Не всю историю можно подтвердить. Для таких данных сравнения недоступны.</p>
-              )}
-              {data.contactSourcesUnknown > 0 && (
-                <p>
-                  Контакты с неизвестным источником: {data.contactSourcesUnknown}. Балл за контакты
-                  рассчитывается без них.
-                </p>
-              )}
+              <p>Не всю историю можно подтвердить. Для таких данных сравнения недоступны.</p>
             </div>
           )}
           <section className="pico-client-equipment">
@@ -462,7 +549,7 @@ export function AnalyticsScreen({
               Потенциал по оборудованию
             </h2>
             {directions.map((direction) => {
-              const list = current.filter(
+              const list = financialCompanies.filter(
                   (c) => c.divisions[direction as keyof Company['divisions']] != null,
                 ),
                 amount = list.reduce(

@@ -111,7 +111,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     path: info.outputPath('reference-home-empty-native-frame.png'),
   });
   const homeFooter = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  const homeEmpty = (await page.locator('.pico-home .pico-empty').last().boundingBox())!;
+  const homeEmpty = (await page.locator('.pico-home-snapshot').last().boundingBox())!;
   expect(homeEmpty.y + homeEmpty.height).toBeLessThanOrEqual(homeFooter.y);
   await page.evaluate(() => document.fonts.ready);
   const font = await page.evaluate(async () => {
@@ -125,9 +125,9 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
       (value) => document.documentElement.style.setProperty('--pico-safe-bottom', value + 'px'),
       inset,
     );
-    await expect(nav).toHaveCSS('height', `${Math.max(82, 48 + inset)}px`);
-    await expect(nav.locator('button > svg').first()).toHaveCSS('width', '24px');
-    await expect(nav.locator('button > span').first()).toHaveCSS('font-size', '11px');
+    await expect(nav).toHaveCSS('height', `${Math.max(72, 59 + inset)}px`);
+    await expect(nav.locator('button > svg').first()).toHaveCSS('width', '26px');
+    await expect(nav.locator('button > span').first()).toHaveCSS('font-size', '10.5px');
     const navBox = (await nav.boundingBox())!;
     for (const button of await nav.locator('button').all()) {
       const buttonBox = (await button.boundingBox())!;
@@ -139,7 +139,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     }
   }
   await page.evaluate(() =>
-    document.documentElement.style.setProperty('--pico-safe-bottom', '34px'),
+    document.documentElement.style.setProperty('--pico-safe-bottom', '0px'),
   );
   await navigate(page, 'Клиенты');
   await expect(page.locator('.pico-client-row')).toHaveCount(5);
@@ -166,7 +166,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   await expect(page.locator('.pico-client-copy > strong').first()).toHaveCSS('font-weight', '800');
   for (const [selector, weight] of [
     ['.pico-client-metadata > span', '500'],
-    ['.company-money > small', '600'],
+    ['.company-money > small', '400'],
   ]) {
     await expect(page.locator(selector).first()).toHaveCSS('font-weight', weight);
     const textNode = await cdp.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector });

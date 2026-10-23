@@ -467,3 +467,39 @@ test('project participant activity follows proven action snapshots even after re
   );
   assert.ok(!JSON.stringify(result).includes('foreign'));
 });
+
+test('holding temporary potential counts only without visible active children', () => {
+  const holding = company('holding', 100);
+  holding.data.segment = 'holding';
+  const child = company('child', 25);
+  child.data.holdingId = holding.id;
+  assert.equal(calculate([holding], []).metrics.potential.value, 100);
+  assert.equal(calculate([holding, child], []).metrics.potential.value, 25);
+  child.data.archived = true;
+  assert.equal(calculate([holding, child], []).metrics.potential.value, 100);
+});
+
+test('range potential ignores holding increases while customers are linked', () => {
+  const holding = company('holding', 200);
+  holding.data.segment = 'holding';
+  const child = company('child', 25);
+  child.data.holdingId = holding.id;
+  const before = { ...holding.data, potential: 100 };
+  const event = changed(holding.id, '2026-03-15', before, holding.data);
+  assert.equal(calculate([holding, child], [], [event], 'range').metrics.potential.value, 0);
+  assert.equal(calculate([holding], [], [event], 'range').metrics.potential.value, 100);
+});
+
+test('holding allocation changes current targets without inflating range new-potential metric', () => {
+  const before = companySchema.parse({ name: 'Customer', potential: 10_000_000 });
+  const after = companySchema.parse({ name: 'Customer', potential: 30_000_000 });
+  const c = company('customer');
+  c.data = after;
+  c.updated_at = '2026-03-20T12:00:00Z';
+  const event = changed(c.id, '2026-03-20', before, after);
+  event.details.holdingAllocation = 'holding';
+  assert.equal(calculate([c], [], [event], 'range').metrics.potential.value, 0);
+  assert.equal(calculate([c], [], [event], 'all').metrics.potential.value, 30_000_000);
+  delete event.details.holdingAllocation;
+  assert.equal(calculate([c], [], [event], 'range').metrics.potential.value, 20_000_000);
+});

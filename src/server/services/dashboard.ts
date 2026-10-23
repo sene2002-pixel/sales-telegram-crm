@@ -68,53 +68,6 @@ export class DashboardService {
     });
     return this.analyticsSettings(actor);
   }
-  // Use the same projection and settings as analytics, scoped to one visible company.
-  async clientScore(actor: Actor, companyId: string) {
-    const settings = await this.analyticsSettings(actor);
-    const companies = await this.db.query(
-      'SELECT id,data,created_at,updated_at FROM companies WHERE id=$1 AND ($2::boolean OR owner_id=$3)',
-      [companyId, isLeader(actor), actor.id],
-    );
-    requireCondition(companies.length, 404, 'Компания не найдена');
-    if (companies[0]!.data.archived) return null;
-    const records = await this.db.query(
-      `SELECT r.* FROM records r JOIN companies c ON c.id=r.company_id
-       WHERE ($2::boolean OR c.owner_id=$3) AND r.kind IN ('task','contact','project')
-       AND (r.company_id=$1 OR (r.kind='project' AND EXISTS (
-         SELECT 1 FROM jsonb_array_elements(COALESCE(r.data->'participants','[]'::jsonb)) p
-         WHERE p->>'companyId'=$1::text)))`,
-      [companyId, isLeader(actor), actor.id],
-    );
-    // Audit history is scoped to the company and linked projects, retaining future-event handling.
-    const events = await this.db.query(
-      `SELECT a.company_id,a.entity_id,a.action,a.details,a.created_at,a.analytics_seq,a.analytics_order_proven
-       FROM audit a JOIN companies c ON c.id=a.company_id
-       WHERE ($2::boolean OR c.owner_id=$3)
-       AND (a.company_id=$1 OR a.entity_id=ANY($4::text[]))
-       ORDER BY a.created_at,a.analytics_seq`,
-      [companyId, isLeader(actor), actor.id, records.map((record) => record.id)],
-    );
-    const now = new Date();
-    const today = new Intl.DateTimeFormat('en-CA', {
-      timeZone: this.timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(now);
-    return (
-      summarizeClientAnalytics(
-        companies as any,
-        records as any,
-        events as any,
-        today,
-        today,
-        this.timezone,
-        settings,
-        'all',
-        now,
-      ).clients.find((client) => client.id === companyId) || null
-    );
-  }
   async analytics(actor: Actor, from: string, to: string, employeeId?: unknown, rawMode?: unknown) {
     await this.currentActor(actor);
     const mode = z.enum(['all', 'range']).parse(rawMode ?? 'range');

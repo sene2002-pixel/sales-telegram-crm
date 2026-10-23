@@ -1,3 +1,4 @@
+import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { resolveEmployeeFilter } from './employee-filter';
 import { companyDisplayName } from '../../shared/company-display-name';
 import { randomUUID } from 'node:crypto';
@@ -224,25 +225,35 @@ export class ReportService {
       return mapReport(updated);
     });
   }
-  async candidates(actor: Actor, draft: Extraction, tx: Sql = this.db) {
+  async candidates(actor: Actor, draft: Extraction, tx: Sql = this.db, ownerId = actor.id) {
     const groups: string[][] = [];
     for (const block of draft.blocks) {
+      const classified = classifyHoldingMention(block.companyName);
+      const mention = classified.isHolding && block.inn ? {} : classified;
+      const lookupName = mention.companyName || mention.holdingName || block.companyName;
       const rows = await tx.query(
-        `SELECT id FROM companies WHERE ($1::boolean OR owner_id=$2) AND (($3::text IS NOT NULL AND $3<>'' AND data->>'inn'=$3) OR (($3::text IS NULL OR $3='') AND lower(data->>'name')=lower($4)))`,
-        [isLeader(actor), actor.id, block.inn, block.companyName],
+        `SELECT id FROM companies WHERE owner_id=$1 AND (($2::text IS NOT NULL AND $2<>'' AND data->>'inn'=$2) OR (($2::text IS NULL OR $2='') AND lower(data->>'name')=lower($3)))`,
+        [ownerId, mention.isHolding ? null : block.inn, lookupName],
       );
       groups.push(rows.map((r) => r.id));
     }
     return groups;
   }
-  async feedback(actor: Actor, draft: Extraction, tx: Sql = this.db) {
-    const groups = await this.candidates(actor, draft, tx);
+  async feedback(actor: Actor, draft: Extraction, tx: Sql = this.db, ownerId = actor.id) {
+    const groups = await this.candidates(actor, draft, tx, ownerId);
     const responses: string[] = [];
     let questionBudget = 3;
     for (let i = 0; i < draft.blocks.length; i++) {
       const b = draft.blocks[i]!;
       if (!b.sales) {
-        responses.push(`${companyDisplayName(b.companyName)}\n${b.summary}`);
+        const classified = classifyHoldingMention(b.companyName);
+        const mention = classified.isHolding && b.inn ? {} : classified;
+        const classification = mention.isHolding
+          ? `Холдинг ${mention.holdingName}; ИНН не применяется. `
+          : mention.holdingName
+            ? `Заказчик ${mention.companyName}; холдинг ${mention.holdingName}. `
+            : '';
+        responses.push(`${companyDisplayName(b.companyName)}\n${classification}${b.summary}`);
         continue;
       }
       const sales = normalizeSales(b.sales);
@@ -274,7 +285,7 @@ export class ReportService {
       'Черновик изменён. Проверьте актуальную версию в CRM',
     );
     requireCondition(r.status === 'review' && r.draft, 409, 'Черновик ещё не готов');
-    const groups = await this.candidates(actor, r.draft);
+    const groups = await this.candidates(actor, r.draft, this.db, r.author_id);
     requireCondition(
       groups.every((g) => g.length <= 1),
       409,
@@ -294,6 +305,7 @@ export class ReportService {
       'Для каждого блока выберите компанию',
     );
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const r = await this.get(actor, id, tx, true);
       if (r.status === 'saved') return { id, status: 'saved', result: r.result };
       requireCondition(
@@ -314,7 +326,12 @@ export class ReportService {
         const block = input.draft.blocks[i]!;
         let companyId = input.companyIds[i];
         if (!companyId) {
-          const [matches] = await this.candidates(actor, { blocks: [block], warnings: [] }, tx);
+          const [matches] = await this.candidates(
+            actor,
+            { blocks: [block], warnings: [] },
+            tx,
+            author.id,
+          );
           requireCondition(
             !matches?.length,
             409,
@@ -395,6 +412,13 @@ export class ReportService {
         if (block.stage !== null) data.stage = block.stage;
         if (block.potential !== null) data.potential = block.potential;
         for (const d of block.divisions) data.divisions[d.key] = d.amount;
+        await this.crm.validateHolding(
+          actor,
+          companySchema.parse(data),
+          company.ownerId,
+          tx,
+          company,
+        );
         await tx.query(
           'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
           [JSON.stringify(data), companyId],

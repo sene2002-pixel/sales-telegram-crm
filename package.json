@@ -10,13 +10,14 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:server && tsc -p tsconfig.web.json && vite build",
     "start": "node dist/server/main.js",
-    "test": "npm run build:server && node --test dist/tests/*.test.js",
+    "test": "npm run build:server && node --test --test-concurrency=2 dist/tests/*.test.js",
     "check": "npm test && npm run test:ops && npm run build",
     "test:ops": ".venv/bin/python -m unittest discover -s scripts -p 'test_*.py'",
     "test:e2e": "playwright test",
     "format": "prettier --write src e2e docs *.json *.ts *.mts *.md *.yaml .github",
     "format:check": "prettier --check src e2e docs *.json *.ts *.mts *.md *.yaml .github",
-    "telegram:setup": "node dist/server/setup-telegram.js"
+    "telegram:setup": "node dist/server/setup-telegram.js",
+    "api:export": "npm run build:server && node scripts/generate-openapi.cjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.14",
@@ -35,7 +36,7 @@
     "rxjs": "^7.8.2",
     "swagger-ui-dist": "5.33.2",
     "yauzl": "^3.4.0",
-    "zod": "^4.1.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

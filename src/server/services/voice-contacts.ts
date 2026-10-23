@@ -166,6 +166,7 @@ export class VoiceContacts {
   }
 
   private async activeActor(tx: Sql, id: string): Promise<Actor> {
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const [actor] = await tx.query<Actor>(
       'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1 FOR UPDATE',
       [id],

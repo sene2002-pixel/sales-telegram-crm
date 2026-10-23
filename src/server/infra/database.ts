@@ -35,6 +35,13 @@ export class Database implements Sql {
           await tx.query(statement);
         await tx.query('INSERT INTO schema_migrations(version) VALUES(1)');
       }
+      // User-authorized migration: parallel cards may share an INN across owners.
+      // Preserve the old nonempty-INN/archive semantics. Build replacement first;
+      // both DDL operations are transactional under the migration advisory lock.
+      await tx.query(`CREATE UNIQUE INDEX IF NOT EXISTS companies_owner_inn
+        ON companies (owner_id, (data->>'inn')) WHERE data->>'inn' <> ''`);
+      await tx.query('DROP INDEX IF EXISTS companies_inn');
+      await tx.query('INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING');
       await tx.query(`CREATE TABLE IF NOT EXISTS company_imports (
         id uuid PRIMARY KEY, author_id uuid NOT NULL REFERENCES users(id), source_key text UNIQUE NOT NULL,
         source_label text NOT NULL, draft jsonb NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','saved','cancelled')),

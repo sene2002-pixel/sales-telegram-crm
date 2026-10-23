@@ -2,6 +2,9 @@ export type ViewportInset = Partial<Record<'top' | 'bottom' | 'left' | 'right', 
 export interface TelegramViewport {
   ready?: () => void;
   expand?: () => void;
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
+  isVerticalSwipesEnabled?: boolean;
   requestFullscreen?: () => void;
   exitFullscreen?: () => void;
   isFullscreen?: boolean;
