@@ -644,12 +644,12 @@
   font-size: 13px;
   font-weight: 600;
 }
-.modal:has(> .cc-contact-form) {
+.modal:has(.cc-contact-form) {
   border-radius: 28px 28px 0 0;
   padding-left: 16px;
   padding-right: 16px;
 }
-.modal:has(> .cc-contact-form) > .section-head h2 {
+.modal:has(.cc-contact-form) > .section-head h2 {
   font-size: 20px;
   font-weight: 800;
 }
@@ -682,4 +682,130 @@
 .cc-single-edit > .cc-trash-track > .cc-swipe-actions > button {
   width: 56px;
   min-width: 56px;
+}
+
+/* Opt-in bottom sheets retain main’s atomic company/contact forms. */
+.modal-backdrop.client-sheet-backdrop {
+  padding: 0;
+  align-items: flex-end;
+  background: rgba(34, 42, 92, 0.42);
+}
+.modal.client-sheet {
+  width: min(100%, 520px);
+  max-width: 520px;
+  max-height: min(
+    92dvh,
+    calc(
+      var(--pico-view-height, 100dvh) - var(--pico-safe-top, 0px) - var(--pico-safe-bottom, 0px) -
+        24px
+    )
+  );
+  border-radius: 28px 28px 0 0;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  background: white;
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.client-sheet .client-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: #d3d9e6;
+  margin: 0 auto 8px;
+}
+.modal.client-sheet > .section-head {
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  margin: 0 -2px 12px;
+  padding: 0 2px;
+  background: #fff;
+  min-height: 44px;
+}
+.modal.client-sheet > .section-head h2 {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 800;
+}
+.modal.client-sheet > .section-head .icon {
+  width: 44px;
+  height: 44px;
+}
+.client-sheet .field > span,
+.client-sheet .pico-field-heading {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: #2b3258;
+}
+.client-sheet .field input,
+.client-sheet .field select {
+  height: 40px;
+  min-height: 40px;
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.client-sheet textarea {
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+}
+.modal.client-sheet form > .primary {
+  position: sticky;
+  bottom: calc(-16px - env(safe-area-inset-bottom));
+  z-index: 2;
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  background: #1f7aea;
+  box-shadow: 0 -10px 0 6px white;
+  margin-top: 12px;
+}
+.modal.client-sheet::before {
+  display: none;
+  content: none;
+}
+
+/* Keep the header outside the scrolling fields, including the rounded top inset. */
+.modal.client-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal.client-sheet > .client-sheet-handle,
+.modal.client-sheet > .section-head {
+  flex: 0 0 auto;
+}
+.modal.client-sheet > .section-head {
+  position: relative;
+  top: auto;
+}
+.modal.client-sheet > .client-sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 4px;
+  margin: 0 -2px;
+}
+.modal.client-sheet form > .primary {
+  bottom: 0;
+}
+
+.modal.client-sheet .cc-editor-actions {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding-top: 12px;
+}
+
+.modal.client-sheet > .client-sheet-body:has(> .company-form) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal.client-sheet .company-form {
+  flex: 1 1 auto;
 }

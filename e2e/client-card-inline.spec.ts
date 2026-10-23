@@ -38,9 +38,11 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
       if (route.request().method() === 'PATCH') {
         const body = route.request().postDataJSON();
         patches.push(body);
-        if (fail) {
-          fail = false;
-          company = { ...company, city: 'Омск', version: 2 };
+        if (fail || body.version !== company.version) {
+          if (fail) {
+            fail = false;
+            company = { ...company, city: 'Омск', version: 2 };
+          }
           return route.fulfill({
             status: 409,
             json: { message: 'Карточка изменена. Повторите сохранение.' },
@@ -79,12 +81,22 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
   await expect(card.getByRole('alert')).toContainText('Карточка изменена');
   await expect(card.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Казань');
   await card.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(card.getByRole('alert')).toContainText('Карточка изменена');
+  expect(patches[1].version).toBe(1);
+  expect(company.city).toBe('Омск');
+  await expect(card.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Казань');
+  await card.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await card.getByRole('button', { name: 'Изменить Город', exact: true }).click();
+  await expect(card.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Омск');
+  await card.getByRole('textbox', { name: 'Город', exact: true }).fill('Казань');
+  await card.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
   await expect(card.getByRole('button', { name: 'Изменить Город', exact: true })).toHaveText(
     /Казань/,
   );
   await expect(card.getByText(/Изменения сохранены, но обновление не удалось/)).toHaveCount(0);
-  expect(patches[1].data).not.toHaveProperty('id');
-  expect(patches[1].version).toBe(2);
+  expect(patches[2].data).not.toHaveProperty('id');
+  expect(patches[2].version).toBe(2);
   await card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }).click();
   await card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).fill('1.5');
   await card.getByRole('button', { name: 'Сохранить', exact: true }).click();

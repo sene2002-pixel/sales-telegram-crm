@@ -87,7 +87,7 @@ export function ClientRow({
     [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]),
     [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
     [addingContact, setAddingContact] = useState(false),
-    [newEquipment, setNewEquipment] = useState(false),
+    [newEquipment, setNewEquipment] = useState<Company | null>(null),
     [uploading, setUploading] = useState(false),
     [uploadFile, setUploadFile] = useState<File | null>(null),
     [fileError, setFileError] = useState('');
@@ -173,11 +173,14 @@ export function ClientRow({
       current = false;
     };
   }, [open, company.id, providedScore]);
-  async function patch(update: Partial<CompanyData>) {
-    const data = companySchema.strip().parse({ ...c, ...update });
+  async function patch(update: Partial<CompanyData>, snapshot = c) {
+    const data = companySchema.strip().parse({ ...snapshot, ...update });
     let saved: Company;
     try {
-      saved = await api<Company>(`/companies/${c.id}`, 'PATCH', { version: c.version, data });
+      saved = await api<Company>(`/companies/${c.id}`, 'PATCH', {
+        version: snapshot.version,
+        data,
+      });
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) await read();
       throw error;
@@ -190,8 +193,8 @@ export function ClientRow({
     setDetail((d) => (d ? { ...d, records: d.records.filter((row) => row.id !== r.id) } : d));
     await changed();
   }
-  async function equipment(key: string, raw: string | null) {
-    const next = { ...c.divisions };
+  async function equipment(key: string, raw: string | null, snapshot = c) {
+    const next = { ...snapshot.divisions };
     if (raw === null) delete next[key as keyof typeof next];
     else {
       const amount = Number(raw.replace(',', '.').replace(/\s/g, ''));
@@ -199,10 +202,13 @@ export function ClientRow({
         throw new Error('Введите сумму от 0 до 1 000 000 000 000 ₽');
       next[key as keyof typeof next] = amount * 1_000_000;
     }
-    await patch({
-      divisions: next,
-      potential: Object.values(next).reduce((sum, v) => sum + (v || 0), 0),
-    });
+    await patch(
+      {
+        divisions: next,
+        potential: Object.values(next).reduce((sum, v) => sum + (v || 0), 0),
+      },
+      snapshot,
+    );
   }
   async function upload() {
     if (!uploadFile) return;
@@ -375,14 +381,17 @@ export function ClientRow({
                         {newEquipment ? (
                           <EquipmentForm
                             keys={primaryDivisions.filter((key) => c.divisions[key] == null)}
-                            onCancel={() => setNewEquipment(false)}
+                            onCancel={() => setNewEquipment(null)}
                             onSave={async (key, value) => {
-                              await equipment(key, value);
-                              setNewEquipment(false);
+                              await equipment(key, value, newEquipment);
+                              setNewEquipment(null);
                             }}
                           />
                         ) : (
-                          <button className="cc-add" onClick={() => setNewEquipment(true)}>
+                          <button
+                            className="cc-add"
+                            onClick={() => setNewEquipment(structuredClone(c))}
+                          >
                             <Icon name="plus" size={14} />
                             Добавить оборудование
                           </button>
@@ -593,7 +602,7 @@ export function ClientRow({
         </p>
       )}
       {editingClient && (
-        <Modal title="Редактирование карточки" onClose={() => setEditingClient(false)}>
+        <Modal sheet title="Редактирование карточки" onClose={() => setEditingClient(false)}>
           <CompanyForm
             initial={editorCompany || c}
             initialContacts={editorContacts.map((r) => ({
@@ -625,7 +634,7 @@ export function ClientRow({
         </Modal>
       )}
       {editingContact && (
-        <Modal title="Контакт" onClose={() => setEditingContact(null)}>
+        <Modal sheet title="Контакт" onClose={() => setEditingContact(null)}>
           <ContactForm
             initial={editingContact.data}
             onCancel={() => setEditingContact(null)}

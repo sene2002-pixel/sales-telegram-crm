@@ -24,6 +24,7 @@ export function InlineValue({
     [draft, setDraft] = useState(value),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const saveSnapshot = useRef(onSave);
   if (!editing)
     return (
       <div className="cc-field">
@@ -32,6 +33,7 @@ export function InlineValue({
           disabled={disabled}
           aria-label={`Изменить ${label}`}
           onClick={() => {
+            saveSnapshot.current = onSave;
             setDraft(value);
             setError('');
             setEditing(true);
@@ -61,7 +63,7 @@ export function InlineValue({
         setBusy(true);
         setError('');
         try {
-          await onSave(draft);
+          await saveSnapshot.current(draft);
           setEditing(false);
         } catch (e) {
           setError((e as Error).message);

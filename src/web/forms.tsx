@@ -58,11 +58,13 @@ export function Select({
 }
 export function Modal({
   titleIcon,
+  sheet = false,
   title,
   onClose,
   children,
 }: {
   titleIcon?: ReactNode;
+  sheet?: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
@@ -129,7 +131,7 @@ export function Modal({
   }, []);
   return createPortal(
     <div
-      className="modal-backdrop"
+      className={'modal-backdrop' + (sheet ? ' client-sheet-backdrop' : '')}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -137,11 +139,12 @@ export function Modal({
       <section
         ref={dialogRef}
         tabIndex={-1}
-        className="modal"
+        className={'modal' + (sheet ? ' client-sheet' : '')}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
+        {sheet && <div className="client-sheet-handle" aria-hidden="true" />}
         <div className="section-head">
           <h2 className={titleIcon ? 'pico-modal-icon-title' : undefined}>
             {titleIcon}
@@ -151,7 +154,7 @@ export function Modal({
             <Icon name="close" />
           </button>
         </div>
-        {children}
+        {sheet ? <div className="client-sheet-body">{children}</div> : children}
       </section>
     </div>,
     document.body,
