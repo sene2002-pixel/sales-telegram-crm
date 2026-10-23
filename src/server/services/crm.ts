@@ -1,3 +1,4 @@
+import { DashboardService } from './dashboard';
 import { resolveEmployeeFilter } from './employee-filter';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -27,6 +28,7 @@ import {
 export function mapCompany(row: any): Company {
   return {
     ...row.data,
+    website: row.data.website || '',
     id: row.id,
     ownerId: row.owner_id,
     ownerName: row.owner_name || '',
@@ -53,7 +55,10 @@ export function mapRecord(row: any): CrmRecord {
   };
 }
 export class CrmService {
-  constructor(public db: Database) {}
+  constructor(
+    public db: Database,
+    private timezone = 'Europe/Moscow',
+  ) {}
   async company(actor: Actor, id: string, tx: Sql = this.db, lock = false): Promise<Company> {
     idSchema.parse(id);
     const [row] = await tx.query(
@@ -163,7 +168,10 @@ export class CrmService {
       'SELECT a.id,a.actor_id,a.company_id,a.action,a.entity_id,a.details,a.created_at,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.company_id=$1 ORDER BY a.created_at DESC LIMIT 100',
       [id],
     );
-    return { company, records, audit: events };
+    const clientScore = company.archived
+      ? null
+      : await new DashboardService(this.db, this.timezone).clientScore(actor, company.id);
+    return { company, records, audit: events, clientScore };
   }
   async checkArchivePermission(
     actor: Actor,

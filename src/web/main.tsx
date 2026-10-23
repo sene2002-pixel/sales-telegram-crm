@@ -823,6 +823,7 @@ function App() {
                       <ClientRow
                         key={c.id}
                         company={c}
+                        canArchive={user.role === 'admin' || (user.role === 'supervisor' && (c.ownerId === user.id || users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))}
                         onOpen={openCompany}
                         onChanged={refresh}
                         initiallyOpen={c.id === createdClientId}

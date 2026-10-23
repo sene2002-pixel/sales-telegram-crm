@@ -166,7 +166,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   await expect(page.locator('.pico-client-copy > strong').first()).toHaveCSS('font-weight', '800');
   for (const [selector, weight] of [
     ['.pico-client-metadata > span', '500'],
-    ['.company-money > small', '400'],
+    ['.company-money > small', '600'],
   ]) {
     await expect(page.locator(selector).first()).toHaveCSS('font-weight', weight);
     const textNode = await cdp.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector });

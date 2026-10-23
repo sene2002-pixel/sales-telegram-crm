@@ -89,6 +89,19 @@ export const companySchema = z
     city: z.string().trim().max(150).default(''),
     segment: z.enum(segments).default('end_client'),
     industry: z.string().trim().max(150).default(''),
+    website: z
+      .string()
+      .trim()
+      .max(2048)
+      .refine((value) => {
+        if (!value) return true;
+        try {
+          return ['http:', 'https:'].includes(new URL(value).protocol);
+        } catch {
+          return false;
+        }
+      }, 'Укажите адрес сайта с http:// или https://')
+      .default(''),
     stage: z.enum(stages).default('new'),
     archived: z.boolean().default(false),
     revenue: money.nullable().default(null),
@@ -261,6 +274,7 @@ export interface Report {
   attempts: number;
 }
 export interface CompanyDetail {
+  clientScore?: import('./analytics').ClientScore | null;
   company: Company;
   records: CrmRecord[];
   audit: any[];

@@ -1,0 +1,621 @@
+/* Client card specification, 19 October 2026. Scoped to avoid changing other screens. */
+.client-swipe {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  min-width: 0;
+}
+.client-swipe > .client-swipe-surface {
+  position: relative;
+  z-index: 1;
+  background: #fff;
+  touch-action: pan-y;
+  transition: transform 0.18s ease;
+  border-radius: inherit;
+}
+.client-swipe > .client-swipe-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  width: var(--swipe-width);
+  visibility: hidden;
+}
+.client-swipe.swipe-open > .client-swipe-actions {
+  visibility: visible;
+}
+.client-swipe .client-swipe-actions > button {
+  color: #6b7390;
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+.client-swipe .client-swipe-toggle {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  width: 26px;
+  min-width: 26px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #6b7390;
+  background: #fff;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.client-card.pico-client-accordion {
+  border: 1px solid #e6ebf3;
+  border-radius: 20px;
+  box-shadow: none;
+  background: #f7f9fe;
+}
+.client-card.pico-client-accordion > .client-swipe-surface {
+  padding-bottom: 0;
+}
+.client-card .pico-client-row {
+  border: 0;
+  padding: 12px 14px;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  background: white;
+  box-shadow: none;
+  border-radius: 20px;
+}
+.client-card .pico-client-row > .icon-badge {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 13px;
+  background: #e4effd;
+}
+.client-card .pico-client-copy {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+.client-card .pico-client-copy > strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+.client-card .pico-client-metadata {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
+  color: #7a8299;
+}
+.client-card .company-money {
+  flex: 0 0 auto;
+  max-width: 95px;
+  text-align: right;
+}
+.client-card .company-money small {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.client-card .company-money strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+.client-card .pico-client-row > svg {
+  flex-shrink: 0;
+  color: #7a8299;
+}
+.client-card .pico-client-content {
+  display: block;
+  padding: 0 14px;
+  border: 0;
+}
+.client-card .client-funnel {
+  padding: 8px 0 14px;
+}
+.client-card .client-funnel-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.client-card .client-funnel-label strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.client-card .client-funnel-label i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.client-card .client-funnel-label > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a8299;
+  white-space: nowrap;
+}
+.client-card .client-funnel-segments {
+  display: flex;
+  gap: 3px;
+  margin-top: 9px;
+}
+.client-card .client-funnel-segments span {
+  height: 6px;
+  border-radius: 3px;
+}
+.client-card .client-card-section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid #eef2f8;
+}
+.client-card .client-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: #2b3258;
+}
+.client-card .client-section-heading > span {
+  flex: 1;
+}
+.client-card .client-section-heading > strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1f7aea;
+}
+.client-card .client-section-heading > svg {
+  color: #7a8299;
+}
+.client-card .client-section-body {
+  padding: 0 0 10px;
+}
+.client-card .client-section-body[hidden] {
+  display: none;
+}
+.client-card .client-equipment-swipe {
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  margin: 0 0 4px;
+}
+.client-card .pico-client-content .pico-potential-client {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 30px 0 10px;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  background: #fff;
+  border-radius: 12px;
+}
+.client-card .pico-client-content .pico-potential-client > span {
+  min-width: 0;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.client-card .client-inline-amount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  max-width: 62%;
+}
+.client-card .client-inline-amount > small {
+  color: #7a8299;
+  font-size: 12px;
+  font-weight: 600;
+}
+.client-card .client-inline-amount input {
+  width: 62px;
+  min-height: 30px;
+  padding: 3px;
+  text-align: right;
+  background: #f3f6fb;
+  border: 1px solid #1f7aea;
+  border-radius: 5px;
+}
+.client-card .client-inline-amount > button {
+  min-height: 28px;
+  min-width: 24px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.client-card .client-inline-amount .client-amount-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1a2151;
+}
+.client-card .client-inline-amount .error {
+  flex-basis: 100%;
+  font-size: 12px;
+  margin: 0;
+}
+.client-card .client-add-link,
+.client-sheet .client-add-link {
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
+  box-shadow: none;
+  background: none;
+  color: #1f7aea;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+.client-card .client-contact-swipe,
+.client-card .client-file-swipe {
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+.client-card .client-compact-contact {
+  padding: 0;
+}
+.client-card .client-contact-field {
+  min-width: 0;
+  padding: 4px 12px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-bottom: 1px solid #eef2f8;
+}
+.client-card .client-contact-field > small {
+  color: #7a8299;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 14px;
+}
+.client-card .client-contact-field > strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+.client-card .client-contact-field > span,
+.client-card .client-contact-field > a {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a2151;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.client-card .client-contact-field:last-child {
+  border-bottom: 0;
+}
+.client-card .client-compact-contact > .client-contact-field:last-child {
+  padding-right: 30px;
+}
+.client-contact-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.client-card .client-contact-columns > :first-child {
+  border-right: 1px solid #eef2f8;
+}
+.client-card .client-contact-columns {
+  border-bottom: 1px solid #eef2f8;
+}
+.client-card .client-contact-columns .client-contact-field {
+  border-bottom: 0;
+}
+.client-card .client-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 30px 10px 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: #fff;
+  box-shadow: none;
+  border-radius: 14px;
+}
+.client-card .client-file-icon {
+  width: 34px;
+  flex: 0 0 34px;
+  color: #7a8299;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.client-card .client-file-icon small {
+  font-size: 8px;
+}
+.client-card .client-file > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.client-card .client-file strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.client-card .client-file > span > small {
+  font-size: 12px;
+  font-weight: 500;
+  color: #7a8299;
+}
+.client-card .client-notes {
+  margin: 0;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 19px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.client-card .client-company-data dl {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.client-card .client-company-data dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.client-card .client-company-data dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.client-card .client-company-data .client-contact-columns {
+  gap: 12px;
+  border: 0;
+}
+.client-card .client-open-full {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 8px 0;
+  font-size: 12px;
+  color: #7a8299;
+}
+.modal-backdrop.client-sheet-backdrop {
+  padding: 0;
+  align-items: flex-end;
+  background: rgba(34, 42, 92, 0.42);
+}
+.modal.client-sheet {
+  width: min(100%, 520px);
+  max-width: 520px;
+  max-height: calc(100dvh - 24px);
+  border-radius: 28px 28px 0 0;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  background: white;
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.client-sheet .client-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: #d3d9e6;
+  margin: 0 auto 8px;
+}
+.modal.client-sheet > .section-head {
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  margin: 0 -2px 12px;
+  padding: 0 2px;
+  background: #fff;
+  min-height: 44px;
+}
+.modal.client-sheet > .section-head h2 {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 800;
+}
+.modal.client-sheet > .section-head .icon {
+  width: 44px;
+  height: 44px;
+}
+.client-sheet .field > span,
+.client-sheet .pico-field-heading {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: #2b3258;
+}
+.client-sheet .field input,
+.client-sheet .field select {
+  height: 40px;
+  min-height: 40px;
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.client-sheet textarea {
+  background: #f3f6fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+}
+.modal.client-sheet form > .primary {
+  position: sticky;
+  bottom: calc(-16px - env(safe-area-inset-bottom));
+  z-index: 2;
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  background: #1f7aea;
+  box-shadow: 0 -10px 0 6px white;
+  margin-top: 12px;
+}
+.client-sheet .pico-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 8px;
+}
+.client-sheet .pico-chips button {
+  min-height: 30px;
+  border-radius: 10px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+.client-sheet .pico-form-two {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.client-sheet .pico-form-two > * {
+  min-width: 0;
+}
+.client-sheet .client-form-potential,
+.client-sheet .pico-advanced {
+  border: 0;
+  border-top: 1px solid #eef2f8;
+  padding: 0;
+  border-radius: 0;
+}
+.client-sheet .client-form-potential > summary,
+.client-sheet .pico-advanced > summary {
+  min-height: 48px;
+  padding: 14px 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #2b3258;
+  cursor: pointer;
+}
+.client-sheet .client-form-potential > summary strong {
+  float: right;
+  color: #1f7aea;
+}
+.client-sheet .client-equipment-table {
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.client-sheet .client-equipment-table-head,
+.client-sheet .client-equipment-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+}
+.client-sheet .client-equipment-table-head {
+  background: #f7faff;
+  color: #7a8299;
+  font-size: 12px;
+  min-height: 32px;
+}
+.client-sheet .client-equipment-table-row {
+  min-height: 44px;
+  border-top: 1px solid #eef2f8;
+  font-size: 13px;
+  font-weight: 600;
+}
+.client-sheet .client-equipment-table-row input {
+  width: 64px;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px;
+  border: 1px solid #e6ebf3;
+  border-radius: 10px;
+  text-align: right;
+  background: #f3f6fb;
+}
+.client-sheet .client-form-contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.client-sheet .client-form-contacts > button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.client-confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.client-card :focus-visible,
+.client-sheet :focus-visible {
+  outline: 2px solid #1f7aea;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .client-swipe > .client-swipe-surface {
+    transition: none;
+  }
+}
+
+.modal.client-sheet::before {
+  display: none;
+  content: none;
+}
+.client-card .pico-client-content .pico-potential-client > span {
+  color: #1a2151;
+}
+.client-card .client-inline-amount > small {
+  white-space: nowrap;
+}
+
+/* Keep the header outside the scrolling fields, including the rounded top inset. */
+.modal.client-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal.client-sheet > .client-sheet-handle,
+.modal.client-sheet > .section-head {
+  flex: 0 0 auto;
+}
+.modal.client-sheet > .section-head {
+  position: relative;
+  top: auto;
+}
+.modal.client-sheet > .client-sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 4px;
+  margin: 0 -2px;
+}
+.modal.client-sheet form > .primary {
+  bottom: 0;
+}

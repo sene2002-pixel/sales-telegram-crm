@@ -150,6 +150,7 @@ schemas.AuditEvent = object({
   actor_name: nullable(string),
 });
 schemas.CompanyDetail = object({
+  clientScore: nullable(ref('ClientScore')),
   company: ref('Company'),
   records: array(ref('Record')),
   audit: array(ref('AuditEvent')),

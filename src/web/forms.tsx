@@ -56,11 +56,13 @@ export function Select({
 }
 export function Modal({
   titleIcon,
+  sheet = false,
   title,
   onClose,
   children,
 }: {
   titleIcon?: ReactNode;
+  sheet?: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
@@ -127,7 +129,7 @@ export function Modal({
   }, []);
   return createPortal(
     <div
-      className="modal-backdrop"
+      className={'modal-backdrop' + (sheet ? ' client-sheet-backdrop' : '')}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -135,11 +137,12 @@ export function Modal({
       <section
         ref={dialogRef}
         tabIndex={-1}
-        className="modal"
+        className={'modal' + (sheet ? ' client-sheet' : '')}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
+        {sheet && <div className="client-sheet-handle" aria-hidden="true" />}
         <div className="section-head">
           <h2 className={titleIcon ? 'pico-modal-icon-title' : undefined}>
             {titleIcon}
@@ -149,7 +152,7 @@ export function Modal({
             <Icon name="close" />
           </button>
         </div>
-        {children}
+        {sheet ? <div className="client-sheet-body">{children}</div> : children}
       </section>
     </div>,
     document.body,
@@ -228,7 +231,11 @@ export function NewDirectionEditor({
 export function CompanyForm({
   initial,
   onSave,
+  cardMode = false,
+  contactFields,
 }: {
+  cardMode?: boolean;
+  contactFields?: ReactNode;
   initial?: CompanyData;
   onSave: (data: CompanyData) => Promise<void>;
 }) {
@@ -242,6 +249,23 @@ export function CompanyForm({
     [direction, setDirection] = useState<{ division: string; amount: number } | null | false>(
       false,
     );
+  const [equipmentDrafts, setEquipmentDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(primaryDivisions.map((d) => [d, millionValue(initial?.divisions[d])])),
+  );
+  const draftDivisions = () => {
+    const next = { ...data.divisions };
+    for (const d of primaryDivisions) {
+      const raw = equipmentDrafts[d]?.trim().replace(',', '.') || '';
+      const n = fromMillions(raw);
+      if (n == null) delete next[d];
+      else {
+        if (!Number.isFinite(n) || n < 0 || n > 1e12)
+          throw new Error('Укажите корректную сумму оборудования от 0 до 1 000 000 млн ₽');
+        next[d] = n;
+      }
+    }
+    return next;
+  };
   function update(key: keyof CompanyData, value: any) {
     setData((current) => ({ ...current, [key]: value }));
   }
@@ -254,7 +278,24 @@ export function CompanyForm({
         setError('');
         setBusy(true);
         try {
-          await onSave(companySchema.parse(data));
+          const next = cardMode ? draftDivisions() : data.divisions;
+          await onSave(
+            companySchema.parse(
+              cardMode
+                ? {
+                    ...data,
+                    divisions: next,
+                    potential:
+                      Object.keys(next).length ||
+                      primaryDivisions.some(
+                        (d) => equipmentDrafts[d] !== millionValue(initial?.divisions[d]),
+                      )
+                        ? Object.values(next).reduce((sum, n) => sum + (n || 0), 0)
+                        : data.potential,
+                  }
+                : data,
+            ),
+          );
         } catch (e) {
           setError((e as Error).message);
         } finally {
@@ -295,113 +336,184 @@ export function CompanyForm({
         value={data.segment}
         onChange={(value) => update('segment', value)}
       />
-      <section className="pico-form-section">
-        <div className="section-head">
-          <h3>Потенциал</h3>
-          <small>Потребность клиента за год</small>
-        </div>
-        {Object.entries(data.divisions).map(([division, amount]) => (
-          <div className="pico-equipment-entry" key={division}>
-            <button
-              type="button"
-              className="pico-entry-main"
-              onClick={() => setDirection({ division, amount: amount! })}
-            >
-              {divisionLabels[division] || labels[division]}
-            </button>
-            <strong>{money(amount)}</strong>
-            <button
-              type="button"
-              aria-label={'Убрать направление ' + (divisionLabels[division] || labels[division])}
-              onClick={() => {
-                const next = { ...data.divisions };
-                delete next[division as keyof typeof next];
-                update('divisions', next);
-              }}
-            >
-              <Icon name="close" size={14} />
-            </button>
+      <details
+        className="pico-form-section client-form-potential"
+        open={cardMode ? undefined : true}
+      >
+        <summary>
+          Потенциал{' '}
+          <strong>
+            {money(
+              cardMode
+                ? (() => {
+                    try {
+                      const next = draftDivisions();
+                      return Object.keys(next).length
+                        ? Object.values(next).reduce((sum, n) => sum + (n || 0), 0)
+                        : data.potential;
+                    } catch {
+                      return data.potential;
+                    }
+                  })()
+                : Object.keys(data.divisions).length
+                  ? Object.values(data.divisions).reduce((sum, n) => sum + (n || 0), 0)
+                  : data.potential,
+            )}
+          </strong>
+        </summary>
+        {cardMode ? (
+          <div className="client-equipment-table">
+            <div className="client-equipment-table-head">
+              <span>Оборудование</span>
+              <span>млн ₽ в год</span>
+            </div>
+            {primaryDivisions.map((d) => (
+              <label className="client-equipment-table-row" key={d}>
+                <span>{divisionLabels[d] || labels[d]}</span>
+                <input
+                  aria-label={divisionLabels[d] || labels[d]}
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={equipmentDrafts[d] ?? ''}
+                  onChange={(e) =>
+                    setEquipmentDrafts((current) => ({ ...current, [d]: e.target.value }))
+                  }
+                />
+              </label>
+            ))}
           </div>
-        ))}
-        <button
-          type="button"
-          className="pico-add-row pico-dashed"
-          onClick={() => setDirection(null)}
-        >
-          <Icon name="plus" size={14} /> Добавить оборудование
-        </button>
-      </section>
+        ) : (
+          <>
+            {Object.entries(data.divisions).map(([division, amount]) => (
+              <div className="pico-equipment-entry" key={division}>
+                <button
+                  type="button"
+                  className="pico-entry-main"
+                  onClick={() => setDirection({ division, amount: amount! })}
+                >
+                  {divisionLabels[division] || labels[division]}
+                </button>
+                <strong>{money(amount)}</strong>
+                <button
+                  type="button"
+                  aria-label={
+                    'Убрать направление ' + (divisionLabels[division] || labels[division])
+                  }
+                  onClick={() => {
+                    const next = { ...data.divisions };
+                    delete next[division as keyof typeof next];
+                    setData((current) => ({
+                      ...current,
+                      divisions: next,
+                      potential: Object.values(next).reduce((sum, n) => sum + (n || 0), 0),
+                    }));
+                  }}
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="pico-add-row pico-dashed"
+              onClick={() => setDirection(null)}
+            >
+              <Icon name="plus" size={14} /> Добавить оборудование
+            </button>
+          </>
+        )}
+      </details>
       <details className="pico-advanced">
         <summary>Дополнительные поля</summary>
         <div className="pico-compact-form">
-          <Field label="Отрасль">
-            <input value={data.industry} onChange={(e) => update('industry', e.target.value)} />
-          </Field>
-          <Field label="Стадия">
-            <Select value={data.stage} onChange={(v) => update('stage', v)} options={stages} />
-          </Field>
-          <Field label="Сегмент">
-            <Select
-              value={data.segment}
-              onChange={(v) => update('segment', v)}
-              options={segments}
-            />
-          </Field>
-          <Field label="Оборот, ₽">
+          <Field label="Сайт">
             <input
-              type="number"
-              min="0"
-              step="any"
-              value={data.revenue ?? ''}
-              onChange={(e) =>
-                update('revenue', e.target.value === '' ? null : Number(e.target.value))
-              }
+              type="url"
+              placeholder="https://example.ru"
+              value={data.website}
+              onChange={(e) => update('website', e.target.value)}
             />
           </Field>
-          <Field label="Потенциал, ₽">
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={data.potential ?? ''}
-              onChange={(e) =>
-                update('potential', e.target.value === '' ? null : Number(e.target.value))
-              }
-            />
-          </Field>
-          <Field label="Заметки">
+          {contactFields}
+          <Field label="Комментарий">
             <textarea
-              rows={2}
+              rows={3}
               value={data.notes}
               onChange={(e) => update('notes', e.target.value)}
             />
           </Field>
-          <details>
-            <summary>Потенциал по направлениям · рубли</summary>
-            {divisions.map((d) => (
-              <Field key={d} label={labels[d] + ' · ₽'}>
+          {!cardMode && (
+            <>
+              <Field label="Отрасль">
+                <input value={data.industry} onChange={(e) => update('industry', e.target.value)} />
+              </Field>
+              <Field label="Стадия">
+                <Select value={data.stage} onChange={(v) => update('stage', v)} options={stages} />
+              </Field>
+              <Field label="Сегмент">
+                <Select
+                  value={data.segment}
+                  onChange={(v) => update('segment', v)}
+                  options={segments}
+                />
+              </Field>
+              <Field label="Оборот, ₽">
                 <input
                   type="number"
                   min="0"
                   step="any"
-                  value={data.divisions[d] ?? ''}
-                  onChange={(e) => {
-                    const next = { ...data.divisions };
-                    if (e.target.value === '') delete next[d];
-                    else next[d] = Number(e.target.value);
-                    setData((current) => ({
-                      ...current,
-                      divisions: next,
-                      potential: Object.values(next).reduce(
-                        (sum, amount) => sum + (amount || 0),
-                        0,
-                      ),
-                    }));
-                  }}
+                  value={data.revenue ?? ''}
+                  onChange={(e) =>
+                    update('revenue', e.target.value === '' ? null : Number(e.target.value))
+                  }
                 />
               </Field>
-            ))}
-          </details>
+              <Field label="Потенциал, ₽">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={data.potential ?? ''}
+                  onChange={(e) =>
+                    update('potential', e.target.value === '' ? null : Number(e.target.value))
+                  }
+                />
+              </Field>
+              <Field label="Заметки">
+                <textarea
+                  rows={2}
+                  value={data.notes}
+                  onChange={(e) => update('notes', e.target.value)}
+                />
+              </Field>
+              <details>
+                <summary>Потенциал по направлениям · рубли</summary>
+                {divisions.map((d) => (
+                  <Field key={d} label={labels[d] + ' · ₽'}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={data.divisions[d] ?? ''}
+                      onChange={(e) => {
+                        const next = { ...data.divisions };
+                        if (e.target.value === '') delete next[d];
+                        else next[d] = Number(e.target.value);
+                        setData((current) => ({
+                          ...current,
+                          divisions: next,
+                          potential: Object.values(next).reduce(
+                            (sum, amount) => sum + (amount || 0),
+                            0,
+                          ),
+                        }));
+                      }}
+                    />
+                  </Field>
+                ))}
+              </details>
+            </>
+          )}
         </div>
       </details>
       {error && (
@@ -410,7 +522,7 @@ export function CompanyForm({
         </p>
       )}
       <button className="primary" disabled={busy}>
-        {busy ? 'Сохраняем…' : 'Сохранить клиента'}
+        {busy ? 'Сохраняем…' : cardMode ? 'Сохранить' : 'Сохранить клиента'}
       </button>
       {direction !== false && (
         <NewDirectionEditor
@@ -828,7 +940,9 @@ export function RecordForm({
   companies = [],
   contacts = [],
   clientRow,
+  compactContact = false,
 }: {
+  compactContact?: boolean;
   clientRow?: ReactNode;
   companies?: Company[];
   contacts?: CrmRecord[];
@@ -943,10 +1057,10 @@ export function RecordForm({
       {kind === 'contact' && (
         <>
           {[
-            ['name', 'Имя'],
+            ['name', compactContact ? 'ФИО' : 'Имя'],
             ['role', 'Должность'],
             ['phone', 'Телефон'],
-            ['email', 'Email'],
+            ['email', compactContact ? 'E-mail' : 'Email'],
           ].map(([key, label]) => (
             <Field key={key} label={label}>
               <input
@@ -964,9 +1078,11 @@ export function RecordForm({
               />
             </Field>
           ))}
-          <p className="muted">
-            <Icon name="sparkles" size={13} /> Pico выстроит контакты по иерархии компании
-          </p>
+          {!compactContact && (
+            <p className="muted">
+              <Icon name="sparkles" size={13} /> Pico выстроит контакты по иерархии компании
+            </p>
+          )}
         </>
       )}
       {kind === 'task' && (
@@ -1185,7 +1301,9 @@ export function RecordForm({
             : kind === 'task'
               ? 'Добавить задачу'
               : kind === 'contact'
-                ? 'Сохранить контакт'
+                ? compactContact
+                  ? 'Сохранить'
+                  : 'Сохранить контакт'
                 : 'Сохранить'}
       </button>
       {kind === 'project' && equipmentOpen && (

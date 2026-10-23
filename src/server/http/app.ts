@@ -83,7 +83,7 @@ export class Services {
     this.errors = new ErrorLog(db);
     this.diagnostics = new DiagnosticLog(db, config);
     this.auth = new AuthService(db, config);
-    this.crm = new CrmService(db);
+    this.crm = new CrmService(db, config.timezone);
     this.fileDownloads = new FileDownloads(this.crm, config);
     const ai = new OpenAiAdapter(config, this.diagnostics);
     this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
