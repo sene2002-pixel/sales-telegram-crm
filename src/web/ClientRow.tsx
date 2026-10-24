@@ -720,9 +720,11 @@ function ContactForm({
         <button className="primary" disabled={busy}>
           {initial ? 'Сохранить' : 'Сохранить контакт'}
         </button>
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Отмена
-        </button>
+        {!initial && (
+          <button type="button" disabled={busy} onClick={onCancel}>
+            Отмена
+          </button>
+        )}
       </div>
     </form>
   );
