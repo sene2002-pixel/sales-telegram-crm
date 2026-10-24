@@ -136,6 +136,12 @@ for (const width of [320, 390, 1280]) {
     await expect(
       contactSheet.getByRole('textbox', { name: 'Контакт · ФИО', exact: true }),
     ).toBeVisible();
+    const contactSave = contactSheet.getByRole('button', { name: 'Сохранить', exact: true });
+    const actions = contactSheet.locator('.cc-editor-actions');
+    expect((await contactSave.boundingBox())!.width).toBeCloseTo(
+      (await actions.boundingBox())!.width,
+      0,
+    );
     await page.screenshot({
       path: info.outputPath(`contact-edit-${width}.png`),
       animations: 'disabled',
