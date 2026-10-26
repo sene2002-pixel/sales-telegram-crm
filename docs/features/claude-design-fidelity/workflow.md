@@ -36,3 +36,7 @@ Source access limitation: the lead read the authenticated Claude source in Chrom
 Product Owner acceptance: source structure for all five sections is retained; new/edit client sheets share the same explicit container; contact Save spans the sheet; long client values wrap; narrow viewport controls remain reachable. Full-resolution screenshots and rejected/evaluated iteration evidence are retained locally.
 
 Release: PR https://github.com/sene2002-pixel/sales-telegram-crm/pull/23; final CI pending. No deployment or main merge in this follow-up.
+
+## Merge follow-up — 2026-10-26
+
+The user requested merging PR #23 into main. The previous CI run passed all 518 server tests but stopped at the production dependency audit: GHSA-q7qp-rjg7-q26m affects multer below 2.5.0. Update multer to ^2.5.0 and apply the same dependency override to the NestJS adapter, which pins 2.4.0. This avoids a framework downgrade and leaves application code and presentation unchanged. `npm ci` and the production audit pass with zero production vulnerabilities; final tests and CI are required before merging.

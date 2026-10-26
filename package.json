@@ -28,7 +28,7 @@
     "express": "^5.1.0",
     "fast-xml-parser": "^5.11.2",
     "helmet": "^8.1.0",
-    "multer": "^2.3.0",
+    "multer": "^2.5.0",
     "pg": "^8.16.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
@@ -57,5 +57,8 @@
   },
   "scarfSettings": {
     "enabled": false
+  },
+  "overrides": {
+    "multer": "$multer"
   }
 }
