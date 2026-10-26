@@ -1062,7 +1062,7 @@ function App() {
         />
       )}
       {create && (
-        <Modal title="Новый клиент" onClose={() => setCreate(false)}>
+        <Modal title="Новый клиент" onClose={() => setCreate(false)} sheet>
           {employeeId && employeeId !== user.id && (
             <p className="muted">
               Новые клиенты создаются на ваше имя. Фильтр не меняет ответственного.

@@ -406,7 +406,8 @@
 }
 .cc-data > .cc-field > button {
   box-sizing: border-box;
-  height: 38px;
+  min-height: 38px;
+  height: auto;
   border-radius: 11px;
   border: 1px solid #e6ebf3;
   padding: 6px 10px;
