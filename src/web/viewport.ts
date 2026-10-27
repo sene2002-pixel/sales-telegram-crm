@@ -15,6 +15,7 @@ export interface TelegramViewport {
   setHeaderColor?: (color: string) => void;
   isVersionAtLeast?: (version: string) => boolean;
   viewportStableHeight?: number;
+  viewportHeight?: number;
   safeAreaInset?: ViewportInset;
   contentSafeAreaInset?: ViewportInset;
   onEvent?: (name: string, callback: () => void) => void;
@@ -51,6 +52,87 @@ export function configureViewport(telegram?: TelegramViewport) {
     telegram?.platform === 'android' ||
     window.matchMedia('(pointer: coarse)').matches;
   const previousPortrait = root.getAttribute('data-pico-portrait-required');
+  const previousKeyboard = root.getAttribute('data-pico-keyboard-open');
+  let keyboardOpen = false;
+  let keyboardFrame = 0;
+  let baselineWidth = window.innerWidth;
+  const usableBaseline = () =>
+    Math.min(
+      window.innerHeight,
+      positive(visual?.height) || window.innerHeight,
+      positive(telegram?.viewportStableHeight) || window.innerHeight,
+    );
+  let baselineHeight = usableBaseline();
+  const editable = () => {
+    const element = document.activeElement;
+    if (element instanceof HTMLTextAreaElement)
+      return !element.disabled && !element.readOnly ? element : null;
+    if (element instanceof HTMLInputElement)
+      return !element.disabled &&
+        !element.readOnly &&
+        element.inputMode !== 'none' &&
+        [
+          'text',
+          'search',
+          'email',
+          'url',
+          'tel',
+          'password',
+          'number',
+          'date',
+          'time',
+          'month',
+          'week',
+          'datetime-local',
+        ].includes(element.type)
+        ? element
+        : null;
+    return element instanceof HTMLElement && element.isContentEditable ? element : null;
+  };
+  const revealEditable = () => {
+    cancelAnimationFrame(keyboardFrame);
+    keyboardFrame = requestAnimationFrame(() => {
+      if (cleaned || !keyboardOpen) return;
+      const field = editable();
+      if (!field) return;
+      let top = positive(visual?.offsetTop) + 12;
+      let bottom =
+        positive(visual?.offsetTop) +
+        parseFloat(root.style.getPropertyValue('--pico-view-height')) -
+        12;
+      const dialog = field.closest('[role="dialog"]');
+      const footer = dialog?.querySelector(
+        '.company-form-footer, .cc-editor-actions, form > button.primary',
+      );
+      if (footer && !footer.contains(field)) {
+        const footerBounds = footer.getBoundingClientRect();
+        if (footerBounds.height && footerBounds.top > top)
+          bottom = Math.min(bottom, footerBounds.top - 12);
+      }
+      const header = dialog?.querySelector('.section-head');
+      if (header) top = Math.max(top, header.getBoundingClientRect().bottom + 12);
+      const shift = (upper: number, lower: number) => {
+        const bounds = field.getBoundingClientRect();
+        if (bounds.top < upper) return bounds.top - upper;
+        return Math.max(0, bounds.bottom - lower);
+      };
+      // Scroll the actual inner form first. Native Telegram can report a smaller
+      // usable area without changing the browser's own scrollIntoView viewport.
+      for (let parent = field.parentElement; parent; parent = parent.parentElement) {
+        if (
+          /(auto|scroll)/.test(getComputedStyle(parent).overflowY) &&
+          parent.scrollHeight > parent.clientHeight
+        ) {
+          const clip = parent.getBoundingClientRect();
+          parent.scrollTop += shift(
+            Math.max(top, clip.top + 12),
+            Math.min(bottom, clip.bottom - 12),
+          );
+        }
+      }
+      if (!dialog) window.scrollBy({ top: shift(top, bottom), behavior: 'instant' });
+    });
+  };
   let ownsNativeLock = false;
   let nativeLockAttempted = false;
   let landscapeUnlockAttempted = false;
@@ -131,17 +213,34 @@ export function configureViewport(telegram?: TelegramViewport) {
     if (cleaned) return;
     updateOrientation();
     const top = positive(visual?.offsetTop);
+    const field = editable();
+    // Native viewportHeight may shrink before the stable height or browser viewport changes.
+    const liveHeight = mobile && (field || keyboardOpen) ? positive(telegram?.viewportHeight) : 0;
     const height = Math.min(
+      liveHeight || window.innerHeight,
       window.innerHeight,
       positive(visual?.height) || window.innerHeight,
       positive(telegram?.viewportStableHeight) || window.innerHeight,
     );
+    if (baselineWidth !== window.innerWidth) {
+      baselineWidth = window.innerWidth;
+      baselineHeight = usableBaseline();
+      keyboardOpen = false;
+    }
+    baselineHeight = Math.max(baselineHeight, height);
+    keyboardOpen =
+      mobile &&
+      (visual?.scale == null || visual.scale === 1) &&
+      Boolean(field || keyboardOpen) &&
+      baselineHeight - height > Math.max(120, baselineHeight * 0.2);
+    root.setAttribute('data-pico-keyboard-open', String(keyboardOpen));
     root.style.setProperty('--pico-view-height', height + 'px');
     root.style.setProperty('--pico-view-top', top + 'px');
     root.style.setProperty(
       '--pico-bottom-offset',
       Math.max(0, window.innerHeight - top - height) + 'px',
     );
+    revealEditable();
     for (const side of ['top', 'bottom', 'left', 'right'] as const) {
       root.style.setProperty(
         '--pico-safe-' + side,
@@ -192,6 +291,27 @@ export function configureViewport(telegram?: TelegramViewport) {
   document.addEventListener('gesturestart', preventGesture, options);
   document.addEventListener('gesturechange', preventGesture, options);
   document.addEventListener('wheel', preventWheelPinch, options);
+  const updateFocus = () => {
+    cancelAnimationFrame(keyboardFrame);
+    keyboardFrame = requestAnimationFrame(() => {
+      // Focus alone must not rewrite viewport/safe-area geometry (e.g. hardware
+      // keyboards or a sheet with an independently constrained usable height).
+      const focusedHeight = Math.min(
+        window.innerHeight,
+        positive(visual?.height) || window.innerHeight,
+        positive(telegram?.viewportHeight) || window.innerHeight,
+        positive(telegram?.viewportStableHeight) || window.innerHeight,
+      );
+      if (
+        mobile &&
+        (keyboardOpen ||
+          (editable() && baselineHeight - focusedHeight > Math.max(120, baselineHeight * 0.2)))
+      )
+        update();
+    });
+  };
+  document.addEventListener('focusin', updateFocus);
+  document.addEventListener('focusout', updateFocus);
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', update);
   orientation?.addEventListener('change', update);
@@ -200,6 +320,11 @@ export function configureViewport(telegram?: TelegramViewport) {
   update();
   return () => {
     cleaned = true;
+    cancelAnimationFrame(keyboardFrame);
+    if (previousKeyboard === null) root.removeAttribute('data-pico-keyboard-open');
+    else root.setAttribute('data-pico-keyboard-open', previousKeyboard);
+    document.removeEventListener('focusin', updateFocus);
+    document.removeEventListener('focusout', updateFocus);
     if (ownsNativeLock) safeCall(() => telegram?.unlockOrientation?.());
     if (ownsBrowserLock) safeCall(() => orientation?.unlock?.());
     if (previousPortrait === null) root.removeAttribute('data-pico-portrait-required');

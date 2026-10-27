@@ -229,9 +229,10 @@ test('Viewport: cleanup removes SDK and DOM listeners and restores prior CSS val
   page,
 }) => {
   await isolatedModule(page);
-  await page.evaluate(() =>
-    document.documentElement.style.setProperty('--pico-view-height', '333px', 'important'),
-  );
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--pico-view-height', '333px', 'important');
+    document.documentElement.setAttribute('data-pico-keyboard-open', 'previous-owner');
+  });
   await configureSdk(page);
   await page.evaluate(() => {
     const queued = [...(window as any).__sdk.events.values()].flatMap((callbacks: any) => [
@@ -262,6 +263,7 @@ test('Viewport: cleanup removes SDK and DOM listeners and restores prior CSS val
       height: style.getPropertyValue('--pico-view-height'),
       priority: style.getPropertyPriority('--pico-view-height'),
       top: style.getPropertyValue('--pico-view-top'),
+      keyboard: document.documentElement.getAttribute('data-pico-keyboard-open'),
       pinchCancelled: pinch.defaultPrevented,
       expand: sdk.calls.expand,
     };
@@ -273,6 +275,7 @@ test('Viewport: cleanup removes SDK and DOM listeners and restores prior CSS val
     priority: 'important',
     top: '',
     pinchCancelled: false,
+    keyboard: 'previous-owner',
     expand: 1,
   });
 });
