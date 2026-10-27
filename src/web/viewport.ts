@@ -56,7 +56,13 @@ export function configureViewport(telegram?: TelegramViewport) {
   let keyboardOpen = false;
   let keyboardFrame = 0;
   let baselineWidth = window.innerWidth;
-  let baselineHeight = Math.max(window.innerHeight, positive(telegram?.viewportStableHeight));
+  const usableBaseline = () =>
+    Math.min(
+      window.innerHeight,
+      positive(visual?.height) || window.innerHeight,
+      positive(telegram?.viewportStableHeight) || window.innerHeight,
+    );
+  let baselineHeight = usableBaseline();
   const editable = () => {
     const element = document.activeElement;
     if (element instanceof HTMLTextAreaElement)
@@ -205,7 +211,7 @@ export function configureViewport(telegram?: TelegramViewport) {
     );
     if (baselineWidth !== window.innerWidth) {
       baselineWidth = window.innerWidth;
-      baselineHeight = Math.max(window.innerHeight, positive(telegram?.viewportStableHeight));
+      baselineHeight = usableBaseline();
       keyboardOpen = false;
     }
     baselineHeight = Math.max(baselineHeight, height);

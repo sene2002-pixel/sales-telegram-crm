@@ -30,3 +30,9 @@ Iteration 2: both designers actually inspected rendered contact/client-edit/note
 - Selected synthetic screenshots under screenshots/. Full iteration evidence at /tmp/pico-keyboard-evidence/. Keyboard rectangle is explicitly labeled as a simulation. Physical iOS/Android OS keyboard behavior was not independently verified on a device.
 - Product Owner acceptance: primary navigation absent during simulated keyboard, all active fields stay visible, navigation restores without blur, ordinary focus preserves existing sheet geometry.
 - Release: feature branch codex/asana-keyboard-navigation; full CI and main merge pending. Asana task is In Progress until merge verification. No production deployment or database changes.
+
+## Final edge-case correction — iteration 3
+
+Before merge, a new regression reproduced false keyboard detection when Telegram reported a 560px usable window inside an 844px browser host. The baseline now starts at the minimum usable host/visual/stable SDK height, rather than the host maximum. The unchanged failed test now passes, including contraction to 300px and restoration to 560px with focus retained. This also applies on width/orientation reset.
+
+Final keyboard/viewport/client regression selection: 45 passed, 1 intentional desktop-case skip in the mobile project. Build passed again. Independent reviewer approved the baseline correction. Both designers inspected new short-window/no-keyboard and representative positive keyboard screenshots after the correction and returned PASS; three iterations were reviewed in total. Other passed form layouts were preserved.

@@ -1,10 +1,10 @@
 import { expect, Locator, Page, test } from '@playwright/test';
 import { action, clients, navigate, prepareDemoAuth } from './helpers';
 
-async function setup(page: Page, width = 390, platform = 'android') {
+async function setup(page: Page, width = 390, platform = 'android', initialHeight = 844) {
   await page.setViewportSize({ width, height: 844 });
   await page.addInitScript(
-    ({ platform }) => {
+    ({ platform, initialHeight }) => {
       const callbacks = new Map<string, Set<() => void>>();
       const visual = new EventTarget() as any;
       Object.assign(visual, { height: 844, offsetTop: 0, scale: 1 });
@@ -16,8 +16,8 @@ async function setup(page: Page, width = 390, platform = 'android') {
       const sdk = {
         initData: '',
         platform,
-        viewportStableHeight: 844,
-        viewportHeight: 844,
+        viewportStableHeight: initialHeight,
+        viewportHeight: initialHeight,
         ready() {},
         expand() {},
         isVersionAtLeast() {
@@ -65,7 +65,7 @@ async function setup(page: Page, width = 390, platform = 'android') {
         },
       };
     },
-    { platform },
+    { platform, initialHeight },
   );
   await prepareDemoAuth(page);
   await page.route('https://telegram.org/js/telegram-web-app.js*', (r) => r.fulfill({ body: '' }));
@@ -255,4 +255,25 @@ test('keyboard scrolling covers contact, client edit, notes, task and project fo
   const projectSheet = page.getByRole('dialog', { name: 'Новый проект', exact: true });
   await projectSheet.getByText('Дополнительные поля', { exact: true }).click();
   await check(projectSheet.getByRole('textbox', { name: 'Описание', exact: true }), 'project');
+});
+
+test('keyboard baseline starts at the native usable height, not host height', async ({
+  page,
+}, info) => {
+  await setup(page, 390, 'android', 560);
+  const search = page.getByRole('textbox', { name: 'Поиск компаний' });
+  const nav = page.locator('.pico-bottom-nav');
+  await search.focus();
+  await expect(page.locator('html')).toHaveAttribute('data-pico-keyboard-open', 'false');
+  await expect(nav).toBeVisible();
+  await page.screenshot({ path: info.outputPath('native-short-window-no-keyboard.png') });
+  await resize(page, 300, true);
+  await expect(nav).toBeHidden();
+  await page.evaluate(() => {
+    const state = (window as any).__keyboard;
+    state.resize(560, true);
+    document.getElementById('synthetic-keyboard')?.remove();
+  });
+  await expect(search).toBeFocused();
+  await expect(nav).toBeVisible();
 });
