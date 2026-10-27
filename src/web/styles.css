@@ -4723,3 +4723,22 @@ html.pico-home-active,
 .pico-home-welcome .pico-admin-button {
   flex-shrink: 0;
 }
+
+/* The mobile keyboard owns the bottom edge; navigation returns when it closes. */
+html[data-pico-keyboard-open='true'] .pico-bottom-nav {
+  display: none;
+}
+@media (max-width: 760px) {
+  html[data-pico-keyboard-open='true'] .workspace {
+    max-height: var(--pico-view-height, 100dvh);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding-bottom: 12px;
+  }
+}
+html[data-pico-keyboard-open='true'] :is(input, textarea, [contenteditable='true']) {
+  scroll-margin-block: 16px;
+}
+html[data-pico-keyboard-open='true'] .client-sheet-body {
+  scroll-padding-block: 16px 80px;
+}
