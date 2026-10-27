@@ -36,3 +36,7 @@ Iteration 2: both designers actually inspected rendered contact/client-edit/note
 Before merge, a new regression reproduced false keyboard detection when Telegram reported a 560px usable window inside an 844px browser host. The baseline now starts at the minimum usable host/visual/stable SDK height, rather than the host maximum. The unchanged failed test now passes, including contraction to 300px and restoration to 560px with focus retained. This also applies on width/orientation reset.
 
 Final keyboard/viewport/client regression selection: 45 passed, 1 intentional desktop-case skip in the mobile project. Build passed again. Independent reviewer approved the baseline correction. Both designers inspected new short-window/no-keyboard and representative positive keyboard screenshots after the correction and returned PASS; three iterations were reviewed in total. Other passed form layouts were preserved.
+
+## Native date/time editors — iteration 4
+
+Date, time, month, week and datetime-local controls also qualify for mobile viewport-contraction handling; nonediting, disabled and read-only inputs remain excluded. The task due-date scenario verifies field visibility, hidden navigation and restoration. Final keyboard/viewport/client tests: 45 passed, 1 intentional desktop-only skip in the mobile project; build passed. Reviewer approved this eligibility-only change. Both designers inspected actual date-field screenshots plus representative restored/text-input states and returned PASS. This was the last change before final CI.

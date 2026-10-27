@@ -71,7 +71,20 @@ export function configureViewport(telegram?: TelegramViewport) {
       return !element.disabled &&
         !element.readOnly &&
         element.inputMode !== 'none' &&
-        ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(element.type)
+        [
+          'text',
+          'search',
+          'email',
+          'url',
+          'tel',
+          'password',
+          'number',
+          'date',
+          'time',
+          'month',
+          'week',
+          'datetime-local',
+        ].includes(element.type)
         ? element
         : null;
     return element instanceof HTMLElement && element.isContentEditable ? element : null;

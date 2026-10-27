@@ -249,6 +249,15 @@ test('keyboard scrolling covers contact, client edit, notes, task and project fo
   await action(page, 'Добавить задачу');
   const taskSheet = page.getByRole('dialog', { name: 'Новая задача', exact: true });
   await check(taskSheet.getByRole('textbox', { name: 'Задача', exact: true }), 'task');
+  // Native date/time editors can contract an iOS WebView like the text keyboard.
+  const due = taskSheet.getByLabel('Срок', { exact: true });
+  await due.focus();
+  await resize(page, 390, true);
+  await expect(nav).toBeHidden();
+  await visibleField(due, 390);
+  await page.screenshot({ path: info.outputPath('task-date-keyboard.png') });
+  await resize(page, 844);
+  await expect(nav).toBeVisible();
   await taskSheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await navigate(page, 'Проекты');
   await action(page, 'Добавить проект');
