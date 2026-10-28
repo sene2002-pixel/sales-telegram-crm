@@ -3818,9 +3818,20 @@ select.pico-filter-sort {
   border-radius: 20px;
   box-shadow: inset 0 0 0 1px #e6ebf3;
 }
-.pico-client-accordion:focus-within {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+.pico-client-accordion.cc-card {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+.pico-client-accordion.cc-card > .cc-swipe > .cc-swipe-content {
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 1px #e6ebf3;
+  overflow: hidden;
+}
+.pico-client-accordion.cc-card > .cc-swipe > .cc-swipe-content > .pico-client-row {
+  background: transparent;
+  border: 0;
 }
 .pico-client-accordion > .pico-client-row {
   background: transparent;

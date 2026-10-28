@@ -545,7 +545,8 @@
 }
 /* Actions are deliberately unavailable until a completed horizontal swipe. */
 .cc-swipe {
-  --cc-action-width: 64px;
+  --cc-action-width: 56px;
+  background: #f3f6fb;
 }
 .cc-swipe.cc-two-actions {
   --cc-action-width: 112px;
@@ -575,8 +576,8 @@
 .cc-swipe-actions > button.cc-trash,
 .cc-swipe-actions > button.cc-swipe-edit {
   position: static;
-  width: 64px;
-  min-width: 64px;
+  width: 56px;
+  min-width: 56px;
   height: 44px;
   min-height: 44px;
   display: grid;
