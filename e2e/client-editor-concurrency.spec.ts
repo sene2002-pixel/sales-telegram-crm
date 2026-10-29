@@ -164,7 +164,13 @@ test('Legacy company editor saves with 21 contacts without dropping unchanged co
     .locator('.company-form-accordion > summary')
     .filter({ hasText: /^Дополнительные поля/ })
     .click();
-  await dialog.locator('input[value="Исходный контакт"]').fill('Изменённый первый контакт');
+  const nameFields = dialog.getByRole('textbox', { name: 'Контакт', exact: true });
+  await expect(nameFields).toHaveCount(21);
+  const values = await nameFields.evaluateAll((fields) =>
+    fields.map((field) => (field as HTMLTextAreaElement).value),
+  );
+  expect(values.filter((value) => value === 'Исходный контакт')).toHaveLength(1);
+  await nameFields.nth(values.indexOf('Исходный контакт')).fill('Изменённый первый контакт');
   const saved = page.waitForResponse(
     (r) => r.url().endsWith(`/companies/${company.id}/editor`) && r.request().method() === 'PATCH',
   );

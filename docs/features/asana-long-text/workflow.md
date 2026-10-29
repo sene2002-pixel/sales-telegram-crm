@@ -26,6 +26,6 @@ New `e2e/long-text-fields.spec.ts` uses the supplied legal-name example plus lon
 - Final long-text + existing design-fidelity run: 27 passed, 1 intentional skip.
 - Existing card, action, keyboard and legal-name cases passed in the broader first run; the four multiple-contact failures were corrected in production and verified by the final design-fidelity run.
 - First full server run: 513 passed, 4 skipped, one unchanged supervisor-assignment test returned 404. Its isolated roles suite rerun passed (90 passed, 1 PostgreSQL-only skip). Final complete `npm run check` passed: 514 server tests, 4 PostgreSQL-only skips, 7 ops tests and production build. No server changes were needed.
-- Production build passed. Local server health passed before browser tests. Full GitHub CI is a merge gate; final results are on the PR.
+- Production build passed. Local server health passed before browser tests. The first complete CI passed 292 browser tests but identified one stale input-only selector in the 21-contact preservation test (both device projects). The selector now uses the contact textbox label and exact opening value; count, saved identity, version and unchanged-data assertions remain intact. Both reviewers approved the adaptation; the complete concurrency + long-text selection passed (13 passed, 1 intentional skip). Full GitHub CI is a merge gate; final results are on the PR.
 
 Physical-device testing and inaccessible Claude source pixel comparison were not performed. Screenshots establish appearance in the tested Chromium sizes, not universal device coverage.
