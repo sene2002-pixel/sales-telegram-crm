@@ -118,7 +118,11 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
     .click();
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
   await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
-  await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Фильтры клиентов' })
+    .getByRole('button', { name: /^Показать/ })
+    .click();
+  await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
   await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Архив');
 });
@@ -145,12 +149,7 @@ test('Company archive and restore buttons require confirmation and preserve cont
     dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }),
   ).toBeVisible();
   await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
-  await page.getByRole('button', { name: 'Архив компаний', exact: true }).click();
-  await page
-    .getByRole('dialog', { name: 'Фильтры клиентов' })
-    .getByRole('button', { name: /^Показать/ })
-    .click();
+  await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
   await openCompany(page, c.name);
   await openCompanySection(page, 'actions');
   await dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();

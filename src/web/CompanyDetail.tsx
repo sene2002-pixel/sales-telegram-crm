@@ -175,7 +175,7 @@ export function CompanyDetail({
           {c.notes && <p className="preserve">{c.notes}</p>}
           <CompanySales records={detail.records} />
         </details>
-        <details className="company-detail-actions">
+        <details className="company-detail-actions" open={initialTab === 'actions' || undefined}>
           <summary>Действия с клиентом</summary>
           {!c.archived && (
             <LetterForm

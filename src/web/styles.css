@@ -4780,3 +4780,21 @@ textarea.pico-growing-textarea {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Client archive is accessed through the Closed tab, alongside the existing filters. */
+.client-filter-actions {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.client-filter-actions .field {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  max-width: 220px;
+}
+.client-filter-actions > button {
+  flex-shrink: 0;
+}
