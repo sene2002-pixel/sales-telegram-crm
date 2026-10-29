@@ -600,6 +600,7 @@ export function CompanyForm({
             }
             <Field label="Комментарий">
               <GrowingTextarea
+                aria-label="Комментарий"
                 rows={3}
                 value={data.notes}
                 onChange={(e) => update('notes', e.target.value)}
@@ -1184,6 +1185,7 @@ export function RecordForm({
         <>
           <Field label="Результат общения">
             <GrowingTextarea
+              aria-label="Результат общения"
               required
               rows={4}
               value={data.text}
@@ -1205,6 +1207,7 @@ export function RecordForm({
           <Field label="Название проекта">
             <GrowingTextarea
               singleLine
+              aria-label="Название проекта"
               required
               value={data.name}
               placeholder="Например, ТЭЦ-3 — модернизация"
@@ -1367,6 +1370,7 @@ export function RecordForm({
             </Field>
             <Field label="Описание">
               <GrowingTextarea
+                aria-label="Описание"
                 rows={2}
                 value={data.notes}
                 onChange={(e) => change('notes', e.target.value)}

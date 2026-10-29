@@ -16,7 +16,7 @@ Two analysts independently inspected scope, current code and regression coverage
 - Independent code reviewers found two issues in iteration 1 (inline-name line breaks and composing Enter); both corrected and re-reviewed.
 - Both designers inspected 15 rendered states at 320/390/1440 in iteration 1. They requested top alignment of the short phone beside a long contact role.
 - Iteration 2 applies that alignment. Both designers inspected nine updated contact/project/task states and passed. Selected final screenshots are in `screenshots/`.
-- Existing multiple-contact regression found implicit label lookup unstable after replacing inputs with textareas. Explicit accessible names now match visible labels. Existing assertions were preserved.
+- Existing multiple-contact regression found implicit label lookup unstable after replacing inputs with textareas. Explicit accessible names now match visible labels. Existing assertions were preserved. A further filled-project-label regression reproduced the same implicit-label issue; project and remaining growing-field labels were made explicit as well.
 
 ## QA evidence
 

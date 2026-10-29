@@ -160,6 +160,7 @@ for (const width of [320, 390, 1440]) {
     const projectName = project.getByRole('textbox', { name: 'Название проекта', exact: true });
     await projectName.fill(longWord);
     await fits(projectName);
+    await expect(project.getByLabel('Название проекта', { exact: true })).toHaveValue(longWord);
     await page.screenshot({
       path: `/tmp/pico-long-text-evidence/project-form-${width}-${info.project.name}.png`,
     });
