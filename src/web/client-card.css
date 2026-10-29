@@ -390,14 +390,12 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.cc-data > .cc-field:first-child,
-.cc-data > .cc-field:nth-child(4),
-.cc-data > .cc-field:nth-child(5),
+.cc-data > .cc-field,
 .cc-data > .cc-inline-editor {
-  grid-column: 1/-1;
+  grid-column: 1 / -1;
 }
-.cc-data > .cc-field:nth-child(4) {
-  order: 2;
+.cc-data > .cc-field-compact {
+  grid-column: auto;
 }
 .cc-data > .cc-field > span {
   font-size: 12px;
@@ -410,9 +408,20 @@
   height: auto;
   border-radius: 11px;
   border: 1px solid #e6ebf3;
-  padding: 6px 10px;
+  padding: 9px 12px;
   background: #fff;
   font-size: 14px;
+  white-space: normal;
+}
+.cc-data > .cc-field > button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cc-data > .cc-field-compact > button > span,
+.cc-contact-columns > div:last-child > span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .cc-swipe {
   overflow: hidden;
@@ -483,10 +492,6 @@
 }
 .cc-trash-track {
   z-index: 2;
-}
-.cc-data > .cc-field:has(> button[aria-label='Изменить Описание деятельности']),
-.cc-data > .cc-field:has(> button[aria-label='Изменить Сайты']) {
-  grid-column: 1/-1;
 }
 .cc-section:nth-of-type(4) > .cc-section-body > .cc-field > button {
   box-sizing: border-box;
@@ -625,6 +630,9 @@
 .cc-contact-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cc-contact-columns > div {
+  align-content: start;
 }
 .cc-contact-columns > div + div {
   border-left: 1px solid #eef2f8;

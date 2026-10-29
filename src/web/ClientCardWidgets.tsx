@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
+import { GrowingTextarea } from './GrowingTextarea';
 
 export function InlineValue({
   label,
@@ -10,6 +11,8 @@ export function InlineValue({
   numeric,
   disabled,
   unit,
+  compact = false,
+  singleLine = false,
 }: {
   label: string;
   value: string;
@@ -19,6 +22,8 @@ export function InlineValue({
   numeric?: boolean;
   disabled?: boolean;
   unit?: string;
+  compact?: boolean;
+  singleLine?: boolean;
 }) {
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(value),
@@ -27,7 +32,7 @@ export function InlineValue({
   const saveSnapshot = useRef(onSave);
   if (!editing)
     return (
-      <div className="cc-field">
+      <div className={`cc-field ${compact ? 'cc-field-compact' : ''}`}>
         <span>{label}</span>
         <button
           disabled={disabled}
@@ -41,6 +46,7 @@ export function InlineValue({
         >
           <span>{options?.find((o) => o.value === value)?.label || value || 'Не указано'}</span>
           {unit && <small>{unit}</small>}
+          {options && <Icon name="chevron-down" size={16} />}
         </button>
       </div>
     );
@@ -54,7 +60,7 @@ export function InlineValue({
   };
   return (
     <form
-      className="cc-inline-editor"
+      className={`cc-inline-editor ${compact ? 'cc-field-compact' : ''}`}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !busy) setEditing(false);
       }}
@@ -83,7 +89,7 @@ export function InlineValue({
             ))}
           </select>
         ) : multiline ? (
-          <textarea {...control} rows={4} />
+          <GrowingTextarea {...control} singleLine={singleLine} />
         ) : (
           <input {...control} inputMode={numeric ? 'decimal' : undefined} />
         )}

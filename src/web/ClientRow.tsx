@@ -24,6 +24,7 @@ import { FileUpload } from './FileUpload';
 import { Icon, industryIcon } from './Icons';
 import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
+import { GrowingTextarea } from './GrowingTextarea';
 import './client-card.css';
 
 type Detail = CompanyDetail & {
@@ -543,16 +544,39 @@ export function ClientRow({
                     {[
                       ['inn', 'ИНН'],
                       ['name', 'Название'],
-                      ['city', 'Город'],
-                      ['website', 'Сайт'],
                     ].map(([key, label]) => (
                       <InlineValue
                         key={key}
                         label={label}
                         value={String(c[key as keyof Company] || '')}
+                        multiline={key === 'name'}
+                        singleLine={key === 'name'}
                         onSave={(value) => patch({ [key]: value })}
                       />
                     ))}
+                    <InlineValue
+                      label="Категория"
+                      compact
+                      value={c.segment}
+                      options={(primarySegments.includes(
+                        c.segment as (typeof primarySegments)[number],
+                      )
+                        ? primarySegments
+                        : [...primarySegments, c.segment]
+                      ).map((value) => ({ value, label: labels[value] }))}
+                      onSave={(value) => patch({ segment: value as Company['segment'] })}
+                    />
+                    <InlineValue
+                      label="Город"
+                      value={c.city}
+                      compact
+                      onSave={(city) => patch({ city })}
+                    />
+                    <InlineValue
+                      label="Сайт"
+                      value={c.website || ''}
+                      onSave={(website) => patch({ website })}
+                    />
                     {isHolding && (
                       <>
                         <InlineValue
@@ -575,17 +599,6 @@ export function ClientRow({
                         />
                       </>
                     )}
-                    <InlineValue
-                      label="Категория"
-                      value={c.segment}
-                      options={(primarySegments.includes(
-                        c.segment as (typeof primarySegments)[number],
-                      )
-                        ? primarySegments
-                        : [...primarySegments, c.segment]
-                      ).map((value) => ({ value, label: labels[value] }))}
-                      onSave={(value) => patch({ segment: value as Company['segment'] })}
-                    />
                   </div>
                 </details>
                 <button type="button" className="text-button" onClick={() => onOpen(c, 'task')}>
@@ -701,14 +714,25 @@ function ContactForm({
       ].map(([key, label]) => (
         <label key={key}>
           {label}
-          <input
-            aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
-            type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
-            value={draft[key as keyof typeof draft]}
-            required={key === 'name'}
-            disabled={busy}
-            onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-          />
+          {key === 'name' || key === 'role' ? (
+            <GrowingTextarea
+              singleLine
+              aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
+              value={draft[key as keyof typeof draft]}
+              required={key === 'name'}
+              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+            />
+          ) : (
+            <input
+              aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
+              type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+              value={draft[key as keyof typeof draft]}
+              required={key === 'name'}
+              disabled={busy}
+              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+            />
+          )}
         </label>
       ))}
       {error && (

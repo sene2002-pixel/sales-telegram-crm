@@ -3803,6 +3803,8 @@ select.pico-filter-sort {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .pico-scoped-content > .pico-client-list,
 .pico-scoped-content > .pico-project-list {
@@ -4752,4 +4754,29 @@ html[data-pico-keyboard-open='true'] :is(input, textarea, [contenteditable='true
 }
 html[data-pico-keyboard-open='true'] .client-sheet-body {
   scroll-padding-block: 16px 80px;
+}
+
+/* Long editable values grow; date, numeric and compact fields retain native controls. */
+.pico-compact-form textarea.pico-growing-textarea,
+.cc-inline-editor textarea.pico-growing-textarea,
+textarea.pico-growing-textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 38px;
+  height: auto;
+  padding: 9px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: hidden;
+  resize: none;
+}
+.pico-client-row > .company-money,
+.pico-project-row > summary > svg,
+.pico-task-row > .checkbox {
+  flex-shrink: 0;
+}
+.pico-task-row .task-text small,
+.pico-detail-fields dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
