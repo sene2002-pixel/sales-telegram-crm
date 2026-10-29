@@ -1,4 +1,5 @@
 import './company-form.css';
+import { GrowingTextarea } from './GrowingTextarea';
 import { companyDisplayName } from '../shared/company-display-name';
 import { createPortal } from 'react-dom';
 import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react';
@@ -389,7 +390,8 @@ export function CompanyForm({
         )}
         <div className="pico-form-two">
           <Field label="Название">
-            <input
+            <GrowingTextarea
+              singleLine
               aria-label="Название"
               value={data.name}
               placeholder="ООО «Компания»"
@@ -519,24 +521,49 @@ export function CompanyForm({
                           ]
                         }
                       >
-                        <input
-                          type="text"
-                          inputMode={key === 'phone' ? 'tel' : key === 'email' ? 'email' : 'text'}
-                          value={contact[key]}
-                          aria-invalid={!!fieldErrors[`contact-${index}-${key}`]}
-                          aria-describedby={
-                            fieldErrors[`contact-${index}-${key}`]
-                              ? `company-error-contact-${index}-${key}`
-                              : undefined
-                          }
-                          onChange={(e) =>
-                            setContacts((current) =>
-                              current.map((entry, entryIndex) =>
-                                entryIndex === index ? { ...entry, [key]: e.target.value } : entry,
-                              ),
-                            )
-                          }
-                        />
+                        {key === 'name' || key === 'role' ? (
+                          <GrowingTextarea
+                            singleLine
+                            aria-label={key === 'name' ? 'Контакт' : 'Должность'}
+                            value={contact[key]}
+                            aria-invalid={!!fieldErrors[`contact-${index}-${key}`]}
+                            aria-describedby={
+                              fieldErrors[`contact-${index}-${key}`]
+                                ? `company-error-contact-${index}-${key}`
+                                : undefined
+                            }
+                            onChange={(e) =>
+                              setContacts((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? { ...entry, [key]: e.target.value }
+                                    : entry,
+                                ),
+                              )
+                            }
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            inputMode={key === 'phone' ? 'tel' : key === 'email' ? 'email' : 'text'}
+                            value={contact[key]}
+                            aria-invalid={!!fieldErrors[`contact-${index}-${key}`]}
+                            aria-describedby={
+                              fieldErrors[`contact-${index}-${key}`]
+                                ? `company-error-contact-${index}-${key}`
+                                : undefined
+                            }
+                            onChange={(e) =>
+                              setContacts((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? { ...entry, [key]: e.target.value }
+                                    : entry,
+                                ),
+                              )
+                            }
+                          />
+                        )}
                         {inputError(`contact-${index}-${key}`)}
                       </Field>
                     ))}
@@ -572,7 +599,7 @@ export function CompanyForm({
               </section>
             }
             <Field label="Комментарий">
-              <textarea
+              <GrowingTextarea
                 rows={3}
                 value={data.notes}
                 onChange={(e) => update('notes', e.target.value)}
@@ -623,7 +650,7 @@ function TaskFields({
     [contactOpen, setContactOpen] = useState(false);
   return (
     <>
-      <textarea
+      <GrowingTextarea
         className="pico-task-textarea"
         aria-label="Задача"
         required
@@ -1112,19 +1139,30 @@ export function RecordForm({
             ['email', 'Email'],
           ].map(([key, label]) => (
             <Field key={key} label={label}>
-              <input
-                required={key === 'name'}
-                type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
-                value={data[key]}
-                placeholder={
-                  key === 'name'
-                    ? 'Например, Иванов Сергей'
-                    : key === 'phone'
-                      ? '+7 900 000-00-00'
-                      : undefined
-                }
-                onChange={(e) => change(key, e.target.value)}
-              />
+              {key === 'name' || key === 'role' ? (
+                <GrowingTextarea
+                  singleLine
+                  aria-label={label}
+                  required={key === 'name'}
+                  value={data[key]}
+                  placeholder={key === 'name' ? 'Например, Иванов Сергей' : undefined}
+                  onChange={(e) => change(key, e.target.value)}
+                />
+              ) : (
+                <input
+                  required={key === 'name'}
+                  type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+                  value={data[key]}
+                  placeholder={
+                    key === 'name'
+                      ? 'Например, Иванов Сергей'
+                      : key === 'phone'
+                        ? '+7 900 000-00-00'
+                        : undefined
+                  }
+                  onChange={(e) => change(key, e.target.value)}
+                />
+              )}
             </Field>
           ))}
           <p className="muted">
@@ -1145,7 +1183,7 @@ export function RecordForm({
       {kind === 'activity' && (
         <>
           <Field label="Результат общения">
-            <textarea
+            <GrowingTextarea
               required
               rows={4}
               value={data.text}
@@ -1165,7 +1203,8 @@ export function RecordForm({
       {kind === 'project' && (
         <>
           <Field label="Название проекта">
-            <input
+            <GrowingTextarea
+              singleLine
               required
               value={data.name}
               placeholder="Например, ТЭЦ-3 — модернизация"
@@ -1327,7 +1366,7 @@ export function RecordForm({
               />
             </Field>
             <Field label="Описание">
-              <textarea
+              <GrowingTextarea
                 rows={2}
                 value={data.notes}
                 onChange={(e) => change('notes', e.target.value)}
