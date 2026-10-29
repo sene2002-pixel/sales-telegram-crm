@@ -84,7 +84,9 @@ for (const target of ['notes', 'equipment', 'new-equipment'] as const) {
       await editor.getByRole('textbox').fill('Мой незавершённый текст');
     } else if (target === 'equipment') {
       await card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }).click();
-      editor = card.locator('.cc-equipment form');
+      editor = card
+        .locator('.cc-amount-group')
+        .filter({ has: page.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }) });
       await editor.getByRole('textbox').fill('2,5');
     } else {
       await card.getByRole('button', { name: 'Добавить оборудование', exact: true }).click();
@@ -110,12 +112,17 @@ for (const target of ['notes', 'equipment', 'new-equipment'] as const) {
           new URL(r.url()).pathname === `/api/companies/${company.id}` &&
           r.request().method() === 'PATCH',
       );
-      await editor
-        .getByRole('button', {
-          name: target === 'new-equipment' ? 'Добавить' : 'Сохранить',
-          exact: true,
-        })
-        .click();
+      if (target === 'equipment') {
+        await editor.getByRole('textbox').focus();
+        await editor.getByRole('textbox').press('Tab');
+      } else {
+        await editor
+          .getByRole('button', {
+            name: target === 'new-equipment' ? 'Добавить' : 'Сохранить',
+            exact: true,
+          })
+          .click();
+      }
       expect((await response).status()).toBe(409);
       await expect(editor.getByRole('alert')).toBeVisible();
       await expect(editor.getByRole('textbox')).toHaveValue(

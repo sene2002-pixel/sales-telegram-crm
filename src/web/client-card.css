@@ -819,3 +819,61 @@
 .modal.client-sheet .company-form {
   flex: 1 1 auto;
 }
+
+/* Equipment editing keeps the same 40px cell and trailing unit. */
+.cc-amount-group > .cc-equipment {
+  height: 40px;
+}
+.cc-amount-label {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.cc-amount-group .cc-equipment-editing {
+  border: 1.5px solid #1f7aea;
+  background: #fff;
+}
+.cc-amount-editor,
+button.cc-amount-value {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+.cc-amount-editor input,
+button.cc-amount-value > span {
+  min-width: 1ch;
+  max-width: 12ch;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 800;
+  color: inherit;
+}
+.cc-amount-editor input:focus {
+  outline: none;
+}
+.cc-amount-editor small,
+button.cc-amount-value small {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a8299;
+}
+.cc-amount-error > p {
+  margin: 6px 0;
+}
