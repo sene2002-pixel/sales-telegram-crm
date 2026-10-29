@@ -99,7 +99,10 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
   expect(patches[2].version).toBe(2);
   await card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }).click();
   await card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).fill('1.5');
-  await card.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).press('Tab');
+  await expect(
+    card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }),
+  ).toBeVisible();
   expect(company.divisions.lv).toBe(1500000);
   await expect(card.locator('.cc-equipment')).toContainText('1.5');
   await expect(card.locator('.cc-equipment')).toContainText('млн ₽');

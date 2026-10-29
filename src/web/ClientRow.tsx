@@ -24,6 +24,7 @@ import { FileUpload } from './FileUpload';
 import { Icon, industryIcon } from './Icons';
 import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
+import { InlineAmount } from './InlineAmount';
 import { GrowingTextarea } from './GrowingTextarea';
 import './client-card.css';
 
@@ -199,8 +200,8 @@ export function ClientRow({
     if (raw === null) delete next[key as keyof typeof next];
     else {
       const amount = Number(raw.replace(',', '.').replace(/\s/g, ''));
-      if (!raw.trim() || !Number.isFinite(amount) || amount < 0)
-        throw new Error('Введите сумму от 0 до 1 000 000 000 000 ₽');
+      if (!raw.trim() || !Number.isFinite(amount) || amount < 0 || amount > 1_000_000)
+        throw new Error('Введите сумму от 0 до 1 000 000 млн ₽');
       next[key as keyof typeof next] = amount * 1_000_000;
     }
     await patch(
@@ -365,15 +366,12 @@ export function ClientRow({
                               label={`оборудование «${divisionLabels[key]}»`}
                               onDelete={() => equipment(key, null)}
                             >
-                              <div className="cc-equipment">
-                                <InlineValue
-                                  label={divisionLabels[key]}
-                                  value={millionValue(c.divisions[key])}
-                                  unit="млн ₽"
-                                  numeric
-                                  onSave={(value) => equipment(key, value)}
-                                />
-                              </div>
+                              <InlineAmount
+                                label={divisionLabels[key]}
+                                value={millionValue(c.divisions[key])}
+                                unit="млн ₽"
+                                onSave={(value) => equipment(key, value)}
+                              />
                             </SwipeAction>
                           ))}
                         {!Object.keys(c.divisions).length && (
