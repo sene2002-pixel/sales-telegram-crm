@@ -237,15 +237,21 @@ export function ClientRow({
     <article ref={articleRef} className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
       <SwipeAction
         label={`клиента «${companyDisplayName(c.name, c.country)}» в архив`}
-        onEdit={() => {
-          void read()
-            .then((d) => {
-              setEditorCompany(structuredClone(d.company));
-              setEditorContacts(structuredClone(d.records.filter((r) => r.kind === 'contact')));
-              setEditingClient(true);
-            })
-            .catch((e) => setError(e.message));
-        }}
+        onEdit={
+          c.archived
+            ? undefined
+            : () => {
+                void read()
+                  .then((d) => {
+                    setEditorCompany(structuredClone(d.company));
+                    setEditorContacts(
+                      structuredClone(d.records.filter((r) => r.kind === 'contact')),
+                    );
+                    setEditingClient(true);
+                  })
+                  .catch((e) => setError(e.message));
+              }
+        }
         onDelete={
           canArchive
             ? async () => {
@@ -599,6 +605,15 @@ export function ClientRow({
                     )}
                   </div>
                 </details>
+                {c.archived && actorRole === 'admin' && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => onOpen(c, 'actions')}
+                  >
+                    Восстановить компанию
+                  </button>
+                )}
                 <button type="button" className="text-button" onClick={() => onOpen(c, 'task')}>
                   Задачи и проекты
                 </button>

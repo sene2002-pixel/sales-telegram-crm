@@ -74,8 +74,7 @@ function App() {
     [query, setQuery] = useState(''),
     [city, setCity] = useState(''),
     [segment, setSegment] = useState(''),
-    [division, setDivision] = useState(''),
-    [archive, setArchive] = useState(false);
+    [division, setDivision] = useState('');
   const [files, setFiles] = useState<(CrmRecord & { companyName: string })[]>([]),
     [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]),
     [contacts, setContacts] = useState<CrmRecord[]>([]);
@@ -153,7 +152,6 @@ function App() {
     setCity('');
     setSegment('');
     setDivision('');
-    setArchive(false);
     setClientStatus('all');
   }
   async function changeEmployee(id: string) {
@@ -219,7 +217,6 @@ function App() {
     setCity('');
     setSegment('');
     setDivision('');
-    setArchive(false);
     setClientStatus('all');
     setClientSort('name');
     setSelectedTab('contact');
@@ -543,9 +540,9 @@ function App() {
   };
   const visible = companies.filter(
     (c) =>
-      c.archived === archive &&
-      (clientStatus === 'all' ||
-        (clientStatus === 'closed' ? c.stage === 'closed' : c.stage !== 'closed')) &&
+      (clientStatus === 'closed'
+        ? c.archived || c.stage === 'closed'
+        : !c.archived && c.stage !== 'closed') &&
       (!query ||
         `${c.name} ${companyDisplayName(c.name)} ${(c.alternativeNames || []).join(' ')} ${c.inn} ${contacts
           .filter((contact) => contact.companyId === c.id)
@@ -716,7 +713,11 @@ function App() {
               {!scopeBusy && !scopeFailed && (
                 <div className="pico-summary">
                   {[
-                    ['Клиенты', companies.filter((c) => !c.archived).length, 'companies'],
+                    [
+                      'Клиенты',
+                      companies.filter((c) => !c.archived && c.stage !== 'closed').length,
+                      'companies',
+                    ],
                     ['Проекты', projects.length, 'projects'],
                     ['Задачи', tasks.filter((t) => !t.data.done).length, 'tasks'],
                   ].map(([label, count, route]) => (
@@ -839,31 +840,29 @@ function App() {
                         value={division}
                         onChange={setDivision}
                       />
-                      <button
-                        className={archive ? 'active' : ''}
-                        onClick={() => setArchive(!archive)}
-                      >
-                        {archive ? '✓ Архив компаний' : 'Архив компаний'}
-                      </button>
-                      <label className="field">
-                        <span>Сортировка</span>
-                        <select value={clientSort} onChange={(e) => setClientSort(e.target.value)}>
-                          <option value="name">А–Я</option>
-                          <option value="potential">Потенциал ↓</option>
-                          <option value="updated">Обновление ↓</option>
-                        </select>
-                      </label>
-                      <button
-                        onClick={() => {
-                          setCity('');
-                          setSegment('');
-                          setDivision('');
-                          setArchive(false);
-                          setClientSort('name');
-                        }}
-                      >
-                        Сбросить
-                      </button>
+                      <div className="client-filter-actions">
+                        <label className="field">
+                          <span>Сортировка</span>
+                          <select
+                            value={clientSort}
+                            onChange={(e) => setClientSort(e.target.value)}
+                          >
+                            <option value="name">А–Я</option>
+                            <option value="potential">Потенциал ↓</option>
+                            <option value="updated">Обновление ↓</option>
+                          </select>
+                        </label>
+                        <button
+                          onClick={() => {
+                            setCity('');
+                            setSegment('');
+                            setDivision('');
+                            setClientSort('name');
+                          }}
+                        >
+                          Сбросить
+                        </button>
+                      </div>
                       <button
                         className="primary pico-sheet-submit"
                         onClick={() => setFiltersOpen(false)}
@@ -1098,7 +1097,6 @@ function App() {
               setCity('');
               setSegment('');
               setDivision('');
-              setArchive(false);
               setClientStatus('all');
               setCreate(false);
               try {

@@ -593,7 +593,7 @@ export function HomeScreen(
   },
 ) {
   const [introOpen, setIntroOpen] = useState(false);
-  const active = props.companies.filter((c) => !c.archived);
+  const active = props.companies.filter((c) => !c.archived && c.stage !== 'closed');
   const open = props.tasks.filter((t) => !t.data.done);
   const todays = open.filter((t) => t.data.due === today());
   const meetings = open.filter((t) => t.data.type === 'meeting');
