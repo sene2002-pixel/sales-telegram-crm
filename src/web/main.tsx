@@ -387,7 +387,10 @@ function App() {
     }
     const preventHomeDrag = (event: TouchEvent) => {
       const target = event.target;
-      if (target instanceof Element && target.closest('[role="dialog"], .pico-more-menu, aside'))
+      if (
+        target instanceof Element &&
+        target.closest('[role="dialog"], .pico-more-menu, aside, .pico-home-feed')
+      )
         return;
       if (event.cancelable) event.preventDefault();
     };

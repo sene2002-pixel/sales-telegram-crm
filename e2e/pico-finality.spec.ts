@@ -36,7 +36,11 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     createdAt: now,
     updatedAt: now,
   }));
-  const month = now.slice(0, 7);
+  // Keep every fixture task overdue even on the first day of a month.
+  const localDate = new Date();
+  localDate.setDate(1);
+  localDate.setMonth(localDate.getMonth() - 1);
+  const month = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}`;
   const record = {
     companyId: 'reference-0',
     companyName: 'Климатика',
@@ -111,7 +115,11 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     path: info.outputPath('reference-home-empty-native-frame.png'),
   });
   const homeFooter = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  const homeEmpty = (await page.locator('.pico-home-snapshot').last().boundingBox())!;
+  await page
+    .locator('.pico-home-empty')
+    .last()
+    .evaluate((el) => el.scrollIntoView({ block: 'end', behavior: 'instant' }));
+  const homeEmpty = (await page.locator('.pico-home-empty').last().boundingBox())!;
   expect(homeEmpty.y + homeEmpty.height).toBeLessThanOrEqual(homeFooter.y);
   await page.evaluate(() => document.fonts.ready);
   const font = await page.evaluate(async () => {
@@ -338,6 +346,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   );
   await page.reload();
   await navigate(page, 'Задачи');
+  await page.getByRole('textbox', { name: 'Месяц', exact: true }).fill(month);
   for (const count of [1, 2, 3, 4]) {
     const day = `${month}-${String(count + 1).padStart(2, '0')}`;
     await expect(
@@ -370,6 +379,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     path: info.outputPath('reference-tasks-empty-native-frame.png'),
   });
   await navigate(page, 'Главная');
+  await page.getByRole('button', { name: /Просроченные задачи/ }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: /Просроченные задачи/ })).toBeVisible();
   await page.getByRole('button', { name: /Просроченные задачи/ }).click();
   await expect(page.getByRole('heading', { name: 'Задачи', exact: true })).toBeVisible();

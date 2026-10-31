@@ -4638,45 +4638,64 @@ html.pico-home-active,
   padding: 0 12px;
   flex-shrink: 0;
 }
-.pico-home-snapshot {
-  flex: 1 1 0;
-  min-height: 64px;
-  max-height: 176px;
+/* Only the two home blocks scroll; the existing header and navigation stay fixed. */
+.pico-home-feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
+  padding-bottom: 8px;
+}
+.pico-home-feed:focus-visible {
+  outline: 2px solid #1f7aea;
+  outline-offset: -2px;
+}
+.pico-home-block > h2 {
+  margin: 20px 0 8px;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  color: #1a2151;
+}
+.pico-home-empty {
+  padding: 16px 20px 18px;
   border: 1px solid #e6ebf3;
   border-radius: 20px;
-  background: white;
-  color: var(--text, #24294f);
-  text-align: left;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
-.pico-home-snapshot-icon {
-  color: #2e83ee;
+.pico-home-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: #e4effd;
+  color: #1f7aea;
 }
-.pico-home-snapshot-copy {
-  display: grid;
-  gap: 5px;
-  flex: 1;
-  min-width: 0;
+.pico-home-empty > strong {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 800;
+  color: #1a2151;
 }
-.pico-home-snapshot-copy strong {
-  font-size: 18px;
+.pico-home-empty > p {
+  margin: 3px 0 0;
+  max-width: 290px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: #7a8299;
 }
-.pico-home-snapshot-copy > span {
-  font-size: 14px;
-}
-.pico-home-snapshot-copy small {
-  color: #5e6e87;
-  font-size: 12px;
-}
-.pico-static-home > .pico-add-row {
-  flex-shrink: 0;
-  min-height: 40px;
-  margin: 0;
+.pico-home-feed > .pico-add-row {
+  margin: 10px 0 0;
 }
 @media (max-width: 760px) {
   .pico-home-workspace {
@@ -4707,20 +4726,6 @@ html.pico-home-active,
   }
   .pico-static-home {
     gap: 8px;
-  }
-  .pico-home-snapshot {
-    padding: 10px 12px;
-    gap: 10px;
-    border-radius: 16px;
-  }
-  .pico-home-snapshot-copy {
-    gap: 2px;
-  }
-  .pico-home-snapshot-copy strong {
-    font-size: 16px;
-  }
-  .pico-home-snapshot-copy small {
-    display: none;
   }
 }
 
