@@ -736,13 +736,13 @@ test('UI audit: task detail and Home task navigation deletion accept native conf
     .click();
   await expect(row).toHaveCount(0);
   await navigate(page, 'Главная');
-  await page.locator('.pico-home-snapshot').first().click();
   const home = page.locator('.pico-task-row').filter({ hasText: 'Удаление с главной' });
   await home.locator('button.task-text').click();
   page.once('dialog', (native) => native.accept());
   await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Удалить задачу', exact: true })
+    .locator('.pico-home-block')
+    .first()
+    .getByRole('button', { name: 'Удалить', exact: true })
     .click();
   await expect(home).toHaveCount(0);
   await page.reload();

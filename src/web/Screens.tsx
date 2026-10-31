@@ -595,8 +595,10 @@ export function HomeScreen(
   const [introOpen, setIntroOpen] = useState(false);
   const active = props.companies.filter((c) => !c.archived && c.stage !== 'closed');
   const open = props.tasks.filter((t) => !t.data.done);
-  const todays = open.filter((t) => t.data.due === today());
-  const meetings = open.filter((t) => t.data.type === 'meeting');
+  const todays = open.filter((t) => t.data.due === today() && t.data.type !== 'meeting');
+  const meetings = open
+    .filter((t) => t.data.type === 'meeting')
+    .sort((a, b) => String(a.data.due || '9999').localeCompare(String(b.data.due || '9999')));
   const overdue = open.filter((t) => t.data.due && t.data.due < today());
   return (
     <div className="pico-home pico-static-home">
@@ -605,41 +607,50 @@ export function HomeScreen(
           С чего начать <Icon name="chevron-right" size={16} />
         </button>
       )}
-      <button className="pico-home-snapshot" onClick={() => props.onNavigate('tasks')}>
-        <span className="pico-home-snapshot-icon">
-          <Icon name="today-calendar" size={28} />
-        </span>
-        <span className="pico-home-snapshot-copy">
-          <strong>Сегодня</strong>
-          <span>
-            {todays.length ? `Задач на сегодня: ${todays.length}` : 'На сегодня задач нет'}
-          </span>
-          <small>{todays.length ? 'Открыть задачи' : 'Запланировать следующий шаг'}</small>
-        </span>
-        <Icon name="chevron-right" size={18} />
-      </button>
-      <button className="pico-home-snapshot" onClick={() => props.onNavigate('calendar')}>
-        <span className="pico-home-snapshot-icon">
-          <Icon name="handshake" size={28} />
-        </span>
-        <span className="pico-home-snapshot-copy">
-          <strong>Встречи</strong>
-          <span>
-            {meetings.length ? `Запланировано: ${meetings.length}` : 'Встреч не запланировано'}
-          </span>
-          <small>Открыть встречи</small>
-        </span>
-        <Icon name="chevron-right" size={18} />
-      </button>
-      {overdue.length > 0 && (
-        <button
-          className="pico-add-row"
-          onClick={() => (props.onOverdue ? props.onOverdue() : props.onNavigate('tasks'))}
-        >
-          Просроченные задачи · {overdue.length}
-          <Icon name="chevron-right" size={16} />
-        </button>
-      )}
+      <div
+        className="pico-home-feed"
+        role="region"
+        aria-label="Задачи и встречи на главной"
+        tabIndex={0}
+      >
+        <section className="pico-home-block" aria-labelledby="home-today-heading">
+          <h2 id="home-today-heading">Сегодня</h2>
+          {todays.length ? (
+            <TaskList {...props} list={todays} inlineActions />
+          ) : (
+            <div className="pico-home-empty">
+              <span className="pico-home-empty-icon">
+                <Icon name="today-calendar" size={24} />
+              </span>
+              <strong>На сегодня задач нет</strong>
+              <p>Хорошее время, чтобы запланировать следующий контакт с клиентами.</p>
+            </div>
+          )}
+        </section>
+        <section className="pico-home-block" aria-labelledby="home-meetings-heading">
+          <h2 id="home-meetings-heading">Встречи</h2>
+          {meetings.length ? (
+            <TaskList {...props} list={meetings} />
+          ) : (
+            <div className="pico-home-empty">
+              <span className="pico-home-empty-icon">
+                <Icon name="handshake" size={24} />
+              </span>
+              <strong>Встреч не запланировано</strong>
+              <p>Каждая встреча приближает сделку. Назначьте первую, это займёт минуту.</p>
+            </div>
+          )}
+        </section>
+        {overdue.length > 0 && (
+          <button
+            className="pico-add-row"
+            onClick={() => (props.onOverdue ? props.onOverdue() : props.onNavigate('tasks'))}
+          >
+            Просроченные задачи · {overdue.length}
+            <Icon name="chevron-right" size={16} />
+          </button>
+        )}
+      </div>
       {introOpen && (
         <Modal title="С чего начать" onClose={() => setIntroOpen(false)}>
           <section className="pico-intro">

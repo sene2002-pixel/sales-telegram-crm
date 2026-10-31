@@ -99,7 +99,9 @@ test('Mockups: empty screens explain the next step without fabricated metrics', 
     .getByRole('dialog', { name: 'С чего начать', exact: true })
     .getByRole('button', { name: 'Закрыть', exact: true })
     .click();
-  await expect(page.locator('.pico-home-snapshot').first()).toContainText('Сегодня');
+  await expect(
+    page.locator('.pico-home-block').first().getByRole('heading', { name: 'Сегодня', exact: true }),
+  ).toBeVisible();
   await expect(page.getByText('На сегодня задач нет', { exact: true })).toBeVisible();
   await expect(page.locator('.pico-task-row')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('empty-home.png'), fullPage: true });
