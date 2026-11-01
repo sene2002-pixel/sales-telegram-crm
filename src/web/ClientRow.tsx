@@ -237,6 +237,13 @@ export function ClientRow({
     <article ref={articleRef} className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
       <SwipeAction
         label={`клиента «${companyDisplayName(c.name, c.country)}» в архив`}
+        confirmation={{
+          title: 'Перенести клиента в архив?',
+          message: `«${companyDisplayName(c.name, c.country)}» появится во вкладке «Закрытые». Контакты, потенциал, заметки и файлы сохранятся. Восстановить клиента сможет администратор.`,
+          action: 'Перенести в архив',
+          pending: 'Переносим…',
+          triggerLabel: `Перенести клиента «${companyDisplayName(c.name, c.country)}» в архив`,
+        }}
         onEdit={
           c.archived
             ? undefined

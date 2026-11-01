@@ -100,7 +100,7 @@ export function configureViewport(telegram?: TelegramViewport) {
         positive(visual?.offsetTop) +
         parseFloat(root.style.getPropertyValue('--pico-view-height')) -
         12;
-      const dialog = field.closest('[role="dialog"]');
+      const dialog = field.closest('[role="dialog"], [role="alertdialog"]');
       const footer = dialog?.querySelector(
         '.company-form-footer, .cc-editor-actions, form > button.primary',
       );

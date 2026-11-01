@@ -118,14 +118,18 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
     changedTouches: [{ identifier: 0, clientX: 100, clientY: 300 }],
   });
   await removeEquipment.click();
-  await expect(card.getByRole('alertdialog')).toBeVisible();
+  await expect(page.getByRole('alertdialog')).toBeVisible();
   expect(company.potential).toBe(1500000);
-  await card.getByRole('button', { name: 'Подтвердить удаление', exact: true }).click();
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: 'Подтвердить удаление', exact: true })
+    .click();
   await expect(card.getByText('Оборудование пока не добавлено', { exact: true })).toBeVisible();
   expect(company.potential).toBe(0);
   await expect(card.getByRole('alert')).toHaveCount(0);
   expect(patches.at(-1).version).toBe(4);
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: info.outputPath('client-inline-390.png'),
