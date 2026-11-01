@@ -1,5 +1,5 @@
 import { companyDisplayName } from '../shared/company-display-name';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Actor,
@@ -14,7 +14,7 @@ import {
   primaryDivisions,
 } from '../shared/contracts';
 import { api, ApiError, setToken, token, download } from './api';
-import { CompanyForm, Modal, Select, Chips } from './forms';
+import { CompanyForm, CompanyFormCloseGuard, Modal, Select, Chips } from './forms';
 import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
 import { Team } from './Team';
@@ -75,6 +75,28 @@ function App() {
     [city, setCity] = useState(''),
     [segment, setSegment] = useState(''),
     [division, setDivision] = useState('');
+  const [confirmDiscardClient, setConfirmDiscardClient] = useState(false);
+  const newClientCloseGuard = useRef<CompanyFormCloseGuard>(null);
+  const continueClientDraftRef = useRef<HTMLButtonElement>(null);
+  const registerClientCloseGuard = useCallback((guard: CompanyFormCloseGuard) => {
+    newClientCloseGuard.current = guard;
+  }, []);
+  function closeNewClient() {
+    const state = newClientCloseGuard.current?.();
+    if (state?.busy) return;
+    if (state?.dirty) {
+      setConfirmDiscardClient(true);
+      return;
+    }
+    setConfirmDiscardClient(false);
+    setCreate(false);
+  }
+  function discardNewClient() {
+    if (newClientCloseGuard.current?.().busy) return;
+    setConfirmDiscardClient(false);
+    setCreate(false);
+    newClientCloseGuard.current = null;
+  }
   const [files, setFiles] = useState<(CrmRecord & { companyName: string })[]>([]),
     [projects, setProjects] = useState<(CrmRecord & { companyName: string })[]>([]),
     [contacts, setContacts] = useState<CrmRecord[]>([]);
@@ -143,6 +165,8 @@ function App() {
     setContacts([]);
     setSelected(null);
     setCreate(false);
+    setConfirmDiscardClient(false);
+    newClientCloseGuard.current = null;
     setRecordCreate(null);
     setFiltersOpen(false);
     setMore(false);
@@ -209,6 +233,8 @@ function App() {
     setContacts([]);
     setSelected(null);
     setCreate(false);
+    setConfirmDiscardClient(false);
+    newClientCloseGuard.current = null;
     setRecordCreate(null);
     setFiltersOpen(false);
     setHelp(false);
@@ -1064,7 +1090,7 @@ function App() {
         />
       )}
       {create && (
-        <Modal title="Новый клиент" onClose={() => setCreate(false)} sheet>
+        <Modal title="Новый клиент" onClose={closeNewClient} sheet>
           {employeeId && employeeId !== user.id && (
             <p className="muted">
               Новые клиенты создаются на ваше имя. Фильтр не меняет ответственного.
@@ -1076,6 +1102,7 @@ function App() {
             </p>
           )}
           <CompanyForm
+            onCloseGuard={registerClientCloseGuard}
             holdings={creationHoldings}
             onSave={async (data) => {
               const saveGeneration = scopeGeneration.current;
@@ -1101,7 +1128,9 @@ function App() {
               setSegment('');
               setDivision('');
               setClientStatus('all');
+              setConfirmDiscardClient(false);
               setCreate(false);
+              newClientCloseGuard.current = null;
               try {
                 await refresh();
               } catch (e) {
@@ -1109,6 +1138,27 @@ function App() {
               }
             }}
           />
+        </Modal>
+      )}
+      {create && confirmDiscardClient && (
+        <Modal
+          title="Закрыть без сохранения?"
+          initialFocusRef={continueClientDraftRef}
+          onClose={() => setConfirmDiscardClient(false)}
+        >
+          <p>Введённые данные ещё не сохранены.</p>
+          <div className="client-draft-confirm-actions">
+            <button
+              ref={continueClientDraftRef}
+              className="primary"
+              onClick={() => setConfirmDiscardClient(false)}
+            >
+              Продолжить заполнение
+            </button>
+            <button className="danger" onClick={discardNewClient}>
+              Удалить черновик
+            </button>
+          </div>
         </Modal>
       )}
       {selected && (

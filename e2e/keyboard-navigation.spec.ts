@@ -127,6 +127,10 @@ for (const width of [320, 390]) {
     await expect(page.locator('.pico-bottom-nav')).toBeVisible();
     await expect(comment).toHaveValue('Текст не теряется при открытии и закрытии клавиатуры');
     await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Закрыть без сохранения?', exact: true })
+      .getByRole('button', { name: 'Удалить черновик', exact: true })
+      .click();
     const token = await page.evaluate(() => sessionStorage.getItem('crm-session'));
     const response = await page.request.post('/api/companies', {
       headers: { Authorization: `Bearer ${token}` },
