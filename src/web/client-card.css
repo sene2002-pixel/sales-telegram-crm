@@ -126,8 +126,7 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.cc-editor-actions > button,
-.cc-confirm > button {
+.cc-editor-actions > button {
   min-height: 40px;
 }
 .cc-add {
@@ -228,20 +227,16 @@
   outline: 2px solid #4d75db;
   outline-offset: -2px;
 }
-.cc-confirm {
-  position: relative;
-  padding: 12px;
-  background: #f6f8fc;
-  border: 1px solid #e6ebf3;
-  border-radius: 12px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  z-index: 2;
+.cc-confirm-message {
+  overflow-wrap: anywhere;
 }
-.cc-confirm > p {
+.cc-confirm-actions {
+  display: grid;
+  gap: 8px;
+}
+.cc-confirm-actions > button {
   width: 100%;
-  margin: 0 0 8px;
+  min-height: 44px;
 }
 .cc-card > .cc-swipe > .cc-swipe-content {
   padding-right: 0;

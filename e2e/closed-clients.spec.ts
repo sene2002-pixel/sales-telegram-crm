@@ -45,7 +45,10 @@ for (const width of [320, 390]) {
     await swipe.focus();
     await swipe.press('ArrowLeft');
     await swipe.locator(':scope > .cc-trash-track .cc-trash').click();
-    await card.getByRole('button', { name: 'Подтвердить удаление', exact: true }).click();
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: 'Перенести в архив', exact: true })
+      .click();
     await expect(cards).toHaveCount(0);
     await page.getByRole('button', { name: 'Все', exact: true }).click();
     await expect(cards).toHaveCount(0);

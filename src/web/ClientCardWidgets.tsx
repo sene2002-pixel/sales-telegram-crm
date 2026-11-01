@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { GrowingTextarea } from './GrowingTextarea';
+import { Modal } from './forms';
 
 export function InlineValue({
   label,
@@ -114,15 +115,27 @@ export function SwipeAction({
   label,
   onDelete,
   onEdit,
+  confirmation,
   disabled = false,
 }: {
   children: ReactNode;
   label: string;
   onDelete?: () => Promise<void>;
   onEdit?: () => void;
+  confirmation?: {
+    title: string;
+    message: string;
+    action: string;
+    pending: string;
+    triggerLabel: string;
+  };
   disabled?: boolean;
 }) {
+  const fromModal = (target: EventTarget | null) =>
+    target instanceof Element && !!target.closest('[data-pico-modal]');
   const suppressClick = useRef(false);
+  const inFlight = useRef(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const mouseStart = useRef<{ x: number; y: number } | null>(null);
   const revealGesture = (
     origin: { x: number; y: number },
@@ -197,175 +210,202 @@ export function SwipeAction({
     };
   }, [revealed]);
   return (
-    <div
-      ref={swipeRef}
-      tabIndex={onEdit || onDelete ? 0 : undefined}
-      role="group"
-      aria-label={`Действия: ${label}`}
-      onKeyDown={(e) => {
-        if ((e.target as Element).closest('input,textarea,select,[contenteditable="true"]')) return;
-        if (e.key === 'ArrowLeft' && !disabled && (onEdit || onDelete)) {
-          e.preventDefault();
-          e.stopPropagation();
-          setRevealed(true);
-        }
-        if (e.key === 'ArrowRight' || e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          setRevealed(false);
-        }
-      }}
-      onPointerDown={(e) => {
-        if (e.pointerType === 'mouse' && e.button === 0) {
-          e.stopPropagation();
-          mouseStart.current = { x: e.clientX, y: e.clientY };
-        }
-      }}
-      onPointerMove={(e) => {
-        const origin = mouseStart.current;
-        if (
-          e.pointerType === 'mouse' &&
-          origin &&
-          Math.abs(e.clientX - origin.x) > 12 &&
-          Math.abs(e.clientX - origin.x) > Math.abs(e.clientY - origin.y)
-        ) {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          e.preventDefault();
-        }
-      }}
-      onPointerUp={(e) => {
-        if (e.pointerType === 'mouse' && mouseStart.current) {
-          e.stopPropagation();
-          revealGesture(mouseStart.current, e);
+    <>
+      <div
+        ref={swipeRef}
+        tabIndex={onEdit || onDelete ? 0 : undefined}
+        role="group"
+        aria-label={`Действия: ${label}`}
+        onKeyDown={(e) => {
+          if (fromModal(e.target)) return;
+          if ((e.target as Element).closest('input,textarea,select,[contenteditable="true"]'))
+            return;
+          if (e.key === 'ArrowLeft' && !disabled && (onEdit || onDelete)) {
+            e.preventDefault();
+            e.stopPropagation();
+            setRevealed(true);
+          }
+          if (e.key === 'ArrowRight' || e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            setRevealed(false);
+          }
+        }}
+        onPointerDown={(e) => {
+          if (fromModal(e.target)) return;
+          if (e.pointerType === 'mouse' && e.button === 0) {
+            e.stopPropagation();
+            mouseStart.current = { x: e.clientX, y: e.clientY };
+          }
+        }}
+        onPointerMove={(e) => {
+          if (fromModal(e.target)) return;
+          const origin = mouseStart.current;
+          if (
+            e.pointerType === 'mouse' &&
+            origin &&
+            Math.abs(e.clientX - origin.x) > 12 &&
+            Math.abs(e.clientX - origin.x) > Math.abs(e.clientY - origin.y)
+          ) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            e.preventDefault();
+          }
+        }}
+        onPointerUp={(e) => {
+          if (fromModal(e.target)) return;
+          if (e.pointerType === 'mouse' && mouseStart.current) {
+            e.stopPropagation();
+            revealGesture(mouseStart.current, e);
+            mouseStart.current = null;
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+          }
+        }}
+        onPointerCancel={() => {
           mouseStart.current = null;
-          if (e.currentTarget.hasPointerCapture(e.pointerId))
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-      }}
-      onPointerCancel={() => {
-        mouseStart.current = null;
-      }}
-      className={`cc-swipe ${onEdit && onDelete ? 'cc-two-actions' : onEdit ? 'cc-single-edit' : ''} ${revealed ? 'cc-revealed' : ''}`}
-      onClickCapture={(e) => {
-        if (suppressClick.current && !(e.target as Element).closest('.cc-trash-track')) {
-          e.preventDefault();
+        }}
+        className={`cc-swipe ${onEdit && onDelete ? 'cc-two-actions' : onEdit ? 'cc-single-edit' : ''} ${revealed ? 'cc-revealed' : ''}`}
+        onClickCapture={(e) => {
+          if (fromModal(e.target)) return;
+          if (suppressClick.current && !(e.target as Element).closest('.cc-trash-track')) {
+            e.preventDefault();
+            e.stopPropagation();
+            suppressClick.current = false;
+          }
+        }}
+        onTouchStart={(e) => {
+          if (fromModal(e.target)) return;
           e.stopPropagation();
-          suppressClick.current = false;
-        }
-      }}
-      onTouchStart={(e) => {
-        e.stopPropagation();
-        if (e.touches.length !== 1) {
+          if (e.touches.length !== 1) {
+            start.current = null;
+            return;
+          }
+          const t = e.touches[0];
+          start.current = { x: t.clientX, y: t.clientY };
+        }}
+        onTouchMove={(e) => {
+          if (fromModal(e.target)) return;
+          if (e.touches.length !== 1) {
+            start.current = null;
+            return;
+          }
+          const origin = start.current,
+            point = e.touches[0];
+          if (
+            origin &&
+            Math.abs(point.clientY - origin.y) > 12 &&
+            Math.abs(point.clientY - origin.y) > Math.abs(point.clientX - origin.x)
+          )
+            origin.cancelled = true;
+        }}
+        onTouchCancel={() => {
           start.current = null;
-          return;
-        }
-        const t = e.touches[0];
-        start.current = { x: t.clientX, y: t.clientY };
-      }}
-      onTouchMove={(e) => {
-        if (e.touches.length !== 1) {
+        }}
+        onTouchEnd={(e) => {
+          if (fromModal(e.target)) return;
+          e.stopPropagation();
+          const s = start.current,
+            t = e.changedTouches[0];
+          if (s && !s.cancelled && t) revealGesture(s, t);
           start.current = null;
-          return;
-        }
-        const origin = start.current,
-          point = e.touches[0];
-        if (
-          origin &&
-          Math.abs(point.clientY - origin.y) > 12 &&
-          Math.abs(point.clientY - origin.y) > Math.abs(point.clientX - origin.x)
-        )
-          origin.cancelled = true;
-      }}
-      onTouchCancel={() => {
-        start.current = null;
-      }}
-      onTouchEnd={(e) => {
-        e.stopPropagation();
-        const s = start.current,
-          t = e.changedTouches[0];
-        if (s && !s.cancelled && t) revealGesture(s, t);
-        start.current = null;
-      }}
-    >
-      <div className="cc-swipe-content">{children}</div>
-      {(onDelete || onEdit) && (
-        <div className="cc-trash-track" aria-hidden={!revealed}>
-          <div className="cc-swipe-actions" style={{ top: revealed ? trashTop : 0 }}>
-            {onEdit && (
-              <button
-                type="button"
-                className="cc-swipe-edit"
-                aria-label={`Редактировать ${label}`}
-                tabIndex={revealed ? 0 : -1}
-                disabled={disabled || busy}
-                onClick={() => {
-                  if (!revealed) return;
-                  suppressClick.current = false;
-                  setRevealed(false);
-                  onEdit();
-                }}
-              >
-                <Icon name="edit" size={22} />
-              </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                className="cc-trash"
-                aria-label={`Удалить ${label}`}
-                tabIndex={revealed ? 0 : -1}
-                disabled={disabled || busy}
-                onClick={() => {
-                  if (revealed) {
+        }}
+      >
+        <div className="cc-swipe-content">{children}</div>
+        {(onDelete || onEdit) && (
+          <div className="cc-trash-track" aria-hidden={!revealed}>
+            <div className="cc-swipe-actions" style={{ top: revealed ? trashTop : 0 }}>
+              {onEdit && (
+                <button
+                  type="button"
+                  className="cc-swipe-edit"
+                  aria-label={`Редактировать ${label}`}
+                  tabIndex={revealed ? 0 : -1}
+                  disabled={disabled || busy}
+                  onClick={() => {
+                    if (!revealed) return;
                     suppressClick.current = false;
-                    setConfirm(true);
-                  }
-                }}
-              >
-                <Icon name="trash" size={22} />
-              </button>
-            )}
+                    setRevealed(false);
+                    onEdit();
+                  }}
+                >
+                  <Icon name="edit" size={22} />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className="cc-trash"
+                  aria-label={confirmation?.triggerLabel || `Удалить ${label}`}
+                  tabIndex={revealed ? 0 : -1}
+                  disabled={disabled || busy}
+                  onClick={() => {
+                    if (revealed) {
+                      suppressClick.current = false;
+                      setError('');
+                      setConfirm(true);
+                    }
+                  }}
+                >
+                  <Icon name="trash" size={22} />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       {confirm && (
-        <section className="cc-confirm" role="alertdialog" aria-label={`Удаление ${label}`}>
-          <p>Удалить {label}?</p>
+        <Modal
+          title={confirmation?.title || 'Подтверждение удаления'}
+          dialogRole="alertdialog"
+          initialFocusRef={cancelRef}
+          closeDisabled={busy}
+          onClose={() => {
+            if (!inFlight.current) setConfirm(false);
+          }}
+        >
+          <p className="cc-confirm-message">{confirmation?.message || `Удалить ${label}?`}</p>
           {error && (
             <p className="error" role="alert">
               {error}
             </p>
           )}
-          <button
-            autoFocus
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setError('');
-              try {
-                await onDelete?.();
-                setConfirm(false);
-                setRevealed(false);
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Подтвердить удаление
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => {
-              setConfirm(false);
-              setRevealed(false);
-            }}
-          >
-            Отмена
-          </button>
-        </section>
+          <div className="cc-confirm-actions">
+            <button
+              className={confirmation ? 'primary' : 'danger'}
+              disabled={busy}
+              onClick={async () => {
+                if (inFlight.current) return;
+                inFlight.current = true;
+                setBusy(true);
+                setError('');
+                try {
+                  await onDelete?.();
+                  setConfirm(false);
+                  setRevealed(false);
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  inFlight.current = false;
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy
+                ? confirmation?.pending || 'Удаляем…'
+                : confirmation?.action || 'Подтвердить удаление'}
+            </button>
+            <button
+              ref={cancelRef}
+              disabled={busy}
+              onClick={() => {
+                if (!inFlight.current) setConfirm(false);
+              }}
+            >
+              Отмена
+            </button>
+          </div>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }

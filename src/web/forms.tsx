@@ -62,6 +62,8 @@ let bodyOverflowBeforeModals = '';
 
 export function Modal({
   initialFocusRef,
+  dialogRole = 'dialog',
+  closeDisabled = false,
   titleIcon,
   sheet = false,
   title,
@@ -69,6 +71,8 @@ export function Modal({
   children,
 }: {
   initialFocusRef?: { readonly current: HTMLElement | null };
+  dialogRole?: 'dialog' | 'alertdialog';
+  closeDisabled?: boolean;
   titleIcon?: ReactNode;
   sheet?: boolean;
   title: string;
@@ -93,8 +97,8 @@ export function Modal({
     (initialFocusRef?.current || focusable()[0] || dialog).focus();
     const onKey = (event: KeyboardEvent) => {
       if (
-        document.querySelectorAll('[role="dialog"]')[
-          document.querySelectorAll('[role="dialog"]').length - 1
+        document.querySelectorAll('[data-pico-modal]')[
+          document.querySelectorAll('[data-pico-modal]').length - 1
         ] !== dialog
       )
         return;
@@ -121,14 +125,14 @@ export function Modal({
     document.addEventListener('keydown', onKey);
     const back = window.Telegram?.WebApp?.BackButton;
     const onBack = () => {
-      const dialogs = document.querySelectorAll('[role="dialog"]');
+      const dialogs = document.querySelectorAll('[data-pico-modal]');
       if (dialogs[dialogs.length - 1] === dialog) closeRef.current();
     };
     back?.show();
     back?.onClick(onBack);
     return () => {
       back?.offClick(onBack);
-      if (Array.from(document.querySelectorAll('[role="dialog"]')).some((el) => el !== dialog))
+      if (Array.from(document.querySelectorAll('[data-pico-modal]')).some((el) => el !== dialog))
         back?.show();
       else back?.hide();
       modalScrollLockCount--;
@@ -148,7 +152,8 @@ export function Modal({
         ref={dialogRef}
         tabIndex={-1}
         className={'modal' + (sheet ? ' client-sheet' : '')}
-        role="dialog"
+        role={dialogRole}
+        data-pico-modal="true"
         aria-modal="true"
         aria-label={title}
       >
@@ -158,7 +163,13 @@ export function Modal({
             {titleIcon}
             {title}
           </h2>
-          <button type="button" className="icon" onClick={onClose} aria-label="Закрыть">
+          <button
+            type="button"
+            className="icon"
+            onClick={onClose}
+            disabled={closeDisabled}
+            aria-label="Закрыть"
+          >
             <Icon name="close" />
           </button>
         </div>

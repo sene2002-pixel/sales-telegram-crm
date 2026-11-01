@@ -415,7 +415,9 @@ function App() {
       const target = event.target;
       if (
         target instanceof Element &&
-        target.closest('[role="dialog"], .pico-more-menu, aside, .pico-home-feed')
+        target.closest(
+          '[role="dialog"], [role="alertdialog"], .pico-more-menu, aside, .pico-home-feed',
+        )
       )
         return;
       if (event.cancelable) event.preventDefault();
