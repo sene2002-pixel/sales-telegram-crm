@@ -4803,3 +4803,12 @@ textarea.pico-growing-textarea {
 .client-filter-actions > button {
   flex-shrink: 0;
 }
+
+.client-draft-confirm-actions {
+  display: grid;
+  gap: 8px;
+}
+.client-draft-confirm-actions > button {
+  width: 100%;
+  min-height: 44px;
+}

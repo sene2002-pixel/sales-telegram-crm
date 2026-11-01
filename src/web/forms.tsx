@@ -57,13 +57,18 @@ export function Select({
     </select>
   );
 }
+let modalScrollLockCount = 0;
+let bodyOverflowBeforeModals = '';
+
 export function Modal({
+  initialFocusRef,
   titleIcon,
   sheet = false,
   title,
   onClose,
   children,
 }: {
+  initialFocusRef?: { readonly current: HTMLElement | null };
   titleIcon?: ReactNode;
   sheet?: boolean;
   title: string;
@@ -75,7 +80,8 @@ export function Modal({
   closeRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const oldOverflow = document.body.style.overflow;
+    if (modalScrollLockCount === 0) bodyOverflowBeforeModals = document.body.style.overflow;
+    modalScrollLockCount++;
     document.body.style.overflow = 'hidden';
     const dialog = dialogRef.current!;
     const focusable = () =>
@@ -84,7 +90,7 @@ export function Modal({
           'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]',
         ),
       ).filter((el) => el.getClientRects().length > 0);
-    (focusable()[0] || dialog).focus();
+    (initialFocusRef?.current || focusable()[0] || dialog).focus();
     const onKey = (event: KeyboardEvent) => {
       if (
         document.querySelectorAll('[role="dialog"]')[
@@ -125,7 +131,8 @@ export function Modal({
       if (Array.from(document.querySelectorAll('[role="dialog"]')).some((el) => el !== dialog))
         back?.show();
       else back?.hide();
-      document.body.style.overflow = oldOverflow;
+      modalScrollLockCount--;
+      if (modalScrollLockCount === 0) document.body.style.overflow = bodyOverflowBeforeModals;
       document.removeEventListener('keydown', onKey);
       previous?.focus();
     };
@@ -239,14 +246,18 @@ export type InitialCompanyContact = {
   phone: string;
   email: string;
 };
+export type CompanyFormCloseState = { dirty: boolean; busy: boolean };
+export type CompanyFormCloseGuard = (() => CompanyFormCloseState) | null;
 export function CompanyForm({
   initial,
   initialContacts,
   onSave,
+  onCloseGuard,
   holdings = [],
 }: {
   initial?: CompanyData;
   initialContacts?: InitialCompanyContact[];
+  onCloseGuard?: (guard: CompanyFormCloseGuard) => void;
   holdings?: Company[];
   onSave: (data: CompanyData & { initialContacts?: InitialCompanyContact[] }) => Promise<void>;
 }) {
@@ -260,6 +271,13 @@ export function CompanyForm({
   );
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const baseline = useRef(JSON.stringify({ data, contacts }));
+  const closeState = useRef<CompanyFormCloseState>({ dirty: false, busy: false });
+  closeState.current.dirty = JSON.stringify({ data, contacts }) !== baseline.current;
+  useEffect(() => {
+    onCloseGuard?.(() => closeState.current);
+    return () => onCloseGuard?.(null);
+  }, [onCloseGuard]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const formRef = useRef<HTMLFormElement>(null);
   const update = (key: keyof CompanyData, value: any) =>
@@ -296,7 +314,7 @@ export function CompanyForm({
       noValidate
       onSubmit={async (e) => {
         e.preventDefault();
-        if (busy) return;
+        if (closeState.current.busy) return;
         setError('');
         setFieldErrors({});
         const parsed = companySchema.safeParse({ ...data, potential: savedPotential });
@@ -350,6 +368,7 @@ export function CompanyForm({
           return;
         }
         if (!parsed.success) return;
+        closeState.current.busy = true;
         setBusy(true);
         try {
           await onSave({
@@ -369,6 +388,7 @@ export function CompanyForm({
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : 'Не удалось сохранить клиента');
         } finally {
+          closeState.current.busy = false;
           setBusy(false);
         }
       }}

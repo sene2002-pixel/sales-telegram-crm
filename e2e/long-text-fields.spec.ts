@@ -139,6 +139,10 @@ for (const width of [320, 390, 1440]) {
       path: `/tmp/pico-long-text-evidence/company-form-${width}-${info.project.name}.png`,
     });
     await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Закрыть без сохранения?', exact: true })
+      .getByRole('button', { name: 'Удалить черновик', exact: true })
+      .click();
     await navigate(page, 'Проекты');
     const projectTitle = page
       .locator('.pico-project-row .pico-two-lines')
