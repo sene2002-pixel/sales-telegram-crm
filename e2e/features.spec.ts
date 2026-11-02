@@ -243,8 +243,9 @@ test('[UI-04] task filters, completion/reopening and calendar with undated tasks
   await page
     .locator('.task-row')
     .filter({ hasText: title + ' просрочено' })
-    .getByRole('button', { name: 'Выполнить задачу' })
+    .locator('.task-text')
     .click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Выполнено', exact: true }).click();
   await page.getByRole('button', { name: 'Фильтры задач' }).click();
   await page.getByRole('button', { name: 'Выполненные', exact: true }).click();
   await page
@@ -254,7 +255,11 @@ test('[UI-04] task filters, completion/reopening and calendar with undated tasks
   await page
     .locator('.task-row')
     .filter({ hasText: title + ' просрочено' })
-    .getByRole('button', { name: 'Вернуть задачу' })
+    .locator('.task-text')
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Вернуть задачу', exact: true })
     .click();
   await navigate(page, 'Календарь');
   await page.getByLabel('Месяц', { exact: true }).fill('2000-01');
