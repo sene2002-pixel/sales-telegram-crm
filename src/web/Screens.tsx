@@ -320,19 +320,17 @@ export function TaskList({
             className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
             key={t.id}
           >
-            <button
+            <span
               className={
                 'checkbox task-type-' +
                 (t.data.type || 'reminder') +
                 ' ' +
                 (t.data.done ? 'checked' : '')
               }
-              aria-label={t.data.done ? 'Вернуть задачу' : 'Выполнить задачу'}
-              disabled={busy}
-              onClick={() => update(t, { done: !t.data.done })}
+              aria-hidden="true"
             >
               <Icon name={t.data.done ? 'check' : t.data.type || 'reminder'} size={21} />
-            </button>
+            </span>
             <button
               className="task-text"
               onClick={() => {
