@@ -1,5 +1,5 @@
 import { FileUpload } from './FileUpload';
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Signature, SavedSignature } from '../shared/letters';
 import { api } from './api';
 import { Field } from './forms';
@@ -43,20 +43,35 @@ export function SignatureEditor({
       : draft?.data || empty,
   );
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  async function run(fn: () => Promise<void>) {
+    [error, setError] = useState(''),
+    [recognition, setRecognition] = useState<'idle' | 'pending' | 'success'>('idle'),
+    [photoError, setPhotoError] = useState('');
+  const inFlight = useRef(false);
+  const photoFeedbackId = useId();
+  async function run(fn: () => Promise<void>, recognize = false) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError('');
+    if (recognize) {
+      setRecognition('pending');
+      setPhotoError('');
+    }
     try {
       await fn();
+      if (recognize) setRecognition('success');
     } catch (e) {
-      setError((e as Error).message);
+      if (recognize) {
+        setRecognition('idle');
+        setPhotoError((e as Error).message);
+      } else setError((e as Error).message);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
   return (
-    <section>
+    <section className="pico-signature-editor">
       <h2>{initial ? 'Редактировать подпись' : 'Добавить подпись'}</h2>
       <p>Эта подпись используется в ваших письмах для всех компаний.</p>
       {draft && (
@@ -93,22 +108,40 @@ export function SignatureEditor({
             <FileUpload
               label="Фото визитки · JPEG или PNG, до 10 МБ"
               accept="image/jpeg,image/png"
+              aria-describedby={photoFeedbackId}
               disabled={busy}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = '';
-                if (!file) return;
+                if (!file || inFlight.current) return;
+                setRecognition('idle');
+                setPhotoError('');
+                setError('');
                 if (file.size > 10 * 1024 * 1024) {
-                  setError('Загрузите фото до 10 МБ');
+                  setPhotoError('Загрузите фото до 10 МБ');
                   return;
                 }
                 void run(async () => {
                   const body = new FormData();
                   body.append('file', file);
                   setSignature(await api('/me/letter-signature/recognize', 'POST', body));
-                });
+                }, true);
               }}
             />
+            <span id={photoFeedbackId} className="signature-photo-feedback">
+              <span role="status" aria-atomic="true" className="signature-photo-status">
+                {recognition === 'pending'
+                  ? 'Распознаём визитку…'
+                  : recognition === 'success'
+                    ? 'Данные распознаны. Проверьте поля и сохраните изменения.'
+                    : ''}
+              </span>
+              {photoError && (
+                <span role="alert" className="error">
+                  {photoError}
+                </span>
+              )}
+            </span>
           </Field>
           <p>
             Проверьте данные после распознавания. Изменения сохраняются только по кнопке ниже.

@@ -3133,6 +3133,20 @@ html[data-pico-portrait-required='true'] .pico-portrait-guard {
   min-width: 0;
   flex: 1 1 140px;
 }
+.signature-photo-feedback > span:not(:empty) {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.signature-photo-status:not(:empty) {
+  background: #e4effd;
+  color: #245b9e;
+}
 .company-detail-tabs {
   gap: 8px;
   padding: 8px 0;
