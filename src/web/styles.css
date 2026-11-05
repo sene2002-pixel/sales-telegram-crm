@@ -4826,3 +4826,33 @@ textarea.pico-growing-textarea {
   width: 100%;
   min-height: 44px;
 }
+
+/* Keep the feed behind the fixed navigation, with enough scroll room for its last action. */
+.pico-home-workspace {
+  padding-bottom: 0;
+}
+.pico-home-workspace .pico-home-overview {
+  margin-bottom: 0;
+}
+.pico-static-home {
+  padding-bottom: 0;
+}
+.pico-home-feed {
+  padding-bottom: 16px;
+}
+@media (max-width: 760px) {
+  .workspace {
+    padding-bottom: calc(72px + var(--pico-nav-inset) + 16px);
+  }
+  .pico-home-workspace {
+    padding-bottom: 0;
+  }
+  .pico-home-feed {
+    padding-bottom: calc(72px + var(--pico-nav-inset) + 16px);
+  }
+}
+@media (max-width: 760px) {
+  :root {
+    --pico-nav-height: calc(72px + var(--pico-nav-inset));
+  }
+}
