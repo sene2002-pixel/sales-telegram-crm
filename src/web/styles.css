@@ -1429,6 +1429,22 @@ button {
 .pico-search input:focus {
   outline-offset: 4px;
 }
+html {
+  color-scheme: light;
+}
+.pico-client-list-search {
+  background: #fff;
+  border-color: #e6ebf3;
+  box-shadow: none;
+}
+.pico-client-list-search input {
+  color-scheme: light;
+}
+.pico-client-list-search input:focus,
+.pico-client-list-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .pico-add-row {
   width: 100%;
   display: flex;
