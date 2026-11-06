@@ -77,7 +77,9 @@ for (const size of [
     });
     const nav = page.locator('.pico-bottom-nav');
     const navBefore = await nav.boundingBox();
-    await cards.last().evaluate((el) => el.scrollIntoView({ block: 'end', behavior: 'instant' }));
+    await feed(page).evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
     const bottom = size.width <= 760 ? (await nav.boundingBox())!.y : size.height;
     const lastBox = (await cards.last().boundingBox())!;
     expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(bottom);
