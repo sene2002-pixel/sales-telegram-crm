@@ -815,10 +815,21 @@ function App() {
                 <div className="section-head">
                   <h1>Клиенты</h1>
                 </div>
-                <div className="pico-search">
+                <div className="pico-search pico-client-list-search">
                   <Icon name="search" />
                   <input
                     aria-label="Поиск компаний"
+                    enterKeyHint="done"
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === 'Enter' &&
+                        !event.nativeEvent.isComposing &&
+                        event.nativeEvent.keyCode !== 229
+                      ) {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                    }}
                     placeholder="Поиск клиента, компании или контакта"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
