@@ -133,7 +133,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
       (value) => document.documentElement.style.setProperty('--pico-safe-bottom', value + 'px'),
       inset,
     );
-    await expect(nav).toHaveCSS('height', `${Math.max(72, 59 + inset)}px`);
+    await expect(nav).toHaveCSS('height', `${72 + inset}px`);
     await expect(nav.locator('button > svg').first()).toHaveCSS('width', '26px');
     await expect(nav.locator('button > span').first()).toHaveCSS('font-size', '10.5px');
     const navBox = (await nav.boundingBox())!;
