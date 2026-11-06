@@ -4872,3 +4872,88 @@ textarea.pico-growing-textarea {
     --pico-nav-height: calc(72px + var(--pico-nav-inset));
   }
 }
+
+/* Shared Pico keypad, without a dimming backdrop or a native mobile keyboard. */
+.pico-number-keypad {
+  position: fixed;
+  z-index: 10000;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 16px calc(30px + env(safe-area-inset-bottom, 0px));
+  border-radius: 28px 28px 0 0;
+  background: #fff;
+  color: #1a2151;
+  box-shadow: 0 -10px 30px rgba(26, 33, 81, 0.1);
+}
+.pico-number-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #d5dce8;
+  margin: 0 auto 12px;
+}
+.pico-number-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 10px;
+}
+.pico-number-keys > button {
+  height: 54px;
+  min-height: 54px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #1a2151;
+  font:
+    700 26px Manrope,
+    sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.pico-number-keys > button:hover,
+.pico-number-keys > button:active {
+  background: transparent;
+  box-shadow: none;
+  color: #1a2151;
+}
+.pico-number-done {
+  width: 100%;
+  height: 48px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: #1f7aea;
+  color: #fff;
+  font:
+    800 15px Manrope,
+    sans-serif;
+}
+html[data-pico-number-open='true'] .pico-bottom-nav {
+  display: none;
+}
+html[data-pico-number-open='true'] .workspace {
+  padding-bottom: calc(var(--pico-number-height, 360px) + 16px);
+}
+html[data-pico-number-open='true'] .client-sheet-body {
+  padding-bottom: calc(var(--pico-number-height, 360px) + 16px);
+}
+html[data-pico-number-open='true'] :is(.workspace, .client-sheet-body, .modal) {
+  scroll-padding-bottom: calc(var(--pico-number-height, 360px) + 16px);
+}
+.company-equipment-row > .pico-number-input {
+  min-width: 5ch;
+  max-width: 100%;
+}
+
+html[data-pico-number-open='true'] .company-form-body {
+  padding-bottom: calc(var(--pico-number-height, 360px) + 16px);
+  scroll-padding-bottom: calc(var(--pico-number-height, 360px) + 16px);
+}
+
+/* ch width describes digits; padding and borders must not reduce their content area. */
+.company-form .company-equipment-row > .pico-number-input {
+  box-sizing: content-box;
+  flex-shrink: 0;
+}

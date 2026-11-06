@@ -221,10 +221,12 @@ test('new client validation keeps visible readable errors for INN and equipment'
   await dialog.getByRole('textbox', { name: 'ИНН', exact: true }).fill('7707083893');
   await dialog.getByRole('textbox', { name: 'Название', exact: true }).fill('QA validation');
   await dialog.getByText('Потенциал', { exact: true }).click();
-  const amount = dialog.getByRole('spinbutton').first();
+  const amount = dialog.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true });
+  await amount.click();
   await amount.fill('1000001');
-  await dialog.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
-  await expect(dialog.locator('#company-error-divisions')).toBeVisible();
+  const keypad = page.getByRole('region', { name: 'Клавиатура Pico' });
+  await keypad.getByRole('button', { name: 'Готово', exact: true }).click();
+  await expect(keypad.getByRole('alert')).toBeVisible();
   await expect(amount).toHaveAttribute('aria-invalid', 'true');
   await page.screenshot({ path: info.outputPath('new-client-validation.png') });
 });

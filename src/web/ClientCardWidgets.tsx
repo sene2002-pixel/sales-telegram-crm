@@ -145,7 +145,7 @@ export function SwipeAction({
     const dx = point.clientX - origin.x,
       dy = point.clientY - origin.y;
     if (Math.abs(dy) < 35 && Math.abs(dx) > Math.max(50, Math.abs(dy) * 2)) {
-      setRevealed(dx < 0);
+      reveal(dx < 0);
       suppressClick.current = true;
       window.setTimeout(() => {
         suppressClick.current = false;
@@ -159,6 +159,28 @@ export function SwipeAction({
     [error, setError] = useState('');
   const swipeRef = useRef<HTMLDivElement>(null);
   const [trashTop, setTrashTop] = useState(0);
+  function reveal(next: boolean) {
+    setRevealed(next);
+    if (next)
+      window.dispatchEvent(new CustomEvent('pico-swipe-open', { detail: swipeRef.current }));
+  }
+  useEffect(() => {
+    const other = (event: Event) => {
+      if ((event as CustomEvent).detail !== swipeRef.current) setRevealed(false);
+    };
+    window.addEventListener('pico-swipe-open', other);
+    return () => window.removeEventListener('pico-swipe-open', other);
+  }, []);
+  useEffect(() => {
+    // The confirmation modal owns outside interaction and restores this trigger on cancel.
+    if (!revealed || confirm) return;
+    const outside = (event: PointerEvent) => {
+      const rail = swipeRef.current?.querySelector(':scope > .cc-trash-track');
+      if (!rail?.contains(event.target as Node)) setRevealed(false);
+    };
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, [revealed, confirm]);
   useEffect(() => {
     if (!revealed) return;
     let frame = 0;
@@ -185,7 +207,7 @@ export function SwipeAction({
       setTrashTop(
         Math.max(
           0,
-          Math.min(bounds.height - 44, (top + Math.max(top, bottom)) / 2 - bounds.top - 22),
+          Math.min(bounds.height - 22, (top + Math.max(top, bottom)) / 2 - bounds.top - 11),
         ),
       );
     };
@@ -223,7 +245,7 @@ export function SwipeAction({
           if (e.key === 'ArrowLeft' && !disabled && (onEdit || onDelete)) {
             e.preventDefault();
             e.stopPropagation();
-            setRevealed(true);
+            reveal(true);
           }
           if (e.key === 'ArrowRight' || e.key === 'Escape') {
             e.preventDefault();
@@ -313,7 +335,10 @@ export function SwipeAction({
         <div className="cc-swipe-content">{children}</div>
         {(onDelete || onEdit) && (
           <div className="cc-trash-track" aria-hidden={!revealed}>
-            <div className="cc-swipe-actions" style={{ top: revealed ? trashTop : 0 }}>
+            <div
+              className="cc-swipe-actions"
+              style={{ ['--cc-icon-top' as string]: `${revealed ? trashTop : 0}px` }}
+            >
               {onEdit && (
                 <button
                   type="button"

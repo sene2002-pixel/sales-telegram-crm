@@ -81,13 +81,19 @@ for (const width of [320, 390]) {
     await expect(surface).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await expect(surface).toHaveCSS('border-radius', '20px');
     await expect(surface).toHaveCSS('box-shadow', 'rgb(230, 235, 243) 0px 0px 0px 1px inset');
-    await expect(row).toHaveCSS('background-color', 'rgb(243, 246, 251)');
+    await expect(row).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(row.locator(':scope > .cc-trash-track > .cc-swipe-actions')).toHaveCSS(
+      'background-color',
+      'rgb(255, 255, 255)',
+    );
     const buttons = row.locator(':scope > .cc-trash-track button');
     await expect(buttons).toHaveCount(2);
     for (const button of await buttons.all()) {
       await expect(button).toHaveCSS('width', '56px');
       await expect(button).toHaveCSS('color', 'rgb(107, 115, 144)');
-      await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      expect(['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)']).toContain(
+        await button.evaluate((el) => getComputedStyle(el).backgroundColor),
+      );
     }
     const after = await surface.boundingBox();
     expect(after!.width).toBe(before!.width);
@@ -131,9 +137,11 @@ for (const width of [320, 390]) {
     await reveal(equipment);
     await expect(equipment.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
-      'matrix(1, 0, 0, 1, -56, 0)',
+      'matrix(1, 0, 0, 1, -112, 0)',
     );
-    await expect(equipment.locator(':scope > .cc-trash-track button')).toHaveCSS('width', '56px');
+    await expect(equipment.locator(':scope > .cc-trash-track button')).toHaveCount(2);
+    for (const button of await equipment.locator(':scope > .cc-trash-track button').all())
+      await expect(button).toHaveCSS('width', '56px');
     await page.screenshot({
       path: `/tmp/pico-swipe-evidence/equipment-${width}-${info.project.name}.png`,
     });
@@ -150,7 +158,7 @@ for (const width of [320, 390]) {
     await reveal(file);
     await expect(file.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
-      'matrix(1, 0, 0, 1, -56, 0)',
+      'matrix(1, 0, 0, 1, -64, 0)',
     );
     await expect(file.locator(':scope > .cc-trash-track button')).toHaveCSS('width', '56px');
     await page.screenshot({

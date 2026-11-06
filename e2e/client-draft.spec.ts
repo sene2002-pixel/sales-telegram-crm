@@ -121,13 +121,18 @@ test('contacts and equipment are drafts; errors and pending saves never lose inp
     .locator('.company-form-accordion > summary')
     .filter({ hasText: /^Потенциал/ })
     .click();
-  await sheet.getByRole('spinbutton', { name: 'Выключатели 0,4 кВ', exact: true }).fill('12.5');
+  await sheet.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).click();
+  await sheet.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).fill('12.5');
+  await page
+    .getByRole('region', { name: 'Клавиатура Pico' })
+    .getByRole('button', { name: 'Готово', exact: true })
+    .click();
   await close(page, 'escape');
   await expect(confirm(page)).toBeVisible();
   await confirm(page).getByRole('button', { name: 'Продолжить заполнение', exact: true }).click();
-  await expect(
-    sheet.getByRole('spinbutton', { name: 'Выключатели 0,4 кВ', exact: true }),
-  ).toHaveValue('12.5');
+  await expect(sheet.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true })).toHaveValue(
+    '12.5',
+  );
   const name = sheet.getByRole('textbox', { name: 'Название', exact: true });
   const value = 'Черновик после ошибки ' + Date.now();
   await name.fill(value);

@@ -26,7 +26,12 @@ test('manager creates a company and task, then data survives reload', async ({
     .locator('.company-form-accordion > summary')
     .filter({ hasText: /^Потенциал/ })
     .click();
+  await page.getByLabel('Выключатели 0,4 кВ', { exact: true }).click();
   await page.getByLabel('Выключатели 0,4 кВ', { exact: true }).fill('3');
+  await page
+    .getByRole('region', { name: 'Клавиатура Pico', exact: true })
+    .getByRole('button', { name: 'Готово', exact: true })
+    .click();
   await saveNewClientAndOpen(page);
   await expect(page.getByRole('dialog')).toContainText(name);
   await page.getByRole('dialog').getByRole('button', { name: 'Задачи', exact: true }).click();
