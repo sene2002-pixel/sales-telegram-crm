@@ -4957,3 +4957,39 @@ html[data-pico-number-open='true'] .company-form-body {
   box-sizing: content-box;
   flex-shrink: 0;
 }
+
+.team-invitations {
+  min-width: 0;
+}
+.team-invitations form,
+.team-invitation-link {
+  display: grid;
+  gap: 12px;
+}
+.team-invitation-link {
+  margin-top: 20px;
+}
+.team-invitations input,
+.team-invitations select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.team-invitation-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+}
+.team-invitation-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid #e5eaf2;
+}
+.team-invitation-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}

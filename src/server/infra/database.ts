@@ -75,6 +75,15 @@ export class Database implements Sql {
       await tx.query(
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS supervisor_id uuid REFERENCES users(id)',
       );
+      await tx.query(`CREATE TABLE IF NOT EXISTS team_invitations (
+        id uuid PRIMARY KEY, token_hash text UNIQUE NOT NULL,
+        created_by uuid NOT NULL REFERENCES users(id), supervisor_id uuid NOT NULL REFERENCES users(id),
+        created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL,
+        revoked_at timestamptz, used_at timestamptz, used_by uuid REFERENCES users(id)
+      )`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS team_invitations_issuer ON team_invitations(created_by,created_at)',
+      );
       await tx.query(`CREATE TABLE IF NOT EXISTS error_logs (
         id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),
         event text NOT NULL, request_id uuid, actor_id uuid, status integer,

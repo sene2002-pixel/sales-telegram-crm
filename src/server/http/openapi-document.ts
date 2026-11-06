@@ -580,7 +580,7 @@ add(
     body: jsonBody(ref('TelegramUpdate')),
     errors: [400, 401, 413, 429, 500, 502, 503],
     description:
-      'Обязательный X-Telegram-Bot-Api-Secret-Token. Рабочие операции только в private чате, с допущенным активным отправителем; повторная доставка обрабатывается идемпотентно. Callback повторно проверяет владельца, состояние и версию. Прототип платежей не является частью API.',
+      'Обязательный X-Telegram-Bot-Api-Secret-Token. Рабочие операции только в private чате, с допущенным активным отправителем (исключение: /start invite_ для нового пользователя с действующим одноразовым приглашением); повторная доставка обрабатывается идемпотентно. Callback повторно проверяет владельца, состояние и версию. Прототип платежей не является частью API.',
   },
 );
 add('get', '/me', 'currentActor', 'Получить актуального сотрудника', 'Сотрудники', ref('Actor'), {
@@ -637,6 +637,56 @@ add(
     ),
     description:
       'Создаёт активного manager, имя-плейсхолдер до доверенного Telegram-профиля. Повторный ID — 409, существующие права не перезаписываются. ID должен помещаться в safe integer.',
+  },
+);
+const invitationMetadata = object({
+  id: uuid,
+  supervisorId: uuid,
+  createdAt: timestamp,
+  expiresAt: timestamp,
+  usedAt: nullable(timestamp),
+  revokedAt: nullable(timestamp),
+});
+add(
+  'get',
+  '/team-invitations',
+  'listTeamInvitations',
+  'Приглашения в команду',
+  'Сотрудники',
+  array(invitationMetadata),
+  {
+    roles: ['admin', 'supervisor'],
+    description:
+      'Руководитель видит только созданные им приглашения своей команды; администратор — все. Без токенов и ссылок.',
+  },
+);
+add(
+  'post',
+  '/team-invitations',
+  'createTeamInvitation',
+  'Создать одноразовое приглашение менеджера',
+  'Сотрудники',
+  object({ ...invitationMetadata.properties, url: string }),
+  {
+    roles: ['admin', 'supervisor'],
+    body: jsonBody(jsonSchema(z.object({ supervisorId: idSchema.optional() }).strict())),
+    errors: [400, 401, 403, 409, 429, 500, 502, 503],
+    description:
+      'Срок 24 часа. Руководитель приглашает только в свою команду; администратор указывает активного руководителя. Роль нового сотрудника всегда manager. Ссылка возвращается только при создании; передавайте её лично получателю. Username определяется по текущему BOT_TOKEN через getMe. Существующие пользователи и блокировки не изменяются.',
+  },
+);
+add(
+  'post',
+  '/team-invitations/{id}/revoke',
+  'revokeTeamInvitation',
+  'Отозвать приглашение',
+  'Сотрудники',
+  invitationMetadata,
+  {
+    roles: ['admin', 'supervisor'],
+    parameters: { id: uuid },
+    description:
+      'Администратор отзывает любое приглашение; руководитель — только своё в своей команде. Принятое приглашение не удаляет сотрудника.',
   },
 );
 add(
