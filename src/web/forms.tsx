@@ -1,3 +1,4 @@
+import { PicoNumberInput } from './PicoNumberInput';
 import './company-form.css';
 import { GrowingTextarea } from './GrowingTextarea';
 import { companyDisplayName } from '../shared/company-display-name';
@@ -492,25 +493,21 @@ export function CompanyForm({
                 key={division}
               >
                 <span>{divisionLabels[division] || labels[division]}</span>
-                <input
+                <PicoNumberInput
                   placeholder="0"
-                  aria-label={divisionLabels[division] || labels[division]}
-                  aria-invalid={!!fieldErrors.divisions}
-                  aria-describedby={fieldErrors.divisions ? 'company-error-divisions' : undefined}
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="any"
+                  label={divisionLabels[division] || labels[division]}
+                  invalid={!!fieldErrors.divisions}
+                  describedBy={fieldErrors.divisions ? 'company-error-divisions' : undefined}
                   value={
                     data.divisions[division] === undefined
                       ? ''
                       : millionValue(data.divisions[division]!)
                   }
-                  onChange={(e) => {
+                  onCommit={(raw) => {
                     setEquipmentDirty(true);
                     const next = { ...data.divisions };
-                    if (e.target.value === '') delete next[division];
-                    else next[division] = fromMillions(e.target.value) ?? 0;
+                    if (raw === '') delete next[division];
+                    else next[division] = fromMillions(raw) ?? 0;
                     update('divisions', next);
                   }}
                 />

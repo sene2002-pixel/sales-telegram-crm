@@ -124,7 +124,11 @@ for (const target of ['notes', 'equipment', 'new-equipment'] as const) {
           .click();
       }
       expect((await response).status()).toBe(409);
-      await expect(editor.getByRole('alert')).toBeVisible();
+      await expect(
+        target === 'equipment'
+          ? page.getByRole('region', { name: 'Клавиатура Pico', exact: true }).getByRole('alert')
+          : editor.getByRole('alert'),
+      ).toBeVisible();
       await expect(editor.getByRole('textbox')).toHaveValue(
         target === 'notes' ? 'Мой незавершённый текст' : '2,5',
       );

@@ -148,12 +148,14 @@ for (const width of [320, 390]) {
     await card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }).click();
     const amount = card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true });
     await amount.fill('2,5');
-    await resize(page, 390);
+    const keypad = page.getByRole('region', { name: 'Клавиатура Pico', exact: true });
+    await expect(keypad).toBeVisible();
+    await expect(amount).toHaveAttribute('inputmode', 'none');
     await expect(page.locator('.pico-bottom-nav')).toBeHidden();
-    await visibleField(amount, 390);
+    await visibleField(amount, (await keypad.boundingBox())!.y);
     await page.screenshot({ path: info.outputPath(`inline-keyboard-${width}.png`) });
-    await resize(page, 844);
     await expect(amount).toHaveValue('2,5');
+    await keypad.getByRole('button', { name: 'Готово', exact: true }).click();
     await expect(page.locator('.pico-bottom-nav')).toBeVisible();
   });
 }

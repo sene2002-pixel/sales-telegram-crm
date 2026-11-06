@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { action, clients, prepareDemoAuth } from './helpers';
 
 for (const width of [320, 390]) {
-  test(`equipment amount stays in its row and saves safely on blur at ${width}`, async ({
+  test(`equipment amount stays in its row and saves safely with Pico keypad at ${width}`, async ({
     page,
   }, info) => {
     await page.setViewportSize({ width, height: 844 });
@@ -51,7 +51,7 @@ for (const width of [320, 390]) {
     });
     await group.getByText('Выключатели 0,4 кВ', { exact: true }).click();
     await expect(input).toBeFocused();
-    await expect(input).toHaveAttribute('inputmode', 'decimal');
+    await expect(input).toHaveAttribute('inputmode', 'none');
     expect(await input.evaluate((el) => (el as HTMLInputElement).selectionStart)).toBe(1);
     expect((await row.boundingBox())!.height).toBe(40);
     await expect(row).toHaveCSS('background-color', 'rgb(255, 255, 255)');
@@ -65,7 +65,10 @@ for (const width of [320, 390]) {
       path: `/tmp/pico-amount-evidence/edit-${width}-${info.project.name}.png`,
     });
     await input.fill('2,5');
-    await input.press('Tab');
+    await page
+      .getByRole('region', { name: 'Клавиатура Pico', exact: true })
+      .getByRole('button', { name: 'Готово', exact: true })
+      .click();
     await expect(open).toBeVisible();
     await expect.poll(async () => (await fresh()).potential).toBe(5_500_000);
     expect((await fresh()).divisions).toEqual({ lv: 2_500_000, mv: 3_000_000 });
@@ -74,8 +77,13 @@ for (const width of [320, 390]) {
     await expect(card.locator('.cc-section > summary').first()).toContainText('5.5');
     await open.click();
     await input.fill('bad');
-    await input.press('Tab');
-    await expect(group.getByRole('alert')).toBeVisible();
+    await page
+      .getByRole('region', { name: 'Клавиатура Pico', exact: true })
+      .getByRole('button', { name: 'Готово', exact: true })
+      .click();
+    await expect(
+      page.getByRole('region', { name: 'Клавиатура Pico', exact: true }).getByRole('alert'),
+    ).toBeVisible();
     expect(patches).toBe(1);
     expect((await row.boundingBox())!.height).toBe(40);
     await page.screenshot({
@@ -83,8 +91,13 @@ for (const width of [320, 390]) {
     });
     for (const invalid of ['', '-1', '1000001']) {
       await input.fill(invalid);
-      await input.press('Tab');
-      await expect(group.getByRole('alert')).toBeVisible();
+      await page
+        .getByRole('region', { name: 'Клавиатура Pico', exact: true })
+        .getByRole('button', { name: 'Готово', exact: true })
+        .click();
+      await expect(
+        page.getByRole('region', { name: 'Клавиатура Pico', exact: true }).getByRole('alert'),
+      ).toBeVisible();
       expect(patches).toBe(1);
       await expect(input).toHaveValue(invalid);
     }
@@ -107,10 +120,12 @@ for (const width of [320, 390]) {
     await open.click();
     await input.fill('9');
     await input.press('Enter');
-    await expect(group.getByRole('alert')).toContainText('Повторите позже');
+    await expect(
+      page.getByRole('region', { name: 'Клавиатура Pico', exact: true }).getByRole('alert'),
+    ).toContainText('Повторите позже');
     await expect(input).toBeFocused();
     expect(patches).toBe(3);
-    await group.getByRole('button', { name: 'Отменить правку суммы', exact: true }).click();
+    await input.press('Escape');
     await expect(open).toBeVisible();
     expect(patches).toBe(3);
     expect((await fresh()).divisions.lv).toBe(0);

@@ -25,6 +25,7 @@ import { Icon, industryIcon } from './Icons';
 import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import { InlineAmount } from './InlineAmount';
+import { PicoNumberHandle } from './PicoNumberInput';
 import { GrowingTextarea } from './GrowingTextarea';
 import './client-card.css';
 
@@ -94,6 +95,7 @@ export function ClientRow({
     [uploadFile, setUploadFile] = useState<File | null>(null),
     [fileError, setFileError] = useState('');
   const articleRef = useRef<HTMLElement>(null);
+  const amountEditors = useRef<Record<string, PicoNumberHandle | null>>({});
   useEffect(() => {
     if (initiallyOpen) {
       setOpen(true);
@@ -378,8 +380,12 @@ export function ClientRow({
                               key={key}
                               label={`оборудование «${divisionLabels[key]}»`}
                               onDelete={() => equipment(key, null)}
+                              onEdit={() => amountEditors.current[key]?.open()}
                             >
                               <InlineAmount
+                                ref={(handle) => {
+                                  amountEditors.current[key] = handle;
+                                }}
                                 label={divisionLabels[key]}
                                 value={millionValue(c.divisions[key])}
                                 unit="млн ₽"

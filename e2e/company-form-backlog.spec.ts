@@ -17,7 +17,12 @@ for (const width of [320, 390])
       .locator('.company-form-accordion > summary')
       .filter({ hasText: 'Потенциал' })
       .click();
-    await dialog.getByRole('spinbutton').first().fill('2.5');
+    await dialog.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).click();
+    await dialog.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).fill('2.5');
+    await page
+      .getByRole('region', { name: 'Клавиатура Pico' })
+      .getByRole('button', { name: 'Готово', exact: true })
+      .click();
     await expect(dialog.locator('.company-form-accordion > summary').first()).toContainText(
       '2.5 млн ₽',
     );

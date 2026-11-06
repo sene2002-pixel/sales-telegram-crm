@@ -872,3 +872,50 @@ button.cc-amount-value small {
 .cc-amount-error > p {
   margin: 6px 0;
 }
+
+/* Keep rounded card corners clear; only the revealed rail is white. */
+.cc-swipe {
+  --cc-action-width: 64px;
+  background: transparent;
+}
+.cc-swipe.cc-two-actions {
+  --cc-action-width: 112px;
+}
+.cc-swipe > .cc-trash-track > .cc-swipe-actions {
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  justify-content: flex-end;
+  background: #fff;
+}
+.cc-swipe-actions > button.cc-trash,
+.cc-swipe-actions > button.cc-swipe-edit {
+  height: 100%;
+  min-height: 44px;
+  background: #fff;
+  border: 0;
+  box-shadow: none;
+  color: #6b7390;
+  align-items: start;
+}
+.cc-swipe-actions > button > svg {
+  position: relative;
+  top: var(--cc-icon-top, 0px);
+}
+.cc-swipe-actions > button:hover,
+.cc-swipe-actions > button:active {
+  background: #fff;
+  color: #6b7390;
+  box-shadow: none;
+}
+.cc-amount-editor input {
+  max-width: none;
+  flex: none;
+}
+.cc-equipment:has(.cc-amount-editor) {
+  min-height: 40px;
+  height: auto;
+}
+.cc-amount-label {
+  flex: 1 1 auto;
+}
