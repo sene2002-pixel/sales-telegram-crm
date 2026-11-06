@@ -1,4 +1,11 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icons';
 
@@ -65,6 +72,13 @@ export const PicoNumberInput = forwardRef<
     }
     const saveRef = useRef(save);
     saveRef.current = save;
+    useLayoutEffect(() => {
+      if (!open) return;
+      const field = input.current;
+      if (!field) return;
+      field.focus({ preventScroll: true });
+      field.setSelectionRange(field.value.length, field.value.length);
+    }, [open]);
     useEffect(() => {
       if (!open) return;
       document.documentElement.dataset.picoNumberOpen = 'true';
@@ -114,8 +128,6 @@ export const PicoNumberInput = forwardRef<
       const frame = requestAnimationFrame(() => {
         const field = input.current;
         if (!field) return;
-        field.focus({ preventScroll: true });
-        field.setSelectionRange(field.value.length, field.value.length);
         const bounds =
           field.closest('.cc-equipment')?.getBoundingClientRect() || field.getBoundingClientRect();
         const top = panel.current?.getBoundingClientRect().top || innerHeight;
