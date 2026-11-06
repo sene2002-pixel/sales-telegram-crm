@@ -3884,6 +3884,12 @@ select.pico-filter-sort {
   font-weight: 500;
   margin-top: 0;
 }
+/* Three visible text lines: two title lines (20px) and one metadata line (18px).
+   A one-line title leaves room for both 18px metadata lines. */
+.pico-client-copy {
+  height: 58px;
+  overflow: hidden;
+}
 .pico-client-metadata > span {
   display: block;
   overflow: hidden;

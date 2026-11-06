@@ -14,6 +14,7 @@ export function InlineValue({
   unit,
   compact = false,
   singleLine = false,
+  wrapValue = false,
 }: {
   label: string;
   value: string;
@@ -25,6 +26,7 @@ export function InlineValue({
   unit?: string;
   compact?: boolean;
   singleLine?: boolean;
+  wrapValue?: boolean;
 }) {
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(value),
@@ -33,7 +35,9 @@ export function InlineValue({
   const saveSnapshot = useRef(onSave);
   if (!editing)
     return (
-      <div className={`cc-field ${compact ? 'cc-field-compact' : ''}`}>
+      <div
+        className={`cc-field ${compact ? 'cc-field-compact' : ''} ${wrapValue ? 'cc-field-wrap' : ''}`}
+      >
         <span>{label}</span>
         <button
           disabled={disabled}
