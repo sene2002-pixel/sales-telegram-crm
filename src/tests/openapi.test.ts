@@ -29,7 +29,13 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
     )
     .sort();
   assert.deepEqual(actual, declared);
-  assert.equal(actual.length, 56);
+  assert.equal(actual.length, 59);
+  for (const [path, method] of [
+    ['/team-invitations', 'get'],
+    ['/team-invitations', 'post'],
+    ['/team-invitations/{id}/revoke', 'post'],
+  ])
+    assert.deepEqual(document.paths[path!][method!]['x-roles'], ['admin', 'supervisor']);
   const ids = Object.values(document.paths).flatMap((methods: any) =>
     Object.values(methods).map((operation: any) => operation.operationId),
   );

@@ -1,3 +1,4 @@
+import { TeamInvitations } from './team-invitations';
 import { readFile } from 'node:fs/promises';
 import { importTemplateAction, importTemplateCaption } from './import-onboarding';
 import { CompanyImports } from './company-imports';
@@ -85,6 +86,7 @@ export class BotService {
     private voiceContacts?: VoiceContacts,
     private dialogue?: DialogueService,
     private imports?: CompanyImports,
+    private invitations?: TeamInvitations,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -128,21 +130,43 @@ export class BotService {
           : msg?.voice
             ? 'voice'
             : 'text',
-      text: blocked
-        ? '[SECURITY_REQUEST]'
-        : this.dialogue && msg?.text
-          ? '[DIALOGUE]'
-          : msg?.text && signatureOperation(msg.text)
-            ? '[SIGNATURE]'
-            : msg?.text && looksLikeContactCommand(msg.text)
-              ? '[CONTACT]'
-              : msg?.text,
+      text: /^\/start(?:@\w+)?\s+invite_/i.test(msg?.text || '')
+        ? '[INVITATION]'
+        : blocked
+          ? '[SECURITY_REQUEST]'
+          : this.dialogue && msg?.text
+            ? '[DIALOGUE]'
+            : msg?.text && signatureOperation(msg.text)
+              ? '[SIGNATURE]'
+              : msg?.text && looksLikeContactCommand(msg.text)
+                ? '[CONTACT]'
+                : msg?.text,
       duration: msg?.voice?.duration,
       size: msg?.voice?.file_size,
     });
     const chatId = String(chat.id);
     try {
       const command = msg?.text?.split(/\s/)[0]?.split('@')[0];
+      if (
+        !callback &&
+        command === '/start' &&
+        /^\/start(?:@\w+)?\s+invite_/i.test(msg?.text || '') &&
+        this.invitations
+      ) {
+        const payload = (msg?.text || '').trim().split(/\s+/)[1] || '';
+        const result = await this.invitations.redeem(
+          payload.slice(7),
+          String(from.id),
+          from.first_name || '',
+        );
+        await this.telegram.send(chatId, {
+          text: result.alreadyJoined
+            ? 'Вы уже присоединились к CRM.'
+            : 'Вы присоединились к команде. Добро пожаловать в Pico!',
+          reply_markup: this.telegram.appButton(),
+        });
+        return { ok: true };
+      }
       // Public self-identification only: no user provisioning or CRM access.
       if (!callback && command === '/myid') {
         await this.telegram.send(chatId, {

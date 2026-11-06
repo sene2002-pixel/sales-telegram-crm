@@ -1,3 +1,4 @@
+import { TeamInvitations } from '../services/team-invitations';
 import { CompanyImports } from '../services/company-imports';
 import { SabyRegistry } from '../services/company-registry';
 import { assertImportPrivacy } from '../services/company-import-parser';
@@ -61,6 +62,8 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shared/contracts';
 
 export class Services {
+  invitations: TeamInvitations;
+  telegram: TelegramAdapter;
   diagnostics: DiagnosticLog;
   voiceSignatures: VoiceSignatures;
   voiceContacts: VoiceContacts;
@@ -90,6 +93,8 @@ export class Services {
     this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
     this.reports = new ReportService(db, this.crm, this.diagnostics, config.requestRetentionDays);
     const telegram = new TelegramAdapter(config, this.errors);
+    this.telegram = telegram;
+    this.invitations = new TeamInvitations(db);
     this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
     this.voiceContacts = new VoiceContacts(db, this.crm, this.letters, this.reports, config);
     this.letterBot = new LetterBot(
@@ -143,6 +148,7 @@ export class Services {
           serviceKey: config.sabyServiceKey,
         }),
       ),
+      this.invitations,
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.commercial = new CommercialReportService(db);
@@ -356,6 +362,32 @@ class CrmController {
   }
   @Post('users/admit') admitUser(@Req() r: AuthedRequest, @Body() body: unknown) {
     return this.s.auth.admitUser(r.actor, body);
+  }
+  @Get('team-invitations') teamInvitations(@Req() r: AuthedRequest) {
+    return this.s.invitations.list(r.actor);
+  }
+  @Post('team-invitations') async createTeamInvitation(
+    @Req() r: AuthedRequest,
+    @Body() body: unknown,
+  ) {
+    requireCondition(
+      ['admin', 'supervisor'].includes(r.actor.role),
+      403,
+      'Только руководитель или администратор приглашает сотрудников',
+    );
+    const bot = await this.s.telegram.call('getMe', {});
+    requireCondition(
+      typeof bot?.username === 'string' && /^[a-zA-Z0-9_]{5,32}$/.test(bot.username),
+      503,
+      'Не удалось определить Telegram-бота',
+    );
+    return this.s.invitations.create(r.actor, body, bot.username);
+  }
+  @Post('team-invitations/:id/revoke') revokeTeamInvitation(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.s.invitations.revoke(r.actor, id);
   }
   @Get('employee-filter/options') employeeOptions(@Req() r: AuthedRequest) {
     return employeeFilterOptions(this.s.crm.db, r.actor);

@@ -1,3 +1,4 @@
+import { TeamInvitations } from './TeamInvitations';
 import { useState } from 'react';
 import { Actor, labels, roles } from '../shared/contracts';
 import { api } from './api';
@@ -27,6 +28,7 @@ export function UsersScreen({
   return (
     <section className="pico-users">
       <h1>Пользователи</h1>
+      {user?.role === 'admin' && <TeamInvitations user={user} users={users} />}
       <div className="pico-compact-list">
         {users.map((person) => (
           <button

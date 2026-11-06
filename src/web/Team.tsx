@@ -1,3 +1,4 @@
+import { TeamInvitations } from './TeamInvitations';
 import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useState } from 'react';
 import { Actor, roles, labels } from '../shared/contracts';
@@ -88,6 +89,7 @@ export function Team({
     <>
       <p className="eyebrow">ОБЩАЯ КАРТИНА</p>
       <h1>Команда</h1>
+      {user.role === 'supervisor' && <TeamInvitations user={user} users={users} />}
       <CommercialReport users={users} />
       <button onClick={() => setShowEmployees(!showEmployees)} aria-expanded={showEmployees}>
         Все сотрудники
