@@ -97,9 +97,47 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
   await expect(card.getByText(/Изменения сохранены, но обновление не удалось/)).toHaveCount(0);
   expect(patches[2].data).not.toHaveProperty('id');
   expect(patches[2].version).toBe(2);
+  // Hold startup animation callbacks until after the user's Select All. This
+  // reproduces the slow-frame ordering from CI without a sleep: startup work
+  // must never move the caret after editing has already begun.
+  await page.evaluate(() => {
+    const state = {
+      nativeFrame: window.requestAnimationFrame.bind(window),
+      pending: [] as FrameRequestCallback[],
+    };
+    (window as any).__picoStartupFrames = state;
+    window.requestAnimationFrame = (callback) =>
+      state.nativeFrame((time) => {
+        if (document.documentElement.dataset.picoNumberOpen === 'true')
+          state.pending.push(callback);
+        else callback(time);
+      });
+  });
   await card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }).click();
-  await card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).fill('1.5');
-  await card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).press('Tab');
+  const amount = card.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true });
+  await amount.press('ControlOrMeta+A');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__picoStartupFrames.pending.length))
+    .toBeGreaterThan(0);
+  await page.evaluate(() => {
+    const state = (window as any).__picoStartupFrames as {
+      nativeFrame: typeof requestAnimationFrame;
+      pending: FrameRequestCallback[];
+    };
+    window.requestAnimationFrame = state.nativeFrame;
+    for (const callback of state.pending) callback(performance.now());
+    delete (window as any).__picoStartupFrames;
+  });
+  expect(
+    await amount.evaluate((field: HTMLInputElement) => ({
+      start: field.selectionStart,
+      end: field.selectionEnd,
+      length: field.value.length,
+    })),
+  ).toEqual({ start: 0, end: 5, length: 5 });
+  await page.keyboard.insertText('1.5');
+  await expect(amount).toHaveValue('1.5');
+  await amount.press('Tab');
   await expect(
     card.getByRole('button', { name: 'Изменить Выключатели 0,4 кВ', exact: true }),
   ).toBeVisible();

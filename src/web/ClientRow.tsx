@@ -587,6 +587,9 @@ export function ClientRow({
                       label="Город"
                       value={c.city}
                       compact
+                      wrapValue
+                      multiline
+                      singleLine
                       onSave={(city) => patch({ city })}
                     />
                     <InlineValue
@@ -594,13 +597,15 @@ export function ClientRow({
                       value={c.website || ''}
                       onSave={(website) => patch({ website })}
                     />
+                    <InlineValue
+                      label={isHolding ? 'Описание деятельности' : 'Отрасль'}
+                      value={c.industry}
+                      multiline
+                      singleLine
+                      onSave={(industry) => patch({ industry })}
+                    />
                     {isHolding && (
                       <>
-                        <InlineValue
-                          label="Описание деятельности"
-                          value={c.industry}
-                          onSave={(industry) => patch({ industry })}
-                        />
                         <InlineValue
                           label="Сайты"
                           value={(c.sites || []).join('\n')}

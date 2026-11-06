@@ -383,6 +383,7 @@
 }
 .cc-data {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 10px;
 }
 .cc-data > .cc-field,
@@ -417,6 +418,10 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.cc-data > .cc-field-wrap > button > span {
+  overflow: visible;
+  white-space: normal;
 }
 .cc-swipe {
   overflow: hidden;
