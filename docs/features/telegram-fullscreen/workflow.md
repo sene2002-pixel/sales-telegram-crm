@@ -12,3 +12,9 @@ Implementation: replaced the old forced exitFullscreen with a bounded requestFul
 Review: two independent reviewers assessed the actual diff; no duplication, unused code or blocking regression found. QA1: 26 viewport/header browser tests passed (desktop/mobile), including SDK failures, versions and owned swipe cleanup. QA2: 6 independent visual browser checks passed; 390px screenshot inspected, no clipping or overlap. Build passed. Full Node22 repository check passed: 523 server tests, 7 operations tests, TypeScript and production build. Product acceptance passed within the browser/mock verification scope. Ready for release; not pushed, merged or deployed. Physical Telegram/iPhone verification remains required: browser SDK mocks cannot demonstrate the native window itself.
 
 SDK reference: https://core.telegram.org/bots/webapps#initializing-mini-apps
+
+## CI correction before release
+
+The full CI run found the home-only native swipe lifecycle still present in main.tsx (two static-home desktop/mobile assertions failed). That obsolete block could re-enable native swipes when leaving home. Removed it; configureViewport is now the single native swipe owner, while home touch/scroll boundaries remain unchanged. Updated the regression to require exactly one disable across home → tasks → home → meetings → tasks transitions. Initial review missed this existing overlap; correction review and QA are recorded below.
+
+Correction verification: QA1 passed 36 combined static-home/viewport/header checks on desktop/mobile; QA2 independently reviewed the removed home lifecycle and searched all src/web for native swipe call sites, now a single owner. TypeScript and production build passed again. Final remote CI pending.

@@ -189,12 +189,7 @@ test('Home restores task and meeting lists, actions and bounded scrolling', asyn
   await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: 'Просроченные задачи · 18' }).click();
   await expect(page.locator('.pico-task-row')).toHaveCount(18);
-  expect(await page.evaluate(() => (window as any).swipeCalls)).toEqual([
-    'disable',
-    'enable',
-    'disable',
-    'enable',
-  ]);
+  expect(await page.evaluate(() => (window as any).swipeCalls)).toEqual(['disable']);
   await navigate(page, 'Главная');
   // A long list uses the home feed without shifting the header or bottom navigation.
   await page.setViewportSize({ width: 320, height: 568 });
