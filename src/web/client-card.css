@@ -924,3 +924,128 @@ button.cc-amount-value small {
 .cc-amount-label {
   flex: 1 1 auto;
 }
+
+/* Equipment creation reuses the card sheet and the shared Pico digit grid. */
+body:has(.cc-equipment-sheet) .pico-bottom-nav {
+  display: none;
+}
+.modal.client-sheet:has(.cc-equipment-sheet) > .client-sheet-handle,
+.modal.client-sheet:has(.cc-equipment-sheet) > .section-head {
+  touch-action: none;
+}
+.cc-equipment-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cc-equipment-sheet fieldset {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+}
+.cc-equipment-sheet legend,
+.cc-equipment-potential > span:first-child {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #2b3258;
+}
+.cc-equipment-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cc-equipment-types > button {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #dde4f0;
+  background: #fff;
+  color: #4a5370;
+  font-size: 13px;
+  box-shadow: none;
+}
+.cc-equipment-types > button[aria-pressed='true'] {
+  background: #1f7aea;
+  color: #fff;
+  border-color: #1f7aea;
+  font-weight: 700;
+}
+.cc-equipment-types > button:disabled {
+  background: #f3f6fb;
+  color: #a3abbf;
+  border-color: #dde4f0;
+  opacity: 1;
+}
+.cc-equipment-potential {
+  display: flex;
+  flex-direction: column;
+}
+.cc-equipment-amount-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  border: 1.5px solid #1f7aea;
+  border-radius: 12px;
+  padding: 0 12px;
+}
+.cc-equipment-sheet .cc-equipment-amount-field > input {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: 22px;
+  font-weight: 800;
+  color: #1a2151;
+}
+.cc-equipment-sheet .cc-equipment-amount-field > input:focus,
+.cc-equipment-sheet .cc-equipment-amount-field > input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.cc-equipment-amount-field > span {
+  flex: none;
+  color: #7a8299;
+  font-size: 14px;
+}
+.cc-equipment-sheet .pico-number-keys {
+  margin-top: -8px;
+}
+.cc-equipment-sheet > .cc-equipment-submit {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: #1f7aea;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+}
+.cc-equipment-sheet > .cc-equipment-submit:disabled {
+  background: #c9d4e5;
+  color: #fff;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .modal.client-sheet:has(.cc-equipment-sheet) {
+    animation: cc-equipment-enter 180ms ease-out;
+  }
+}
+@keyframes cc-equipment-enter {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

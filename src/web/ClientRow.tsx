@@ -25,7 +25,7 @@ import { Icon, industryIcon } from './Icons';
 import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import { InlineAmount } from './InlineAmount';
-import { PicoNumberHandle } from './PicoNumberInput';
+import { PicoNumberHandle, PicoNumberKeys, appendPicoNumberKey } from './PicoNumberInput';
 import { GrowingTextarea } from './GrowingTextarea';
 import './client-card.css';
 
@@ -91,6 +91,7 @@ export function ClientRow({
     [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
     [addingContact, setAddingContact] = useState(false),
     [newEquipment, setNewEquipment] = useState<Company | null>(null),
+    [addedEquipment, setAddedEquipment] = useState<string[]>([]),
     [uploading, setUploading] = useState(false),
     [uploadFile, setUploadFile] = useState<File | null>(null),
     [fileError, setFileError] = useState('');
@@ -373,8 +374,11 @@ export function ClientRow({
                       </>
                     ) : (
                       <>
-                        {divisions
-                          .filter((key) => c.divisions[key] != null)
+                        {[
+                          ...divisions.filter((key) => !addedEquipment.includes(key)),
+                          ...addedEquipment,
+                        ]
+                          .filter((key) => c.divisions[key as keyof typeof c.divisions] != null)
                           .map((key) => (
                             <SwipeAction
                               key={key}
@@ -387,7 +391,7 @@ export function ClientRow({
                                   amountEditors.current[key] = handle;
                                 }}
                                 label={divisionLabels[key]}
-                                value={millionValue(c.divisions[key])}
+                                value={millionValue(c.divisions[key as keyof typeof c.divisions])}
                                 unit="млн ₽"
                                 onSave={(value) => equipment(key, value)}
                               />
@@ -396,16 +400,7 @@ export function ClientRow({
                         {!Object.keys(c.divisions).length && (
                           <p className="muted">Оборудование пока не добавлено</p>
                         )}
-                        {newEquipment ? (
-                          <EquipmentForm
-                            keys={primaryDivisions.filter((key) => c.divisions[key] == null)}
-                            onCancel={() => setNewEquipment(null)}
-                            onSave={async (key, value) => {
-                              await equipment(key, value, newEquipment);
-                              setNewEquipment(null);
-                            }}
-                          />
-                        ) : (
+                        {primaryDivisions.some((key) => c.divisions[key] == null) && (
                           <button
                             className="cc-add"
                             onClick={() => setNewEquipment(structuredClone(c))}
@@ -645,6 +640,27 @@ export function ClientRow({
           {error}
         </p>
       )}
+      {newEquipment && (
+        <EquipmentSheet
+          divisions={c.divisions}
+          onCancel={() => setNewEquipment(null)}
+          onSave={async (key, value) => {
+            if (c.divisions[key as keyof typeof c.divisions] != null)
+              throw new Error('Это оборудование уже добавлено. Выберите другой тип.');
+            try {
+              await equipment(key, value, newEquipment);
+            } catch (error) {
+              if (error instanceof ApiError && error.status === 409)
+                throw new Error(
+                  'Карточка изменилась. Сумма сохранена в форме. Закройте шторку и откройте её заново, чтобы проверить изменения перед сохранением.',
+                );
+              throw error;
+            }
+            setAddedEquipment((keys) => [...keys.filter((existing) => existing !== key), key]);
+            setNewEquipment(null);
+          }}
+        />
+      )}
       {editingClient && (
         <Modal sheet title="Редактирование карточки" onClose={() => setEditingClient(false)}>
           <CompanyForm
@@ -784,71 +800,119 @@ function ContactForm({
     </form>
   );
 }
-function EquipmentForm({
-  keys,
+function EquipmentSheet({
+  divisions: existing,
   onSave,
   onCancel,
 }: {
-  keys: readonly string[];
+  divisions: Company['divisions'];
   onSave: (key: string, value: string) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [key, setKey] = useState(keys[0] || ''),
-    [amount, setAmount] = useState(''),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+  const [key, setKey] = useState('');
+  const [amount, setAmount] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const close = () => {
+    if (!saving.current) onCancel();
+  };
+  const number = Number(amount.replace(',', '.'));
+  const valid =
+    amount.trim() !== '' && Number.isFinite(number) && number >= 0 && number <= 1_000_000;
   return (
-    <form
-      className="cc-inline-editor"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError('');
-        try {
-          await onSave(key, amount);
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
+    <Modal
+      sheet
+      swipeToClose
+      title="Новое оборудование"
+      onClose={close}
+      closeDisabled={busy}
+      initialFocusRef={amountRef}
     >
-      <label>
-        Оборудование
-        <select
-          aria-label="Оборудование"
-          value={key}
+      <form
+        className="cc-equipment-sheet"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (saving.current || !key || !valid || existing[key as keyof typeof existing] != null)
+            return;
+          saving.current = true;
+          setBusy(true);
+          setError('');
+          try {
+            await onSave(key, amount);
+          } catch (cause) {
+            setError((cause as Error).message);
+          } finally {
+            saving.current = false;
+            setBusy(false);
+          }
+        }}
+      >
+        <fieldset disabled={busy}>
+          <legend>Тип</legend>
+          <div className="cc-equipment-types" role="group" aria-label="Тип оборудования">
+            {primaryDivisions.map((type) => (
+              <button
+                type="button"
+                key={type}
+                aria-pressed={key === type}
+                disabled={existing[type] != null || busy}
+                onClick={() => {
+                  setKey(type);
+                  setError('');
+                }}
+              >
+                {divisionLabels[type]}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <label className="cc-equipment-potential">
+          <span>Потенциал</span>
+          <span className="cc-equipment-amount-field">
+            <input
+              ref={amountRef}
+              aria-label="Потенциал, млн ₽"
+              inputMode="none"
+              enterKeyHint="done"
+              autoComplete="off"
+              value={amount}
+              disabled={busy}
+              aria-invalid={amount !== '' && !valid}
+              onChange={(event) => {
+                setAmount(event.target.value);
+                setError('');
+              }}
+            />
+            <span>млн ₽</span>
+          </span>
+        </label>
+        <PicoNumberKeys
           disabled={busy}
-          onChange={(e) => setKey(e.target.value)}
-        >
-          {keys.map((k) => (
-            <option key={k} value={k}>
-              {divisionLabels[k]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Потенциал, млн ₽
-        <input
-          aria-label="Потенциал, млн ₽"
-          value={amount}
-          inputMode="decimal"
-          disabled={busy}
-          onChange={(e) => setAmount(e.target.value)}
+          onKey={(digit) => {
+            setAmount((value) => appendPicoNumberKey(value, digit));
+            setError('');
+            amountRef.current?.focus({ preventScroll: true });
+          }}
         />
-      </label>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="cc-editor-actions">
-        <button disabled={busy || !key}>Добавить</button>
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Отмена
+        {amount !== '' && !valid && (
+          <p className="error" role="alert">
+            Введите сумму от 0 до 1 000 000 млн ₽
+          </p>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          className="cc-equipment-submit"
+          disabled={busy || !key || !valid || existing[key as keyof typeof existing] != null}
+        >
+          {busy ? 'Добавление…' : 'Добавить'}
         </button>
-      </div>
-    </form>
+      </form>
+    </Modal>
   );
 }

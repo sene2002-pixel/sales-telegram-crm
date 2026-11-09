@@ -67,6 +67,7 @@ export function Modal({
   closeDisabled = false,
   titleIcon,
   sheet = false,
+  swipeToClose = false,
   title,
   onClose,
   children,
@@ -76,11 +77,13 @@ export function Modal({
   closeDisabled?: boolean;
   titleIcon?: ReactNode;
   sheet?: boolean;
+  swipeToClose?: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -157,6 +160,30 @@ export function Modal({
         data-pico-modal="true"
         aria-modal="true"
         aria-label={title}
+        onPointerDown={(event) => {
+          if (!swipeToClose || closeDisabled || !(event.target instanceof Element)) return;
+          if (
+            event.target.closest('.client-sheet-handle, .section-head') &&
+            !event.target.closest('button')
+          ) {
+            swipeStart.current = { x: event.clientX, y: event.clientY };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
+        }}
+        onPointerUp={(event) => {
+          const start = swipeStart.current;
+          swipeStart.current = null;
+          if (
+            start &&
+            !closeDisabled &&
+            event.clientY - start.y > 60 &&
+            event.clientY - start.y > Math.abs(event.clientX - start.x)
+          )
+            onClose();
+        }}
+        onPointerCancel={() => {
+          swipeStart.current = null;
+        }}
       >
         {sheet && <div className="client-sheet-handle" aria-hidden="true" />}
         <div className="section-head">
