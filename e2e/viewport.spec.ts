@@ -25,7 +25,14 @@ async function isolatedModule(page: Page) {
 async function configureSdk(
   page: Page,
   mode = 'modern',
-  options: { platform?: string; locked?: boolean; failLock?: boolean; version?: string } = {},
+  options: {
+    platform?: string;
+    locked?: boolean;
+    failLock?: boolean;
+    version?: string;
+    swipes?: boolean;
+    failSwipes?: boolean;
+  } = {},
 ) {
   await page.evaluate(
     ({ mode, options }) => {
@@ -34,6 +41,8 @@ async function configureSdk(
         expand: 0,
         fullscreen: 0,
         exit: 0,
+        disableSwipes: 0,
+        enableSwipes: 0,
         on: [] as string[],
         off: [] as string[],
         lock: 0,
@@ -42,6 +51,16 @@ async function configureSdk(
       };
       const events = new Map<string, Set<() => void>>();
       const sdk: any = {
+        isVerticalSwipesEnabled: options.swipes ?? true,
+        disableVerticalSwipes() {
+          calls.disableSwipes++;
+          if (options.failSwipes) throw new Error('Local unsupported swipe capability');
+          sdk.isVerticalSwipesEnabled = false;
+        },
+        enableVerticalSwipes() {
+          calls.enableSwipes++;
+          sdk.isVerticalSwipesEnabled = true;
+        },
         ready() {
           calls.ready++;
         },
@@ -50,14 +69,14 @@ async function configureSdk(
         },
         requestFullscreen() {
           calls.fullscreen++;
+          if (mode === 'throw') throw new Error('Local unsupported native capability');
         },
         exitFullscreen() {
           calls.exit++;
-          if (mode === 'throw') throw new Error('Local unsupported native capability');
         },
         isVersionAtLeast: (version: string) =>
           options.version ? Number(version) <= Number(options.version) : !mode.startsWith('old'),
-        isFullscreen: ['already', 'throw', 'old-fullscreen', 'missing-fullscreen'].includes(mode),
+        isFullscreen: ['already', 'old-fullscreen', 'missing-fullscreen'].includes(mode),
         platform: options.platform,
         isOrientationLocked: options.locked || false,
         lockOrientation() {
@@ -85,7 +104,7 @@ async function configureSdk(
           events.get(name)?.delete(callback);
         },
       };
-      if (mode.startsWith('missing')) delete sdk.exitFullscreen;
+      if (mode.startsWith('missing')) delete sdk.requestFullscreen;
       (window as any).__sdk = {
         sdk,
         calls,
@@ -124,22 +143,20 @@ async function installOrientation(page: Page, type: string, behavior = 'reject')
   );
 }
 
-test('Viewport: expanded standard header exits existing fullscreen with bounded compatibility and failure', async ({
-  page,
-}) => {
+test('Viewport: fullscreen request is bounded with compatibility and failure', async ({ page }) => {
   await isolatedModule(page);
-  for (const [mode, exit, expand] of [
-    ['modern', 0, 1],
+  for (const [mode, fullscreen, expand] of [
+    ['modern', 1, 1],
     ['old', 0, 1],
     ['missing', 0, 1],
     ['throw', 1, 2],
-    ['already', 1, 1],
+    ['already', 0, 1],
     ['old-fullscreen', 0, 1],
     ['missing-fullscreen', 0, 1],
   ] as const) {
     await configureSdk(page, mode);
     const calls = await page.evaluate(() => (window as any).__sdk.calls);
-    expect(calls).toMatchObject({ ready: 1, fullscreen: 0, exit, expand });
+    expect(calls).toMatchObject({ ready: 1, fullscreen, exit: 0, expand });
     expect(calls.on.sort()).toEqual([
       'contentSafeAreaChanged',
       'fullscreenChanged',
@@ -152,7 +169,7 @@ test('Viewport: expanded standard header exits existing fullscreen with bounded 
   await configureSdk(page);
   await page.evaluate(() => (window as any).__sdk.emit('fullscreenFailed'));
   expect(await page.evaluate(() => (window as any).__sdk.calls)).toMatchObject({
-    fullscreen: 0,
+    fullscreen: 1,
     exit: 0,
     expand: 2,
   });
@@ -160,7 +177,28 @@ test('Viewport: expanded standard header exits existing fullscreen with bounded 
     (window as any).__sdk.sdk.isFullscreen = true;
     (window as any).__sdk.emit('fullscreenChanged');
   });
-  expect(await page.evaluate(() => (window as any).__sdk.calls.fullscreen)).toBe(0);
+  expect(await page.evaluate(() => (window as any).__sdk.calls.fullscreen)).toBe(1);
+});
+
+test('Viewport: native swipe lock respects version, ownership and capability failures', async ({
+  page,
+}) => {
+  await isolatedModule(page);
+  for (const [options, disabled, enabled] of [
+    [{ version: '8.0' }, 1, 1],
+    [{ version: '7.7' }, 1, 1],
+    [{ version: '7.6' }, 0, 0],
+    [{ swipes: false }, 0, 0],
+    [{ failSwipes: true }, 1, 0],
+  ] as const) {
+    await configureSdk(page, 'modern', options);
+    await page.evaluate(() => {
+      for (let i = 0; i < 3; i++) (window as any).__sdk.emit('viewportChanged');
+    });
+    expect(await page.evaluate(() => (window as any).__sdk.calls.disableSwipes)).toBe(disabled);
+    await page.evaluate(() => (window as any).__cleanupViewport());
+    expect(await page.evaluate(() => (window as any).__sdk.calls.enableSwipes)).toBe(enabled);
+  }
 });
 
 test('Viewport: stable SDK height, safe-area events, keyboard viewport and orientation update real CSS variables', async ({
@@ -384,9 +422,9 @@ test('Viewport: SDK failures do not interrupt the existing Telegram authenticati
         },
         requestFullscreen() {
           calls.fullscreen++;
-          throw new Error('requestFullscreen must never be called');
+          throw new Error('Local native fullscreen unsupported');
         },
-        isFullscreen: true,
+        isFullscreen: false,
         exitFullscreen() {
           calls.exit++;
           throw new Error('Local native exit unsupported');
@@ -407,8 +445,8 @@ test('Viewport: SDK failures do not interrupt the existing Telegram authenticati
   expect(await page.evaluate(() => (window as any).__nativeCalls)).toEqual({
     ready: 1,
     expand: 2,
-    fullscreen: 0,
-    exit: 1,
+    fullscreen: 1,
+    exit: 0,
   });
   expect(errors).toEqual([]);
 });

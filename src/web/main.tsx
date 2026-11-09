@@ -397,20 +397,6 @@ function App() {
     if (!user || tab !== 'home') return;
     document.documentElement.classList.add('pico-home-active');
     window.scrollTo(0, 0);
-    const telegram = window.Telegram?.WebApp;
-    let ownsSwipeLock = false;
-    try {
-      if (
-        telegram?.isVerticalSwipesEnabled !== false &&
-        telegram?.disableVerticalSwipes &&
-        (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('7.7'))
-      ) {
-        telegram.disableVerticalSwipes();
-        ownsSwipeLock = true;
-      }
-    } catch {
-      /* Older Telegram clients retain the browser gesture fallback. */
-    }
     const preventHomeDrag = (event: TouchEvent) => {
       const target = event.target;
       if (
@@ -425,13 +411,6 @@ function App() {
     document.addEventListener('touchmove', preventHomeDrag, { passive: false });
     return () => {
       document.documentElement.classList.remove('pico-home-active');
-      if (ownsSwipeLock) {
-        try {
-          telegram?.enableVerticalSwipes?.();
-        } catch {
-          /* Unsupported native capability. */
-        }
-      }
       document.removeEventListener('touchmove', preventHomeDrag);
     };
   }, [user, tab]);
