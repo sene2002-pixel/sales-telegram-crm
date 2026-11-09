@@ -45,7 +45,7 @@ async function accessibleMenu(page: Page) {
   await expect(page.getByRole('heading', { name: 'Мой профиль', exact: true })).toBeVisible();
 }
 
-test('Telegram header: authenticated mobile keeps native chrome, exits fullscreen and preserves menu', async ({
+test('Telegram header: authenticated mobile requests fullscreen and preserves menu', async ({
   page,
 }, info) => {
   const width = info.project.name === 'mobile' ? 390 : 360;
@@ -61,7 +61,7 @@ test('Telegram header: authenticated mobile keeps native chrome, exits fullscree
         platform: 'android',
         version: '8.0',
         viewportStableHeight: 844,
-        isFullscreen: true,
+        isFullscreen: false,
         safeAreaInset: { top: 24, bottom: 20, left: 0, right: 0 },
         contentSafeAreaInset: { top: 48, bottom: 0, left: 0, right: 0 },
         ready() {
@@ -72,6 +72,8 @@ test('Telegram header: authenticated mobile keeps native chrome, exits fullscree
         },
         requestFullscreen() {
           calls.requestFullscreen++;
+          this.isFullscreen = true;
+          queueMicrotask(() => callbacks.get('fullscreenChanged')?.forEach((fn) => fn()));
         },
         exitFullscreen() {
           calls.exitFullscreen++;
@@ -103,8 +105,8 @@ test('Telegram header: authenticated mobile keeps native chrome, exits fullscree
   await expect(page.locator('.app-shell')).toHaveClass(/telegram-native-header/);
   await expect(page.locator('.mobile-brand')).toBeHidden();
   expect(await page.evaluate(() => (window as any).telegramHeaderCalls)).toMatchObject({
-    requestFullscreen: 0,
-    exitFullscreen: 1,
+    requestFullscreen: 1,
+    exitFullscreen: 0,
   });
   expect((await page.evaluate(() => (window as any).telegramHeaderCalls)).expand).toBeGreaterThan(
     0,

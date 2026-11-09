@@ -268,10 +268,21 @@ export function configureViewport(telegram?: TelegramViewport) {
     else if (telegram.isVersionAtLeast('6.1')) telegram.setHeaderColor?.('bg_color');
   });
   safeCall(() => telegram?.expand?.());
-  // Keep Telegram's native title/close/menu bar visible, including reopened sessions.
-  if (telegram?.exitFullscreen && telegram.isFullscreen) {
+  // Keep gestures inside CRM instead of dragging Telegram's bottom sheet.
+  let ownsSwipeLock = false;
+  safeCall(() => {
+    if (
+      telegram?.disableVerticalSwipes &&
+      telegram.isVerticalSwipesEnabled !== false &&
+      (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('7.7'))
+    ) {
+      telegram.disableVerticalSwipes();
+      ownsSwipeLock = true;
+    }
+  });
+  if (telegram?.requestFullscreen && !telegram.isFullscreen && native8()) {
     try {
-      if (!telegram.isVersionAtLeast || telegram.isVersionAtLeast('8.0')) telegram.exitFullscreen();
+      telegram.requestFullscreen();
     } catch {
       fallback();
     }
@@ -325,6 +336,7 @@ export function configureViewport(telegram?: TelegramViewport) {
     else root.setAttribute('data-pico-keyboard-open', previousKeyboard);
     document.removeEventListener('focusin', updateFocus);
     document.removeEventListener('focusout', updateFocus);
+    if (ownsSwipeLock) safeCall(() => telegram?.enableVerticalSwipes?.());
     if (ownsNativeLock) safeCall(() => telegram?.unlockOrientation?.());
     if (ownsBrowserLock) safeCall(() => orientation?.unlock?.());
     if (previousPortrait === null) root.removeAttribute('data-pico-portrait-required');
