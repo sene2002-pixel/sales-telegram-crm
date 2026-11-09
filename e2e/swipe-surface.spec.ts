@@ -14,6 +14,17 @@ async function reveal(row: Locator) {
   await page.mouse.up();
   await expect(row).toHaveClass(/cc-revealed/);
 }
+async function transparentActions(row: Locator) {
+  await expect(row.locator(':scope > .cc-trash-track > .cc-swipe-actions')).toHaveCSS(
+    'background-color',
+    'rgba(0, 0, 0, 0)',
+  );
+  for (const button of await row.locator(':scope > .cc-trash-track button').all()) {
+    await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await button.hover();
+    await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  }
+}
 async function close(row: Locator) {
   await row.focus();
   await row.press('Escape');
@@ -84,16 +95,16 @@ for (const width of [320, 390]) {
     await expect(row).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(row.locator(':scope > .cc-trash-track > .cc-swipe-actions')).toHaveCSS(
       'background-color',
-      'rgb(255, 255, 255)',
+      'rgba(0, 0, 0, 0)',
     );
     const buttons = row.locator(':scope > .cc-trash-track button');
     await expect(buttons).toHaveCount(2);
     for (const button of await buttons.all()) {
       await expect(button).toHaveCSS('width', '56px');
       await expect(button).toHaveCSS('color', 'rgb(107, 115, 144)');
-      expect(['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)']).toContain(
-        await button.evaluate((el) => getComputedStyle(el).backgroundColor),
-      );
+      await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await button.hover();
+      await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     }
     const after = await surface.boundingBox();
     expect(after!.width).toBe(before!.width);
@@ -120,6 +131,7 @@ for (const width of [320, 390]) {
       .filter({ has: page.locator('.cc-contact') })
       .last();
     await reveal(contact);
+    await transparentActions(contact);
     await expect(contact.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
       'matrix(1, 0, 0, 1, -112, 0)',
@@ -135,6 +147,7 @@ for (const width of [320, 390]) {
       .filter({ has: page.locator('.cc-equipment') })
       .last();
     await reveal(equipment);
+    await transparentActions(equipment);
     await expect(equipment.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
       'matrix(1, 0, 0, 1, -112, 0)',
@@ -156,6 +169,7 @@ for (const width of [320, 390]) {
       .filter({ has: page.locator('.cc-file') })
       .last();
     await reveal(file);
+    await transparentActions(file);
     await expect(file.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
       'matrix(1, 0, 0, 1, -64, 0)',
