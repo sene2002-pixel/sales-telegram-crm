@@ -673,13 +673,6 @@
   font-size: 14px;
   font-weight: 800;
 }
-.cc-contact-form input {
-  height: 40px;
-  min-height: 40px;
-  background: #f3f6fb;
-  border: 1px solid #e6ebf3;
-  border-radius: 12px;
-}
 .cc-contact-form .cc-editor-actions > .primary {
   flex: 1;
   height: 48px;
@@ -1048,4 +1041,28 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   to {
     transform: translateY(0);
   }
+}
+
+/* The selected contact remains visible above its editing sheet. */
+.cc-contact[role='button'] {
+  cursor: pointer;
+  border: 1.5px solid transparent;
+}
+.cc-contact.cc-contact-selected {
+  border-color: #1f7aea;
+}
+body:has(.cc-contact-form) .pico-bottom-nav {
+  display: none;
+}
+body:has(.cc-contact-form) .workspace {
+  padding-bottom: calc(var(--pico-contact-sheet-height, 0px) + 100px);
+}
+.modal .cc-contact-form textarea.pico-growing-textarea {
+  min-height: 40px;
+  padding: 9px 12px;
+  font-size: 16px;
+  line-height: 20px;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  background: #f3f6fb;
 }

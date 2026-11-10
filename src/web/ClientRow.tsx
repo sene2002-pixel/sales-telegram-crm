@@ -1,6 +1,6 @@
 import { companyDisplayName } from '../shared/company-display-name';
 import { companyContactChanges } from '../shared/company-edit-contacts';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Company,
   CompanyData,
@@ -76,6 +76,7 @@ export function ClientRow({
     [editorCompany, setEditorCompany] = useState<Company | null>(null),
     [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]),
     [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
+    [savingContact, setSavingContact] = useState(false),
     [addingContact, setAddingContact] = useState(false),
     [newEquipment, setNewEquipment] = useState<Company | null>(null),
     [addedEquipment, setAddedEquipment] = useState<string[]>([]),
@@ -84,6 +85,71 @@ export function ClientRow({
     [fileError, setFileError] = useState('');
   const articleRef = useRef<HTMLElement>(null);
   const amountEditors = useRef<Record<string, PicoNumberHandle | null>>({});
+  const contactRequest = useRef(0);
+  useEffect(
+    () => () => {
+      contactRequest.current++;
+    },
+    [open],
+  );
+  async function openContact(record: CrmRecord) {
+    const request = ++contactRequest.current;
+    try {
+      const latest = await read();
+      if (request !== contactRequest.current) return;
+      const contact = latest.records.find((r) => r.id === record.id && r.kind === 'contact');
+      if (!contact) throw new Error('Контакт больше недоступен. Обновите карточку.');
+      setEditingContact(structuredClone(contact));
+    } catch (cause) {
+      if (request === contactRequest.current) setError((cause as Error).message);
+    }
+  }
+  const closeContact = () => {
+    if (savingContact) return;
+    contactRequest.current++;
+    setEditingContact(null);
+  };
+  useLayoutEffect(() => {
+    if (!editingContact) return;
+    const element = articleRef.current?.querySelector<HTMLElement>('.cc-contact-selected');
+    const sheet = document.querySelector<HTMLElement>('[data-pico-modal]:has(.cc-contact-form)');
+    if (!element || !sheet) return;
+    const root = document.documentElement;
+    const reveal = () => {
+      root.style.setProperty(
+        '--pico-contact-sheet-height',
+        `${sheet.getBoundingClientRect().height}px`,
+      );
+      const bounds = element.getBoundingClientRect();
+      const top = (window.visualViewport?.offsetTop || 0) + 12;
+      const bottom = sheet.getBoundingClientRect().top - 12;
+      const delta =
+        bounds.bottom > bottom
+          ? Math.min(bounds.bottom - bottom, bounds.top - top)
+          : Math.min(0, bounds.top - top);
+      if (!delta) return;
+      let parent = element.parentElement;
+      while (
+        parent &&
+        !(
+          parent.scrollHeight > parent.clientHeight &&
+          /(auto|scroll)/.test(getComputedStyle(parent).overflowY)
+        )
+      )
+        parent = parent.parentElement;
+      if (parent) parent.scrollTop += delta;
+      else window.scrollBy(0, delta);
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(sheet);
+    window.visualViewport?.addEventListener('resize', reveal);
+    return () => {
+      observer.disconnect();
+      window.visualViewport?.removeEventListener('resize', reveal);
+      root.style.removeProperty('--pico-contact-sheet-height');
+    };
+  }, [editingContact?.id]);
   useEffect(() => {
     if (initiallyOpen) {
       setOpen(true);
@@ -403,20 +469,24 @@ export function ClientRow({
                         key={r.id}
                         label={`контакт «${r.data.name}»`}
                         onDelete={() => deleteRecord(r)}
-                        onEdit={() => {
-                          void read()
-                            .then((latest) => {
-                              const contact = latest.records.find(
-                                (record) => record.id === r.id && record.kind === 'contact',
-                              );
-                              if (!contact)
-                                throw new Error('Контакт больше недоступен. Обновите карточку.');
-                              setEditingContact(structuredClone(contact));
-                            })
-                            .catch((cause) => setError((cause as Error).message));
-                        }}
+                        onEdit={() => void openContact(r)}
                       >
-                        <div className="cc-contact">
+                        <div
+                          className={
+                            'cc-contact' +
+                            (editingContact?.id === r.id ? ' cc-contact-selected' : '')
+                          }
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Изменить контакт «${r.data.name}»`}
+                          onClick={() => void openContact(r)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              void openContact(r);
+                            }
+                          }}
+                        >
                           <div className="cc-contact-name">
                             <span>ФИО</span>
                             <strong>{r.data.name}</strong>
@@ -673,10 +743,11 @@ export function ClientRow({
         </Modal>
       )}
       {editingContact && (
-        <Modal sheet title="Контакт" onClose={() => setEditingContact(null)}>
+        <Modal sheet title="Контакт" closeDisabled={savingContact} onClose={closeContact}>
           <ContactForm
             initial={editingContact.data}
-            onCancel={() => setEditingContact(null)}
+            onCancel={closeContact}
+            onBusyChange={setSavingContact}
             onSave={async (data) => {
               try {
                 await api(`/records/${editingContact.id}`, 'PATCH', {
@@ -703,8 +774,10 @@ function ContactForm({
   initial,
   onSave,
   onCancel,
+  onBusyChange,
 }: {
   initial?: Record<string, string>;
+  onBusyChange?: (busy: boolean) => void;
   onSave: (data: Record<string, string>) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -716,19 +789,25 @@ function ContactForm({
     }),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const saving = useRef(false);
   return (
     <form
       className={`cc-inline-editor ${initial ? 'cc-contact-form' : ''}`}
       onSubmit={async (e) => {
         e.preventDefault();
+        if (saving.current) return;
+        saving.current = true;
         setBusy(true);
+        onBusyChange?.(true);
         setError('');
         try {
           await onSave(contactSchema.parse(draft));
         } catch (e) {
           setError((e as Error).message);
         } finally {
+          saving.current = false;
           setBusy(false);
+          onBusyChange?.(false);
         }
       }}
     >
@@ -740,25 +819,24 @@ function ContactForm({
       ].map(([key, label]) => (
         <label key={key}>
           {label}
-          {key === 'name' || key === 'role' ? (
-            <GrowingTextarea
-              singleLine
-              aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
-              value={draft[key as keyof typeof draft]}
-              required={key === 'name'}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-            />
-          ) : (
-            <input
-              aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
-              type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
-              value={draft[key as keyof typeof draft]}
-              required={key === 'name'}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-            />
-          )}
+          <GrowingTextarea
+            singleLine
+            aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
+            inputMode={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+            autoComplete={
+              key === 'email'
+                ? 'email'
+                : key === 'phone'
+                  ? 'tel'
+                  : key === 'name'
+                    ? 'name'
+                    : 'organization-title'
+            }
+            value={draft[key as keyof typeof draft]}
+            required={key === 'name'}
+            disabled={busy}
+            onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+          />
         </label>
       ))}
       {error && (
