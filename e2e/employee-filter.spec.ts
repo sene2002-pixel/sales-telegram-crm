@@ -219,7 +219,7 @@ test('Employee filter: supervisor options preserve base ACL and task assignee di
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText(f.a.name);
   await expect(dialog).toContainText(f.transferred.name);
-  await dialog.getByRole('button', { name: 'Открыть клиента', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Клиент', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText(f.transferred.name);
   await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
   await enter(page, f.a.token);

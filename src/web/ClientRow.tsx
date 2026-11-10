@@ -16,8 +16,9 @@ import {
   primarySegments,
   divisionLabels,
 } from '../shared/contracts';
-import { AnalyticsSummary, ClientScore } from '../shared/analytics';
-import { api, ApiError, download, money, compactMoney, fullMoney, today, token } from './api';
+import { ClientScore, displayedClientPotential } from '../shared/analytics';
+import { loadClientScores, invalidateClientScores } from './client-scores';
+import { api, ApiError, download, money, compactMoney, fullMoney } from './api';
 import { millionValue } from './FormWidgets';
 import { HoldingMembers } from './HoldingMembers';
 import { FileUpload } from './FileUpload';
@@ -42,28 +43,13 @@ const levels = [
   ['partner', 'Партнёр', '#5FCDB8'],
   ['ours', 'Наш клиент', '#22A86B'],
 ];
-let analyticsRequest: Promise<AnalyticsSummary> | undefined;
-let analyticsSession = '';
-function loadScores() {
-  if (analyticsSession !== token) {
-    analyticsRequest = undefined;
-    analyticsSession = token;
-  }
-  if (analyticsRequest) return analyticsRequest;
-  const request = api<AnalyticsSummary>(`/analytics?mode=all&from=${today()}&to=${today()}`);
-  analyticsRequest = request;
-  const clear = () => {
-    if (analyticsRequest === request) analyticsRequest = undefined;
-  };
-  void request.then(clear, clear);
-  return request;
-}
 export function ClientRow({
   company,
   onOpen,
   onChanged,
   initiallyOpen = false,
   score: providedScore,
+  employeeId = '',
   actorRole,
   holdingMembers,
   onReveal,
@@ -74,6 +60,7 @@ export function ClientRow({
   onChanged: () => Promise<void>;
   onOpen: (c: Company, tab?: string) => void;
   score?: ClientScore;
+  employeeId?: string;
   actorRole?: Role;
   holdingMembers?: Company[];
   onReveal?: (id: string) => void;
@@ -106,18 +93,8 @@ export function ClientRow({
   const sequence = useRef(0);
   const c = detail && detail.company.version >= company.version ? detail.company : company;
   const isHolding = c.segment === 'holding';
-  const members = detail?.holdingMembers ?? holdingMembers ?? [];
-  const potential =
-    isHolding && members.length
-      ? members.reduce<number | null>((sum, child) => {
-          const amount =
-            child.potential ??
-            (Object.keys(child.divisions).length
-              ? Object.values(child.divisions).reduce<number>((n, v) => n + (v || 0), 0)
-              : null);
-          return amount === null ? sum : (sum ?? 0) + amount;
-        }, null)
-      : c.potential;
+  const members = holdingMembers ?? detail?.holdingMembers ?? [];
+  const potential = displayedClientPotential(c, members);
   const [icon, color] = industryIcon(c.industry, c.segment);
   async function read() {
     const seq = ++sequence.current;
@@ -126,12 +103,12 @@ export function ClientRow({
     return d;
   }
   async function changed() {
-    analyticsRequest = undefined;
+    invalidateClientScores();
     try {
       await read();
       await onChanged();
       if (!providedScore) {
-        const a = await loadScores();
+        const a = await loadClientScores(employeeId);
         setScore(a.clientAnalytics?.clients.find((s) => s.id === company.id));
       }
     } catch (e) {
@@ -158,12 +135,14 @@ export function ClientRow({
   useEffect(() => {
     if (providedScore) {
       setScore(providedScore);
+      setScoreError(false);
       return;
     }
     if (!open) return;
     let current = true;
     setScoreError(false);
-    loadScores()
+    setScore(undefined);
+    loadClientScores(employeeId)
       .then((a) => {
         if (current) {
           const found = a.clientAnalytics?.clients.find((s) => s.id === company.id);
@@ -177,7 +156,7 @@ export function ClientRow({
     return () => {
       current = false;
     };
-  }, [open, company.id, providedScore]);
+  }, [open, company.id, company.version, providedScore, employeeId]);
   async function patch(update: Partial<CompanyData>, snapshot = c) {
     const data = companySchema.strip().parse({ ...snapshot, ...update });
     let saved: Company;

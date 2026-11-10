@@ -1,6 +1,11 @@
 import { expect, Page } from '@playwright/test';
 const demoSessions = new Map<string, unknown>();
 export async function prepareDemoAuth(page: Page) {
+  // Browser E2E supplies its own Telegram mocks; an external SDK download must not
+  // hold page load until the entire test budget expires.
+  await page.route('https://telegram.org/js/telegram-web-app.js*', (route) =>
+    route.fulfill({ body: '', contentType: 'application/javascript' }),
+  );
   await page.route('**/api/auth/dev', async (route) => {
     const role = route.request().postDataJSON().role as string;
     const workerCacheKey = `PICO_E2E_DEMO_SESSION_${role}`;
@@ -94,4 +99,12 @@ export async function expireSession(page: Page) {
   );
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('heading', { name: 'Pico', exact: true })).toBeVisible();
+}
+
+// Match the application's local-calendar date inside the browser, not the test host's UTC day.
+export async function browserToday(page: Page) {
+  return page.evaluate(() => {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
 }

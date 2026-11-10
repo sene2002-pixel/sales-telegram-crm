@@ -96,7 +96,12 @@ async function filterGeometry(page: Page, label: string) {
   expect(box.height).toBeCloseTo(30, 0);
   expect(box.x + box.width).toBeCloseTo(row.x + row.width, 0);
   await filter.click();
-  await expect(page.getByRole('dialog', { name: label, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('dialog', {
+      name: label === 'Фильтры клиентов' ? 'Фильтры' : label,
+      exact: true,
+    }),
+  ).toBeVisible();
 }
 
 test('Asana screens: compact Home counts and overdue shortcut show only actual overdue tasks at every width', async ({

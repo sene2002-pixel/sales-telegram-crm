@@ -1,3 +1,7 @@
+import { ClientFilters } from './ClientFilters';
+import { ClientSort, compareClients, matchesClientFilters } from '../shared/client-filters';
+import { ClientScore } from '../shared/analytics';
+import { loadClientScores, invalidateClientScores } from './client-scores';
 import { TaskActionsProvider } from './TaskActions';
 import { companyDisplayName } from '../shared/company-display-name';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -8,14 +12,10 @@ import {
   Company,
   CrmRecord,
   labels,
-  segments,
-  divisions,
   roles,
-  primarySegments,
-  primaryDivisions,
 } from '../shared/contracts';
 import { api, ApiError, setToken, token, download } from './api';
-import { CompanyForm, CompanyFormCloseGuard, Modal, Select, Chips } from './forms';
+import { CompanyForm, CompanyFormCloseGuard, Modal } from './forms';
 import { CompanyDetail } from './CompanyDetail';
 import { Reports } from './Reports';
 import { Team } from './Team';
@@ -74,8 +74,8 @@ function App() {
     [create, setCreate] = useState(false),
     [query, setQuery] = useState(''),
     [city, setCity] = useState(''),
-    [segment, setSegment] = useState(''),
-    [division, setDivision] = useState('');
+    [clientSegments, setClientSegments] = useState<string[]>([]),
+    [clientDivisions, setClientDivisions] = useState<string[]>([]);
   const [confirmDiscardClient, setConfirmDiscardClient] = useState(false);
   const newClientCloseGuard = useRef<CompanyFormCloseGuard>(null);
   const continueClientDraftRef = useRef<HTMLButtonElement>(null);
@@ -108,7 +108,7 @@ function App() {
     [recordCreate, setRecordCreate] = useState<'task' | 'project' | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
     [clientStatus, setClientStatus] = useState('all'),
-    [clientSort, setClientSort] = useState('name'),
+    [clientSort, setClientSort] = useState<ClientSort>('name'),
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
     [clientRevealVersion, setClientRevealVersion] = useState(0),
@@ -155,7 +155,15 @@ function App() {
       else sessionStorage.removeItem(employeeStorageKey(actorId));
     } catch {}
   }
+  const [clientScores, setClientScores] = useState<Record<string, ClientScore>>({});
+  const [scoresLoading, setScoresLoading] = useState(false);
+  const [scoresError, setScoresError] = useState('');
+  const [scoresRetry, setScoresRetry] = useState(0);
   function clearScopeData() {
+    setClientScores({});
+    setScoresError('');
+    setScoresLoading(false);
+    invalidateClientScores();
     setAnalyticsSettingsOpen(false);
     setTaskView('open');
     ++scopeGeneration.current;
@@ -175,8 +183,8 @@ function App() {
     setReportToOpen(null);
     setQuery('');
     setCity('');
-    setSegment('');
-    setDivision('');
+    setClientSegments([]);
+    setClientDivisions([]);
     setClientStatus('all');
   }
   async function changeEmployee(id: string) {
@@ -224,6 +232,10 @@ function App() {
     };
   }, [more]);
   function clearAccountData() {
+    setClientScores({});
+    setScoresError('');
+    setScoresLoading(false);
+    invalidateClientScores();
     setAnalyticsSettingsOpen(false);
     setTaskView('open');
     setCompanies([]);
@@ -242,8 +254,8 @@ function App() {
     setMore(false);
     setQuery('');
     setCity('');
-    setSegment('');
-    setDivision('');
+    setClientSegments([]);
+    setClientDivisions([]);
     setClientStatus('all');
     setClientSort('name');
     setSelectedTab('contact');
@@ -384,6 +396,7 @@ function App() {
     return actor;
   }
   async function refresh() {
+    invalidateClientScores();
     await refreshActor();
   }
   useEffect(() => {
@@ -472,6 +485,46 @@ function App() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [user]);
+  const processedSort = clientSort === 'processed' || clientSort === 'processedAsc';
+  useEffect(() => {
+    if (!user || tab !== 'companies' || !processedSort) {
+      setScoresLoading(false);
+      setScoresError('');
+      return;
+    }
+    let current = true;
+    const generation = scopeGeneration.current;
+    setScoresLoading(true);
+    setScoresError('');
+    setClientScores({});
+    loadClientScores(employeeId)
+      .then((summary) => {
+        if (!current || generation !== scopeGeneration.current) return;
+        if (!summary.clientAnalytics) throw new Error('Проработка клиентов недоступна');
+        setClientScores(
+          Object.fromEntries(summary.clientAnalytics.clients.map((score) => [score.id, score])),
+        );
+      })
+      .catch((cause) => {
+        if (current && generation === scopeGeneration.current)
+          setScoresError('Не удалось загрузить проработку клиентов. ' + (cause as Error).message);
+      })
+      .finally(() => {
+        if (current && generation === scopeGeneration.current) setScoresLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    processedSort,
+    employeeId,
+    scopeVersion,
+    user?.id,
+    tab,
+    companies,
+    analyticsRefreshVersion,
+    scoresRetry,
+  ]);
   if (!user)
     return (
       <main className="login">
@@ -561,9 +614,7 @@ function App() {
           .join(' ')}`
           .toLowerCase()
           .includes(query.toLowerCase())) &&
-      (!city || c.city === city) &&
-      (!segment || c.segment === segment) &&
-      (!division || c.divisions[division as keyof typeof c.divisions] != null),
+      matchesClientFilters(c, city, clientSegments, clientDivisions),
   );
   const application = (
     <div
@@ -842,78 +893,65 @@ function App() {
                   <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
                 </button>
                 {filtersOpen && (
-                  <Modal title="Фильтры клиентов" onClose={() => setFiltersOpen(false)}>
-                    <div className="filters">
-                      <Select
-                        value={city}
-                        onChange={setCity}
-                        options={[...new Set(companies.map((c) => c.city).filter(Boolean))].sort()}
-                        empty="Все города"
-                      />
-                      <Chips
-                        label="Категория клиента"
-                        options={primarySegments}
-                        value={segment}
-                        onChange={setSegment}
-                      />
-                      <Chips
-                        label="Оборудование"
-                        options={primaryDivisions}
-                        value={division}
-                        onChange={setDivision}
-                      />
-                      <div className="client-filter-actions">
-                        <label className="field">
-                          <span>Сортировка</span>
-                          <select
-                            value={clientSort}
-                            onChange={(e) => setClientSort(e.target.value)}
-                          >
-                            <option value="name">А–Я</option>
-                            <option value="potential">Потенциал ↓</option>
-                            <option value="updated">Обновление ↓</option>
-                          </select>
-                        </label>
-                        <button
-                          onClick={() => {
-                            setCity('');
-                            setSegment('');
-                            setDivision('');
-                            setClientSort('name');
-                          }}
-                        >
-                          Сбросить
-                        </button>
-                      </div>
-                      <button
-                        className="primary pico-sheet-submit"
-                        onClick={() => setFiltersOpen(false)}
-                      >
-                        Показать ({visible.length})
-                      </button>
-                    </div>
-                  </Modal>
+                  <ClientFilters
+                    city={city}
+                    cities={[
+                      ...new Set(companies.map((company) => company.city).filter(Boolean)),
+                    ].sort((a, b) => a.localeCompare(b, 'ru'))}
+                    segments={clientSegments}
+                    divisions={clientDivisions}
+                    sort={clientSort}
+                    count={visible.length}
+                    scoresLoading={scoresLoading}
+                    scoresError={scoresError}
+                    onRetry={() => {
+                      invalidateClientScores();
+                      setScoresRetry((version) => version + 1);
+                    }}
+                    onCity={setCity}
+                    onSegments={setClientSegments}
+                    onDivisions={setClientDivisions}
+                    onSort={setClientSort}
+                    onReset={() => {
+                      setCity('');
+                      setClientSegments([]);
+                      setClientDivisions([]);
+                      setClientSort('name');
+                    }}
+                    onClose={() => setFiltersOpen(false)}
+                  />
                 )}
+                {!filtersOpen &&
+                  (clientSort === 'processed' || clientSort === 'processedAsc') &&
+                  (scoresLoading ? (
+                    <p role="status">Загрузка проработки клиентов…</p>
+                  ) : scoresError ? (
+                    <p className="error" role="alert">
+                      {scoresError}
+                      <button
+                        type="button"
+                        onClick={() => setScoresRetry((version) => version + 1)}
+                      >
+                        Повторить
+                      </button>
+                    </p>
+                  ) : null)}
                 <div className="pico-client-list">
                   {[...visible]
-                    .sort((a, b) =>
-                      clientSort === 'potential'
-                        ? (b.potential || 0) - (a.potential || 0)
-                        : clientSort === 'updated'
-                          ? b.updatedAt.localeCompare(a.updatedAt)
-                          : a.name.localeCompare(b.name, 'ru'),
-                    )
+                    .sort((a, b) => compareClients(a, b, clientSort, clientScores, companies))
                     .map((c) => (
                       <ClientRow
                         key={c.id}
                         company={c}
                         actorRole={user.role}
+                        employeeId={employeeId}
+                        score={processedSort ? clientScores[c.id] : undefined}
                         revealVersion={clientRevealVersion}
                         onReveal={(id) => {
                           setQuery('');
                           setCity('');
-                          setSegment('');
-                          setDivision('');
+                          setClientSegments([]);
+                          setClientDivisions([]);
                           setClientStatus('all');
                           setCreatedClientId(id);
                           setClientRevealVersion((version) => version + 1);
@@ -1118,8 +1156,8 @@ function App() {
               setTab('companies');
               setQuery('');
               setCity('');
-              setSegment('');
-              setDivision('');
+              setClientSegments([]);
+              setClientDivisions([]);
               setClientStatus('all');
               setConfirmDiscardClient(false);
               setCreate(false);

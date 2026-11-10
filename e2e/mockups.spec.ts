@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { prepareDemoAuth, pickInline } from './helpers';
+import { browserToday, prepareDemoAuth, pickInline } from './helpers';
 test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
 async function login(page: Page) {
@@ -243,7 +243,7 @@ test('Mockups: project equipment, participant and typed timed task persist; reje
   const task = page.getByRole('dialog', { name: 'Новая задача', exact: true });
   await pickInline(page, task, 'Клиент', company.name);
   await task.getByLabel('Задача', { exact: true }).fill('Звонок QA ' + suffix);
-  await task.getByLabel('Срок', { exact: true }).fill(new Date().toISOString().slice(0, 10));
+  await task.getByLabel('Срок', { exact: true }).fill(await browserToday(page));
   await task.getByRole('button', { name: 'Звонок', exact: true }).click();
   await task.getByLabel('Время').fill('12:30');
   await pickInline(page, task, 'Контакт', contact.data.name);
@@ -270,18 +270,34 @@ test('Mockups: project equipment, participant and typed timed task persist; reje
   const detail = page.getByRole('dialog', { name: 'Звонок QA ' + suffix, exact: true });
   await expect(detail).toContainText('12:30');
   await expect(detail).toContainText('Иван ' + suffix);
-  await detail.getByRole('button', { name: 'Отложить', exact: true }).click();
+  await expect(detail.getByRole('button', { name: 'Отложить', exact: true })).toHaveCount(0);
+  await detail.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await nav(page, 'Главная');
+  const homeTask = page
+    .getByRole('region', { name: 'Сегодня', exact: true })
+    .locator('.pico-task-row')
+    .filter({ hasText: 'Звонок QA ' + suffix });
+  await homeTask.locator('.task-text').click();
+  await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
   const postpone = page.getByRole('dialog', { name: 'Отложить задачу', exact: true });
   await postpone.getByRole('button', { name: /^Завтра утром/ }).click();
   await postpone.getByLabel('Время', { exact: true }).fill('10:00');
   const postponedDate = await postpone.getByLabel('Дата', { exact: true }).inputValue();
   await postpone.getByRole('button', { name: 'Отложить', exact: true }).click();
+  await nav(page, 'Задачи');
   await page
     .getByRole('button')
     .filter({ has: page.getByText('Звонок QA ' + suffix, { exact: true }) })
     .click();
   await expect(detail).toContainText('10:00');
+  const completion = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' && /\/api\/records\//.test(response.url()),
+  );
   await detail.getByRole('button', { name: 'Выполнено', exact: true }).click();
+  await expect(detail).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeVisible();
+  expect((await completion).ok()).toBeTruthy();
   const final = await api(page, `/companies/${company.id}`, undefined, 'GET');
   const t = final.records.find((r: any) => r.kind === 'task');
   expect(t.data).toMatchObject({
