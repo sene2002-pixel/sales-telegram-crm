@@ -5374,3 +5374,23 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
 body:has(.pico-client-filters) .pico-bottom-nav {
   display: none;
 }
+
+/* Each task moves as one cell; revealed actions sit directly on the page surface. */
+.pico-compact-list.pico-task-list {
+  display: grid;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+}
+.pico-task-list .pico-task-row.task-row {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.pico-task-list > .cc-swipe {
+  border-radius: 16px;
+}
+.pico-task-list > .cc-swipe > .cc-swipe-content {
+  background: transparent;
+}

@@ -120,12 +120,14 @@ export function SwipeAction({
   onDelete,
   onEdit,
   confirmation,
+  confirmDelete = true,
   disabled = false,
 }: {
   children: ReactNode;
   label: string;
   onDelete?: () => Promise<void>;
   onEdit?: () => void;
+  confirmDelete?: boolean;
   confirmation?: {
     title: string;
     message: string;
@@ -235,8 +237,29 @@ export function SwipeAction({
       window.visualViewport?.removeEventListener('scroll', schedule);
     };
   }, [revealed]);
+  async function performDelete() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await onDelete?.();
+      setConfirm(false);
+      setRevealed(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
   return (
     <>
+      {!confirmDelete && error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
       <div
         ref={swipeRef}
         tabIndex={onEdit || onDelete ? 0 : undefined}
@@ -371,7 +394,8 @@ export function SwipeAction({
                     if (revealed) {
                       suppressClick.current = false;
                       setError('');
-                      setConfirm(true);
+                      if (confirmDelete) setConfirm(true);
+                      else void performDelete();
                     }
                   }}
                 >
@@ -402,22 +426,7 @@ export function SwipeAction({
             <button
               className={confirmation ? 'primary' : 'danger'}
               disabled={busy}
-              onClick={async () => {
-                if (inFlight.current) return;
-                inFlight.current = true;
-                setBusy(true);
-                setError('');
-                try {
-                  await onDelete?.();
-                  setConfirm(false);
-                  setRevealed(false);
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  inFlight.current = false;
-                  setBusy(false);
-                }
-              }}
+              onClick={() => void performDelete()}
             >
               {busy
                 ? confirmation?.pending || 'Удаляем…'

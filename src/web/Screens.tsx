@@ -1,3 +1,4 @@
+import { SwipeAction } from './ClientCardWidgets';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { useTaskActions } from './TaskActions';
 import { compactMoney, fullMoney } from './api';
@@ -314,7 +315,7 @@ export function TaskList({
           {error}
         </p>
       )}
-      <div className="pico-compact-list">
+      <div className="pico-compact-list pico-task-list">
         {taskActions
           .project(list)
           .filter(
@@ -323,102 +324,119 @@ export function TaskList({
                 (pending) => pending.task.id === task.id && pending.action === 'deleted',
               ),
           )
-          .map((t) => (
-            <article
-              className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
-              key={t.id}
-            >
-              <span
-                className={
-                  'checkbox task-type-' +
-                  (t.data.type || 'reminder') +
-                  ' ' +
-                  (t.data.done ? 'checked' : '')
-                }
-                aria-hidden="true"
+          .map((t) => {
+            const open = () => {
+              if (inlineActions) {
+                setExpanded(expanded === t.id ? '' : t.id);
+                return;
+              }
+              setSelected(t);
+              setDue(t.data.due || today());
+              setTime(t.data.time || '');
+              setError('');
+            };
+            const row = (
+              <article
+                className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
+                key={t.id}
               >
-                <Icon
-                  name={
-                    t.data.deleted ? 'trash' : t.data.done ? 'check' : t.data.type || 'reminder'
-                  }
-                  size={21}
-                />
-              </span>
-              <button
-                className="task-text"
-                disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
-                onClick={() => {
-                  if (inlineActions) {
-                    setExpanded(expanded === t.id ? '' : t.id);
-                    return;
-                  }
-                  setSelected(t);
-                  setDue(t.data.due || today());
-                  setTime(t.data.time || '');
-                  setError('');
-                }}
-              >
-                <strong
+                <span
                   className={
-                    'pico-two-lines' +
-                    (t.data.done ||
-                    taskActions.queue.some(
-                      (pending) => pending.task.id === t.id && pending.action === 'done',
-                    )
-                      ? ' done'
-                      : '')
+                    'checkbox task-type-' +
+                    (t.data.type || 'reminder') +
+                    ' ' +
+                    (t.data.done ? 'checked' : '')
                   }
-                  title={t.data.text}
+                  aria-hidden="true"
                 >
-                  {t.data.text}
-                </strong>
-                <small>
-                  {props.projects.find((p) => p.id === t.projectId)?.data.name ||
-                    t.projectName ||
-                    companyDisplayName(t.companyName)}
-                  {t.data.due
-                    ? ' · ' +
-                      (inlineActions
-                        ? ''
-                        : new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
-                            day: 'numeric',
-                            month: 'short',
-                          }) + ' · ') +
-                      (t.data.time || 'Без времени')
-                    : ' · Без срока'}
-                </small>
-              </button>
-              {!t.data.done && t.data.due && t.data.due < today() && (
-                <span className="status failed">Просрочено</span>
-              )}
-              {t.data.deleted && <span className="status">Удалена</span>}
-              <Icon name="chevron-right" size={16} />
-              {inlineActions && expanded === t.id && (
-                <div className="pico-task-actions">
-                  <button disabled={busy} onClick={() => update(t, { done: !t.data.done })}>
-                    <Icon name="check" size={14} />
-                    {t.data.done ? 'Вернуть' : 'Выполнено'}
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      setSelected(t);
-                      setPostpone(true);
-                      setDue(t.data.due || today());
-                      setTime(t.data.time || '');
-                    }}
+                  <Icon
+                    name={
+                      t.data.deleted ? 'trash' : t.data.done ? 'check' : t.data.type || 'reminder'
+                    }
+                    size={21}
+                  />
+                </span>
+                <button
+                  className="task-text"
+                  disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
+                  onClick={open}
+                >
+                  <strong
+                    className={
+                      'pico-two-lines' +
+                      (t.data.done ||
+                      taskActions.queue.some(
+                        (pending) => pending.task.id === t.id && pending.action === 'done',
+                      )
+                        ? ' done'
+                        : '')
+                    }
+                    title={t.data.text}
                   >
-                    <Icon name="clock" size={14} />
-                    Отложить
-                  </button>
-                  <button disabled={busy} onClick={() => remove(t)}>
-                    <Icon name="trash" size={14} />
-                    Удалить
-                  </button>
-                </div>
-              )}
-            </article>
-          ))}
+                    {t.data.text}
+                  </strong>
+                  <small>
+                    {props.projects.find((p) => p.id === t.projectId)?.data.name ||
+                      t.projectName ||
+                      companyDisplayName(t.companyName)}
+                    {t.data.due
+                      ? ' · ' +
+                        (inlineActions
+                          ? ''
+                          : new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
+                              day: 'numeric',
+                              month: 'short',
+                            }) + ' · ') +
+                        (t.data.time || 'Без времени')
+                      : ' · Без срока'}
+                  </small>
+                </button>
+                {!t.data.done && t.data.due && t.data.due < today() && (
+                  <span className="status failed">Просрочено</span>
+                )}
+                {t.data.deleted && <span className="status">Удалена</span>}
+                <Icon name="chevron-right" size={16} />
+                {inlineActions && expanded === t.id && (
+                  <div className="pico-task-actions">
+                    <button disabled={busy} onClick={() => update(t, { done: !t.data.done })}>
+                      <Icon name="check" size={14} />
+                      {t.data.done ? 'Вернуть' : 'Выполнено'}
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => {
+                        setSelected(t);
+                        setPostpone(true);
+                        setDue(t.data.due || today());
+                        setTime(t.data.time || '');
+                      }}
+                    >
+                      <Icon name="clock" size={14} />
+                      Отложить
+                    </button>
+                    <button disabled={busy} onClick={() => remove(t)}>
+                      <Icon name="trash" size={14} />
+                      Удалить
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+            return t.data.done || t.data.deleted ? (
+              row
+            ) : (
+              <SwipeAction
+                key={t.id}
+                label={`задачу «${t.data.text}»`}
+                onEdit={open}
+                onDelete={async () => remove(t)}
+                confirmDelete={false}
+                disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
+              >
+                {row}
+              </SwipeAction>
+            );
+          })}
       </div>
       {!list.length && (
         <Empty
