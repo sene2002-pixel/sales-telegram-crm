@@ -1,0 +1,29 @@
+# Task detail sheet and cancellable completion/deletion
+
+Source: Asana1220222822206098; lead read full task description, linked requirements and available materials; no attachments/comments. Base c1b15db contains the preceding equipment feature. Scope excludes broad undo for companies/equipment/contacts and any new restore gesture.
+
+## Requirements / design
+
+Content-height white bottom sheet, top radius28, same dimmed backdrop,20px top/16px horizontal padding, no handle. Bell44px badge,18px/23px/800 title clamped to3lines, close target44px with30px gray circle. Seven grouped44px field rows: date/time/type/client/project/contact/assignee. Existing Pico advice reused. Date localized in Russian. Each editable row opens an explicit Save/Cancel picker; client opens its company without moving the task. Equal48px Delete/Done actions replace the detail Postpone action. Existing home inline actions retain their controls: task Done/Delete/Restore share the same undo queue, while Postpone remains an independent date edit.
+
+Actions close the detail and enqueue a full3second Undo window, shown above navigation with a decreasing fill and no countdown digits. Done rows stay struck through during the window; deletion hides the row immediately. Undo sends no API request. FIFO gives every queued action its own full window. After expiry the existing versioned record mutation persists completion or data.deleted=true; records remain in closed tasks and can explicitly be restored. Explicit Restore also has a3second undo window (“Задача снова в работе”); no restore gesture is added.
+
+## Architecture / security
+
+TaskActionsProvider is owned by the authenticated App and keyed to token/employee/scope generation: navigation does not lose pending actions; account/scope change cancels unsubmitted timers. Captured token is checked before mutation. A synchronous committing ref prevents an Undo event at expiry from claiming cancellation after dispatch. No retries or compensating writes. Errors remove optimistic state and are shown globally. API failures preserve picker draft and allow explicit retry with the same original version;409 never upgrades it silently.
+
+PATCH records accepts optional task-only projectId/assigneeId. Company identity immutable; source ACL/version retained. Project/contact links stay in the source company. Assignment reuses active employee scope rules and the user-management advisory lock before the CRM lock. New assignees must already be able to read the company: its manager-owner or an eligible leader/admin; team membership alone never expands company ACL. UI applies the same reader restriction, using the company detail when it is not in the current list; an unchanged historical assignee remains visible as a disabled option. data.deleted is the only new JSON flag, optional for compatibility. Server forces deleted→done=true,completedAt=null; omitted flag preserves history. Deleted records reject edits until explicit restore with unchanged task fields. Task scores exclude deleted tasks. No table migration or hard deletion; additive JSON state, repeatable across existing data. Rollback frontend/backend together; older reads see done=true and do not send reminders for deleted entries.
+
+Implementation and build passed. Two new server regressions passed: metadata ACL/links/version/deleted normalization/read-only/restore/legacy compatibility, and deleted-task score/regularity exclusion. Reviewer corrected retry gating, current unavailable option display, assignee lock revalidation and unreachable restore branch; QA corrected equal button sizing at320px. Final integrated QA evidence is recorded by lead; no commit/push/deployment by implementer.
+
+## Integrated acceptance
+
+- Lead inspected the actual Claude task-sheet artboard and independent320px rendered sheet/toast. Layout fixes: equal minmax(0,1fr) footer buttons; required blue22px circle/white toast symbol and exact0 6px18px rgba(31,122,234,.16) shadow. At320px44px side margins and40px height remain, short text fits after scoped8px padding/6px gap. Strict icon-color/size regression added.
+- QA1:25 new/task-home browser checks passed,1 intentional mobile1440skip; then19 existing completion-control/keyboard checks passed,1 intentionalhardwarekeyboard skip. Old completion tests were updated to the explicit new deferred UX while retaining429/409/no-autoretry/explicit-version-refresh guarantees.
+- QA2:3 independent width scenarios plus real API authorization negatives,500 picker retry, queued actions across navigation, FIFO full-window timing, scope/logout cancellation. All passed. Additional company-reader assignment intersection probes passed; unchanged historical assignment preserved.
+- Full Node22 check:525 server tests,7 operations tests, TypeScript and production build passed. After the final narrow assignment restriction, the two affected server regressions and build passed again; final visual CSS correction also rebuilt successfully. Physical Telegram was not tested.
+- Actual diff reviewed for duplicates, dead code and unnecessary dependencies. Earlier review missed the toast symbol/shadow visual criteria; these are now individually verified by computed style and screenshot. No remaining blocking findings.
+- Known recovery state: when mutation succeeds but list refresh fails, a clear saved-but-refresh-failed message requests refresh; no automatic mutation retry is performed.
+- Linked broad undo and full task-cell/sweep tasks remain separate and are not claimed complete. No new restoration gesture or company access expansion.
+
+Final combined task-detail/completion-control/equipment regression:32 passed,2 intentional mobilelandscape skips (40.2s). Format and diff checks clean. Ready for repository review/release; no push/merge/deployment yet. Asana completion records implementation acceptance, not production rollout.

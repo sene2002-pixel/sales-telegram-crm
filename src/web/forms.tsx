@@ -67,6 +67,7 @@ export function Modal({
   closeDisabled = false,
   titleIcon,
   sheet = false,
+  showHandle = true,
   swipeToClose = false,
   title,
   onClose,
@@ -77,6 +78,7 @@ export function Modal({
   closeDisabled?: boolean;
   titleIcon?: ReactNode;
   sheet?: boolean;
+  showHandle?: boolean;
   swipeToClose?: boolean;
   title: string;
   onClose: () => void;
@@ -185,11 +187,11 @@ export function Modal({
           swipeStart.current = null;
         }}
       >
-        {sheet && <div className="client-sheet-handle" aria-hidden="true" />}
+        {sheet && showHandle && <div className="client-sheet-handle" aria-hidden="true" />}
         <div className="section-head">
           <h2 className={titleIcon ? 'pico-modal-icon-title' : undefined}>
             {titleIcon}
-            {title}
+            <span className="pico-modal-title-text">{title}</span>
           </h2>
           <button
             type="button"

@@ -1,3 +1,4 @@
+import { TaskActionsProvider } from './TaskActions';
 import { companyDisplayName } from '../shared/company-display-name';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -564,7 +565,7 @@ function App() {
       (!segment || c.segment === segment) &&
       (!division || c.divisions[division as keyof typeof c.divisions] != null),
   );
-  return (
+  const application = (
     <div
       className={`app-shell${window.Telegram?.WebApp?.initData ? ' telegram-native-header' : ''}`}
     >
@@ -1166,6 +1167,15 @@ function App() {
         />
       )}
     </div>
+  );
+  return (
+    <TaskActionsProvider
+      key={`${token}:${employeeId}:${scopeVersion}`}
+      session={token}
+      onChanged={refresh}
+    >
+      {application}
+    </TaskActionsProvider>
   );
 }
 createRoot(document.getElementById('root')!).render(

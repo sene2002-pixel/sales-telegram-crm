@@ -4999,3 +4999,218 @@ html[data-pico-number-open='true'] .company-form-body {
   display: block;
   overflow-wrap: anywhere;
 }
+
+/* Task detail sheet follows the same modal lifecycle, without a drag handle. */
+.modal.client-sheet:has(.pico-task-detail-body) {
+  padding: 20px 16px calc(16px + var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+.modal.client-sheet:has(.pico-task-detail-body) > .section-head {
+  position: static;
+  top: auto;
+  margin: 0 0 16px;
+  padding: 0;
+  align-items: flex-start;
+}
+.modal.client-sheet:has(.pico-task-detail-body) > .section-head h2 {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: #1a2151;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 23px;
+}
+.pico-task-sheet-badge {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: #ffebdd;
+  color: #f07a1a;
+  display: grid;
+  place-items: center;
+}
+.modal.client-sheet:has(.pico-task-detail-body) > .section-head .icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f3f6fb 15px, transparent 15px);
+  color: #8c96ab;
+}
+.pico-task-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pico-task-field-group {
+  overflow: hidden;
+  border: 1px solid #e6ebf3;
+  border-radius: 16px;
+}
+.pico-task-field-group > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  text-align: left;
+  font-size: 14px;
+}
+.pico-task-field-group > button + button {
+  border-top: 1px solid #eef2f8;
+}
+.pico-task-field-group > button > span:first-child {
+  color: #7a8299;
+  font-weight: 600;
+}
+.pico-task-field-group > button > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-weight: 700;
+  color: #1a2151;
+}
+.pico-task-field-group > button > strong.is-empty {
+  color: #a3abbf;
+}
+.pico-task-field-group > button > svg {
+  color: #a3abbf;
+}
+.pico-task-field-group .pico-contact-label small {
+  display: none;
+}
+.pico-task-detail-body .pico-task-advice {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #eaf2fe;
+  border: 1px solid #c9dcfa;
+}
+.pico-task-sheet-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.pico-task-sheet-actions > button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.pico-task-sheet-actions > .pico-task-sheet-delete {
+  background: #fff;
+  border: 1px solid #f3d3d2;
+  color: #d9534f;
+}
+.pico-task-sheet-actions > .pico-task-sheet-done {
+  background: #1f7aea;
+  border: 1px solid #1f7aea;
+  color: #fff;
+}
+body:has(.pico-task-detail-body) .pico-bottom-nav {
+  display: none;
+}
+.pico-undo-toast {
+  position: fixed;
+  z-index: 11000;
+  left: 44px;
+  right: 44px;
+  bottom: calc(var(--pico-bottom-offset, 0px) + var(--pico-safe-bottom, 0px) + 82px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid #c9dcfa;
+  background: #eaf2fe;
+  box-shadow: 0 6px 18px rgba(31, 122, 234, 0.16);
+  color: #1a2151;
+  font-size: 13px;
+  font-weight: 700;
+}
+.pico-undo-toast > svg,
+.pico-undo-toast > span:not(.pico-undo-fill),
+.pico-undo-toast > button {
+  position: relative;
+  z-index: 1;
+}
+.pico-undo-toast > svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 4px;
+  border-radius: 50%;
+  background: #1f7aea;
+  color: #fff;
+}
+.pico-undo-toast > button {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: #1f7aea;
+}
+.pico-undo-fill {
+  position: absolute;
+  inset: 0;
+  background: #d6e6fc;
+  transform-origin: left;
+  animation: pico-undo-countdown 3s linear forwards;
+}
+@keyframes pico-undo-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+.pico-task-action-error {
+  position: fixed;
+  z-index: 11000;
+  bottom: 100px;
+  left: 16px;
+  right: 16px;
+  padding: 12px;
+  background: #fff1eb;
+  border: 1px solid #f3d3d2;
+  color: #a33a31;
+  border-radius: 12px;
+}
+@media (min-width: 761px) {
+  .pico-undo-toast {
+    left: auto;
+    right: 32px;
+    width: 360px;
+    bottom: 24px;
+  }
+}
+.modal.client-sheet:has(.pico-task-detail-body) .pico-modal-title-text {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}

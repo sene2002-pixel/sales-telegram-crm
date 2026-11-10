@@ -413,7 +413,9 @@ export function summarizeClientAnalytics(
       projectCutoff = subtractCalendarMonths(cutoff, settings.projectMonths);
     const scores: ClientScore[] = visible.map(({ company, data }) => {
       const own = alive.filter((entry) => entry.record.company_id === company.id);
-      const tasks = own.filter((entry) => entry.record.kind === 'task');
+      const tasks = own.filter(
+        (entry) => entry.record.kind === 'task' && !entry.state!.data.deleted,
+      );
       const meetings = tasks.filter(
         (entry) => entry.state!.data.type === 'meeting' && entry.state!.data.done === true,
       );

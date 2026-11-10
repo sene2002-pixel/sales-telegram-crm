@@ -856,13 +856,18 @@ add(
   ref('Record'),
   {
     body: jsonBody(
-      object({
-        version: positiveInteger,
-        data: { anyOf: ['ContactInput', 'ProjectInput', 'TaskInput'].map(ref) },
-      }),
+      object(
+        {
+          version: positiveInteger,
+          data: { anyOf: ['ContactInput', 'ProjectInput', 'TaskInput'].map(ref) },
+          projectId: nullable(uuid),
+          assigneeId: nullable(uuid),
+        },
+        ['version', 'data'],
+      ),
     ),
     description:
-      'Только contact/project/task; нельзя редактировать activity/file этим маршрутом. Версия и ссылки проверяются, исторические неизменённые связи могут сохраняться. Источник контакта не изменяется; completedAt задачи устанавливает сервер.',
+      'Только contact/project/task; нельзя редактировать activity/file этим маршрутом. Версия и ссылки проверяются, исторические неизменённые связи могут сохраняться. Источник контакта не изменяется; completedAt задачи устанавливает сервер. Необязательные projectId/assigneeId доступны только задачам: проект принадлежит текущей компании, новый ответственный — активный сотрудник из доступной команды, который уже имеет доступ к компании (её менеджер-владелец либо руководитель/администратор); companyId менять нельзя. Для закрытой удалённой задачи data.deleted=true подразумевает done=true и completedAt=null; запись остаётся в списке закрытых. Пропущенный deleted сохраняет прежнее значение. Восстановление явно передаёт deleted=false, done=false с неизменёнными остальными полями; до этого редактирование запрещено.',
   },
 );
 add('delete', '/tasks/{id}', 'deleteTask', 'Мягко удалить задачу по версии', 'Задачи', ref('Ok'), {
