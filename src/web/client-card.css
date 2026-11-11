@@ -818,6 +818,11 @@
   height: 40px;
 }
 .cc-amount-label {
+  flex: 1 1 auto;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   min-width: 0;
   font-size: 14px;
   font-weight: 700;
@@ -845,7 +850,6 @@ button.cc-amount-value {
 .cc-amount-editor input,
 button.cc-amount-value > span {
   min-width: 1ch;
-  max-width: 12ch;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -907,15 +911,7 @@ button.cc-amount-value small {
   box-shadow: none;
 }
 .cc-amount-editor input {
-  max-width: none;
   flex: none;
-}
-.cc-equipment:has(.cc-amount-editor) {
-  min-height: 40px;
-  height: auto;
-}
-.cc-amount-label {
-  flex: 1 1 auto;
 }
 
 /* Equipment creation reuses the card sheet and the shared Pico digit grid. */
