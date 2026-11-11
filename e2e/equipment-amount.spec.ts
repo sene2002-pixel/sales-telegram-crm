@@ -64,6 +64,19 @@ for (const width of [320, 390]) {
     await page.screenshot({
       path: `/tmp/pico-amount-evidence/edit-${width}-${info.project.name}.png`,
     });
+    await input.fill('999999,999999');
+    expect((await row.boundingBox())!.height).toBe(40);
+    await expect(input).toHaveValue('999999,999999');
+    expect((await input.boundingBox())!.x).toBeGreaterThanOrEqual(before.x);
+    expect(
+      Math.abs((await row.locator('small').boundingBox())!.x - unitBefore.x),
+    ).toBeLessThanOrEqual(1);
+    const erase = page.getByRole('button', { name: 'Стереть', exact: true });
+    await erase.click();
+    await expect(input).toHaveValue('999999,99999');
+    await expect
+      .poll(() => input.evaluate((element) => (element as HTMLInputElement).selectionStart))
+      .toBe(12);
     await input.fill('2,5');
     await page
       .getByRole('region', { name: 'Клавиатура Pico', exact: true })
@@ -147,5 +160,16 @@ for (const width of [320, 390]) {
     await expect(open).toBeVisible();
     expect(patches).toBe(4);
     expect((await fresh()).divisions.lv).toBe(1_250_000);
+
+    await open.click();
+    await input.fill('999996,999999');
+    await input.press('Enter');
+    await expect(open).toBeVisible();
+    await expect(open.locator('span')).toHaveText('999996.999999');
+    expect((await row.boundingBox())!.height).toBe(40);
+    const amountBox = (await open.locator('span').boundingBox())!;
+    const unitBox = (await open.locator('small').boundingBox())!;
+    expect(amountBox.x + amountBox.width).toBeLessThan(unitBox.x);
+    expect(Math.abs(unitBox.x - unitBefore.x)).toBeLessThanOrEqual(1);
   });
 }

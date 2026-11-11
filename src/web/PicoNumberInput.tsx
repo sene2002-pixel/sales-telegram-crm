@@ -35,7 +35,7 @@ export function PicoNumberKeys({
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => onKey(digit)}
         >
-          {digit === 'erase' ? <Icon name="close" size={22} /> : digit}
+          {digit === 'erase' ? <Icon name="backspace" size={22} /> : digit}
         </button>
       ))}
     </div>

@@ -21,7 +21,9 @@ export const InlineAmount = forwardRef<
   return (
     <div className="cc-amount-group">
       <div className={`cc-equipment ${editing ? 'cc-equipment-editing' : ''}`} onClick={begin}>
-        <span className="cc-amount-label">{label}</span>
+        <span className="cc-amount-label" title={label}>
+          {label}
+        </span>
         {editing ? (
           <div className="cc-amount-editor">
             <PicoNumberInput

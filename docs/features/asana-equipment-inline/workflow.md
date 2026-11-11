@@ -26,3 +26,13 @@ Designer iteration 1: both reviewed real read/edit/error screenshots at 320/390.
 - Full GitHub CI is a merge gate; final results are on the PR.
 
 Physical iOS/Android keyboards were not tested. Keyboard screenshots use the existing labeled viewport simulation and do not constitute physical-device evidence.
+
+## Pico keypad follow-up
+
+The follow-up asks for the Pico keypad's outlined backspace icon and stable equipment rows during amount editing. QA reproduced a 40px row growing to 56px at 320px width with the valid value `999999,999999`. [Asana task 1220115990383468](https://app.asana.com/1/1218599458205876/project/1218585786925552/task/1220115990383468).
+
+The shared keypad now uses the backspace glyph from the icon set. The equipment row reserves the amount and unit's intrinsic width and clamps the label to two lines. The title and control's accessible name retain the full label. The browser regression covers the maximum-length value in editing and read mode, stable unit position, erase and caret placement. Revert the UI commit to roll back.
+
+Review confirmed that the shared icon and keypad are reused and the obsolete automatic-height and width overrides are removed. No duplicated logic or unused code was found.
+
+QA1 passed 24 browser cases and skipped two intentional mobile landscape cases in the broader regression run. The four amount cases initially used a fixture whose total exceeded the existing cap. After correcting the saved fixture to a 13-character amount within the cap, those four cases passed in both QA1 and QA2 at 320px and 390px in desktop and mobile Chromium. The draft test still covers `999999,999999`. The full `npm run check` passed on Node 22.23.4 with 529 server tests, seven ops tests and the build. Prettier and `git diff --check` passed.

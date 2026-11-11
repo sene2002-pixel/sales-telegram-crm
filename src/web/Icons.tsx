@@ -161,6 +161,12 @@ const paths: Record<string, ReactNode> = {
   plus: <path d="M12 4v16M4 12h16" />,
   chevron: <path d="m9 5 7 7-7 7" />,
   check: <path d="m5 12 4 4L19 6" />,
+  backspace: (
+    <>
+      <path d="M9 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 12Z" />
+      <path d="m12 9 6 6m0-6-6 6" />
+    </>
+  ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
   trash: (
     <>
