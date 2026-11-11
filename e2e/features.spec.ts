@@ -102,10 +102,10 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
   await page.getByRole('textbox', { name: 'Поиск компаний' }).fill(prefix);
   await expect(page.locator('.pico-client-accordion')).toHaveCount(2);
   await page.getByRole('button', { name: 'Фильтры клиентов' }).click();
-  await page.getByRole('combobox', { name: 'Все города' }).selectOption('Москва');
+  await page.getByRole('combobox', { name: 'Город', exact: true }).selectOption('Москва');
   await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
-  await page.getByRole('combobox', { name: 'Все города' }).selectOption('');
+  await page.getByRole('combobox', { name: 'Город', exact: true }).selectOption('');
   await page
     .getByRole('group', { name: 'Категория клиента', exact: true })
     .getByRole('button', { name: 'Подрядчик', exact: true })
@@ -119,7 +119,7 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Москва');
   await page.getByRole('button', { name: 'Сбросить', exact: true }).click();
   await page
-    .getByRole('dialog', { name: 'Фильтры клиентов' })
+    .getByRole('dialog', { name: 'Фильтры', exact: true })
     .getByRole('button', { name: /^Показать/ })
     .click();
   await page.getByRole('button', { name: 'Закрытые', exact: true }).click();

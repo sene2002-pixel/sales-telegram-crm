@@ -1,3 +1,6 @@
+import { SwipeAction } from './ClientCardWidgets';
+import { TaskDetailSheet } from './TaskDetailSheet';
+import { useTaskActions } from './TaskActions';
 import { compactMoney, fullMoney } from './api';
 import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useState } from 'react';
@@ -260,6 +263,7 @@ export function TaskList({
   inlineActions = false,
   ...props
 }: Common & { list: NamedRecord[]; inlineActions?: boolean }) {
+  const taskActions = useTaskActions();
   const [selected, setSelected] = useState<NamedRecord | null>(null),
     [postpone, setPostpone] = useState(false),
     [due, setDue] = useState(today()),
@@ -267,22 +271,18 @@ export function TaskList({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [expanded, setExpanded] = useState('');
-  async function remove(task: NamedRecord) {
-    if (!window.confirm('Удалить задачу?')) return;
-    setBusy(true);
-    setError('');
-    try {
-      await api(`/tasks/${task.id}`, 'DELETE', { version: task.version });
-      await props.onChanged();
-      setSelected(null);
-      setExpanded('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  function remove(task: NamedRecord) {
+    taskActions.schedule(task, 'deleted');
+    setSelected(null);
+    setExpanded('');
   }
   async function update(task: NamedRecord, changes: Record<string, unknown>) {
+    if (typeof changes.done === 'boolean') {
+      taskActions.schedule(task, changes.done ? 'done' : 'restore');
+      setSelected(null);
+      setExpanded('');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -292,6 +292,7 @@ export function TaskList({
           text: task.data.text,
           due: task.data.due,
           done: task.data.done,
+          deleted: task.data.deleted,
           type: task.data.type || 'reminder',
           time: task.data.time || null,
           contactId: task.data.contactId || null,
@@ -314,88 +315,128 @@ export function TaskList({
           {error}
         </p>
       )}
-      <div className="pico-compact-list">
-        {list.map((t) => (
-          <article
-            className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
-            key={t.id}
-          >
-            <span
-              className={
-                'checkbox task-type-' +
-                (t.data.type || 'reminder') +
-                ' ' +
-                (t.data.done ? 'checked' : '')
+      <div className="pico-compact-list pico-task-list">
+        {taskActions
+          .project(list)
+          .filter(
+            (task) =>
+              !taskActions.queue.some(
+                (pending) => pending.task.id === task.id && pending.action === 'deleted',
+              ),
+          )
+          .map((t) => {
+            const open = () => {
+              if (inlineActions) {
+                setExpanded(expanded === t.id ? '' : t.id);
+                return;
               }
-              aria-hidden="true"
-            >
-              <Icon name={t.data.done ? 'check' : t.data.type || 'reminder'} size={21} />
-            </span>
-            <button
-              className="task-text"
-              onClick={() => {
-                if (inlineActions) {
-                  setExpanded(expanded === t.id ? '' : t.id);
-                  return;
-                }
-                setSelected(t);
-                setDue(t.data.due || today());
-                setTime(t.data.time || '');
-                setError('');
-              }}
-            >
-              <strong
-                className={'pico-two-lines' + (t.data.done ? ' done' : '')}
-                title={t.data.text}
+              setSelected(t);
+              setDue(t.data.due || today());
+              setTime(t.data.time || '');
+              setError('');
+            };
+            const row = (
+              <article
+                className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
+                key={t.id}
               >
-                {t.data.text}
-              </strong>
-              <small>
-                {props.projects.find((p) => p.id === t.projectId)?.data.name ||
-                  t.projectName ||
-                  companyDisplayName(t.companyName)}
-                {t.data.due
-                  ? ' · ' +
-                    (inlineActions
-                      ? ''
-                      : new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
-                          day: 'numeric',
-                          month: 'short',
-                        }) + ' · ') +
-                    (t.data.time || 'Без времени')
-                  : ' · Без срока'}
-              </small>
-            </button>
-            {!t.data.done && t.data.due && t.data.due < today() && (
-              <span className="status failed">Просрочено</span>
-            )}
-            <Icon name="chevron-right" size={16} />
-            {inlineActions && expanded === t.id && (
-              <div className="pico-task-actions">
-                <button disabled={busy} onClick={() => update(t, { done: !t.data.done })}>
-                  <Icon name="check" size={14} />
-                  {t.data.done ? 'Вернуть' : 'Выполнено'}
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => {
-                    setSelected(t);
-                    setPostpone(true);
-                    setDue(t.data.due || today());
-                    setTime(t.data.time || '');
-                  }}
+                <span
+                  className={
+                    'checkbox task-type-' +
+                    (t.data.type || 'reminder') +
+                    ' ' +
+                    (t.data.done ? 'checked' : '')
+                  }
+                  aria-hidden="true"
                 >
-                  <Icon name="clock" size={14} />
-                  Отложить
+                  <Icon
+                    name={
+                      t.data.deleted ? 'trash' : t.data.done ? 'check' : t.data.type || 'reminder'
+                    }
+                    size={21}
+                  />
+                </span>
+                <button
+                  className="task-text"
+                  disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
+                  onClick={open}
+                >
+                  <strong
+                    className={
+                      'pico-two-lines' +
+                      (t.data.done ||
+                      taskActions.queue.some(
+                        (pending) => pending.task.id === t.id && pending.action === 'done',
+                      )
+                        ? ' done'
+                        : '')
+                    }
+                    title={t.data.text}
+                  >
+                    {t.data.text}
+                  </strong>
+                  <small>
+                    {props.projects.find((p) => p.id === t.projectId)?.data.name ||
+                      t.projectName ||
+                      companyDisplayName(t.companyName)}
+                    {t.data.due
+                      ? ' · ' +
+                        (inlineActions
+                          ? ''
+                          : new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
+                              day: 'numeric',
+                              month: 'short',
+                            }) + ' · ') +
+                        (t.data.time || 'Без времени')
+                      : ' · Без срока'}
+                  </small>
                 </button>
-                <button disabled={busy} onClick={() => remove(t)}>
-                  <Icon name="trash" size={14} />
-                  Удалить
-                </button>
-              </div>
-            )}
-          </article>
-        ))}
+                {!t.data.done && t.data.due && t.data.due < today() && (
+                  <span className="status failed">Просрочено</span>
+                )}
+                {t.data.deleted && <span className="status">Удалена</span>}
+                <Icon name="chevron-right" size={16} />
+                {inlineActions && expanded === t.id && (
+                  <div className="pico-task-actions">
+                    <button disabled={busy} onClick={() => update(t, { done: !t.data.done })}>
+                      <Icon name="check" size={14} />
+                      {t.data.done ? 'Вернуть' : 'Выполнено'}
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => {
+                        setSelected(t);
+                        setPostpone(true);
+                        setDue(t.data.due || today());
+                        setTime(t.data.time || '');
+                      }}
+                    >
+                      <Icon name="clock" size={14} />
+                      Отложить
+                    </button>
+                    <button disabled={busy} onClick={() => remove(t)}>
+                      <Icon name="trash" size={14} />
+                      Удалить
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+            return t.data.done || t.data.deleted ? (
+              row
+            ) : (
+              <SwipeAction
+                key={t.id}
+                label={`задачу «${t.data.text}»`}
+                onEdit={open}
+                onDelete={async () => remove(t)}
+                confirmDelete={false}
+                disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
+              >
+                {row}
+              </SwipeAction>
+            );
+          })}
       </div>
       {!list.length && (
         <Empty
@@ -404,18 +445,21 @@ export function TaskList({
           text="Создайте задачу или отправьте отчёт в чат Pico."
         />
       )}
-      {selected && (
-        <Modal
-          title={postpone ? 'Отложить задачу' : selected.data.text}
-          titleIcon={
-            !postpone ? (
-              <span className={'pico-detail-type task-type-' + (selected.data.type || 'reminder')}>
-                <span className="checkbox">
-                  <Icon name={selected.data.type || 'reminder'} size={16} />
-                </span>
-              </span>
-            ) : undefined
+      {selected && !postpone && (
+        <TaskDetailSheet
+          task={selected}
+          {...props}
+          advice={<TaskAdvice id={selected.id} />}
+          contactLabel={
+            <ContactLabel companyId={selected.companyId} contactId={selected.data.contactId} />
           }
+          onSaved={setSelected}
+          onClose={() => setSelected(null)}
+        />
+      )}
+      {selected && postpone && (
+        <Modal
+          title="Отложить задачу"
           onClose={() => {
             setSelected(null);
             setPostpone(false);
@@ -426,7 +470,7 @@ export function TaskList({
               {error}
             </p>
           )}
-          {postpone ? (
+          {
             <>
               <Field label="Дата">
                 <input type="date" required value={due} onChange={(e) => setDue(e.target.value)} />
@@ -497,85 +541,7 @@ export function TaskList({
                 Отложить
               </button>
             </>
-          ) : (
-            <>
-              <dl className="pico-detail-fields">
-                <dt>Дата</dt>
-                <dd>{selected.data.due || 'Без срока'}</dd>
-                <dt>Время</dt>
-                <dd>{selected.data.time || 'Не указано'}</dd>
-                <dt>Тип задачи</dt>
-                <dd>{taskTypeLabels[selected.data.type] || 'Напоминание'}</dd>
-                <dt>Клиент</dt>
-                <dd>{companyDisplayName(selected.companyName)}</dd>
-                <dt>Проект</dt>
-                <dd>
-                  {props.projects.find((p) => p.id === selected.projectId)?.data.name ||
-                    selected.projectName ||
-                    'Не выбран'}
-                </dd>
-                <dt>Контакт</dt>
-                <dd>
-                  <ContactLabel
-                    companyId={selected.companyId}
-                    contactId={selected.data.contactId}
-                  />
-                </dd>
-                <dt>Ответственный</dt>
-                <dd>
-                  {props.users.find((u) => u.id === selected.assigneeId)?.name || 'Не назначен'}
-                </dd>
-              </dl>
-              <TaskAdvice id={selected.id} />
-              <div className="actions pico-task-detail-actions">
-                <button onClick={() => setPostpone(true)} disabled={busy}>
-                  Отложить
-                </button>
-                <button
-                  className="primary"
-                  disabled={busy}
-                  onClick={() => update(selected, { done: !selected.data.done })}
-                >
-                  {selected.data.done ? 'Вернуть задачу' : 'Выполнено'}
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      const c =
-                        props.companies.find((c) => c.id === selected.companyId) ||
-                        (await api<{ company: Company }>(`/companies/${selected.companyId}`))
-                          .company;
-                      props.onCompany(c);
-                      setSelected(null);
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  Открыть клиента
-                </button>
-                <button
-                  className="danger"
-                  disabled={busy}
-                  onClick={async () => {
-                    if (!window.confirm('Удалить задачу?')) return;
-                    setBusy(true);
-                    try {
-                      await api(`/tasks/${selected.id}`, 'DELETE', { version: selected.version });
-                      await props.onChanged();
-                      setSelected(null);
-                    } catch (e) {
-                      setError((e as Error).message);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Удалить задачу
-                </button>
-              </div>
-            </>
-          )}
+          }
         </Modal>
       )}
     </>
@@ -590,9 +556,11 @@ export function HomeScreen(
     onCreateRecord: (kind: 'task' | 'project') => void;
   },
 ) {
+  const taskActions = useTaskActions();
+  const tasks = taskActions.project(props.tasks);
   const [introOpen, setIntroOpen] = useState(false);
   const active = props.companies.filter((c) => !c.archived && c.stage !== 'closed');
-  const open = props.tasks.filter((t) => !t.data.done);
+  const open = tasks.filter((t) => !t.data.done);
   const todays = open.filter((t) => t.data.due === today() && t.data.type !== 'meeting');
   const meetings = open
     .filter((t) => t.data.type === 'meeting')
@@ -723,6 +691,8 @@ export function TasksScreen(
     initialFilter?: 'open' | 'overdue' | 'today' | 'meetings';
   },
 ) {
+  const taskActions = useTaskActions();
+  const tasks = taskActions.project(props.tasks);
   const [query, setQuery] = useState(''),
     [filter, setFilter] = useState<string>(props.initialFilter === 'overdue' ? 'overdue' : 'open'),
     [month, setMonth] = useState(today().slice(0, 7)),
@@ -730,7 +700,7 @@ export function TasksScreen(
     [byDate, setByDate] = useState(!!props.calendarOnly || props.initialFilter === 'today'),
     [type, setType] = useState(props.initialFilter === 'meetings' ? 'meeting' : ''),
     [filtersOpen, setFiltersOpen] = useState(false);
-  const search = props.tasks.filter((t) =>
+  const search = tasks.filter((t) =>
     `${t.data.text} ${t.companyName} ${companyDisplayName(t.companyName)} ${props.projects.find((p) => p.id === t.projectId)?.data.name || t.projectName || ''}`
       .toLowerCase()
       .includes(query.toLowerCase()),
@@ -791,6 +761,25 @@ export function TasksScreen(
           <Icon name="filter" size={16} />
         </button>
       </div>
+      <div className="tabs pico-chips pico-task-state-tabs">
+        <button
+          aria-pressed={filter !== 'done'}
+          className={filter !== 'done' ? 'active' : ''}
+          onClick={() => setFilter('open')}
+        >
+          В работе
+        </button>
+        <button
+          aria-pressed={filter === 'done'}
+          className={filter === 'done' ? 'active' : ''}
+          onClick={() => {
+            setFilter('done');
+            setByDate(false);
+          }}
+        >
+          Закрытые
+        </button>
+      </div>
       <div className="pico-calendar panel">
         <div className="section-head">
           <button aria-label="Предыдущий месяц" onClick={() => shift(-1)}>
@@ -823,7 +812,7 @@ export function TasksScreen(
             { length: new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate() },
             (_, i) => {
               const day = month + '-' + String(i + 1).padStart(2, '0'),
-                count = props.tasks.filter((t) => !t.data.done && t.data.due === day).length;
+                count = tasks.filter((t) => !t.data.done && t.data.due === day).length;
               return (
                 <button
                   key={day}
@@ -927,7 +916,7 @@ export function TasksScreen(
       )}
       {list.length ? (
         <TaskList {...props} list={list} />
-      ) : byDate && !props.tasks.some((t) => !t.data.done && t.data.due === date) ? (
+      ) : byDate && !tasks.some((t) => !t.data.done && t.data.due === date) ? (
         <Empty
           icon="task-empty-calendar"
           title="Этот день пока свободен"

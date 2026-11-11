@@ -200,6 +200,17 @@ export function companyPotential(
   );
   return amounts.length ? amounts.reduce((sum, value) => sum + value, 0) : null;
 }
+// List ordering and the client card must show the same potential from visible members.
+export function displayedClientPotential(
+  company: Pick<CompanyData, 'segment' | 'potential' | 'divisions'>,
+  members: readonly Pick<CompanyData, 'potential' | 'divisions'>[] = [],
+): number | null {
+  if (company.segment !== 'holding' || !members.length) return company.potential;
+  return members.reduce<number | null>((sum, child) => {
+    const value = companyPotential(child);
+    return value === null ? sum : (sum ?? 0) + value;
+  }, null);
+}
 export function projectPotential(data: any): number | null {
   if (typeof data.amount === 'number') return data.amount;
   const amounts = (data.equipment || []).map((r: any) => r.amount);
@@ -413,7 +424,9 @@ export function summarizeClientAnalytics(
       projectCutoff = subtractCalendarMonths(cutoff, settings.projectMonths);
     const scores: ClientScore[] = visible.map(({ company, data }) => {
       const own = alive.filter((entry) => entry.record.company_id === company.id);
-      const tasks = own.filter((entry) => entry.record.kind === 'task');
+      const tasks = own.filter(
+        (entry) => entry.record.kind === 'task' && !entry.state!.data.deleted,
+      );
       const meetings = tasks.filter(
         (entry) => entry.state!.data.type === 'meeting' && entry.state!.data.done === true,
       );

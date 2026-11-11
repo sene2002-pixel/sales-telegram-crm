@@ -1,5 +1,5 @@
 import { classifyHoldingMention } from '../../shared/holding-catalog';
-import { resolveEmployeeFilter } from './employee-filter';
+import { resolveEmployeeFilter, employeeFilterOptions } from './employee-filter';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -839,7 +839,12 @@ export class CrmService {
     const id = randomUUID();
     const recordData =
       kind === 'task'
-        ? { ...data, completedAt: (data as any).done ? new Date().toISOString() : null }
+        ? {
+            ...data,
+            done: (data as any).deleted || (data as any).done,
+            completedAt:
+              (data as any).done && !(data as any).deleted ? new Date().toISOString() : null,
+          }
         : data;
     const [row] = await tx.query(
       'INSERT INTO records(id,kind,company_id,project_id,author_id,assignee_id,data,contact_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
@@ -890,16 +895,22 @@ export class CrmService {
   }
   async updateRecord(actor: Actor, id: string, raw: unknown) {
     const input = z
-      .object({ version: z.number().int().positive(), data: z.unknown() })
+      .object({
+        version: z.number().int().positive(),
+        data: z.unknown(),
+        projectId: idSchema.nullable().optional(),
+        assigneeId: idSchema.nullable().optional(),
+      })
       .strict()
       .parse(raw);
     return this.db.transaction(async (tx) => {
+      if (input.assigneeId !== undefined) await tx.query('SELECT pg_advisory_xact_lock(7142502)');
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const [row] = await tx.query('SELECT * FROM records WHERE id=$1 AND NOT deleted', [
         idSchema.parse(id),
       ]);
       requireCondition(row, 404, 'Запись не найдена');
-      await this.company(actor, row.company_id, tx, true);
+      const company = await this.company(actor, row.company_id, tx, true);
       const [current] = await tx.query('SELECT * FROM records WHERE id=$1 FOR UPDATE', [id]);
       requireCondition(current && !current.deleted, 404, 'Запись не найдена');
       requireCondition(
@@ -913,21 +924,85 @@ export class CrmService {
         'Этот тип записи не редактируется',
       );
       const data: any = recordSchemas[row.kind as RecordKind].parse(input.data);
+      requireCondition(
+        row.kind === 'task' || (input.projectId === undefined && input.assigneeId === undefined),
+        400,
+        'Связи доступны только для задач',
+      );
+      if (row.kind === 'task') {
+        if (current.data.deleted) {
+          requireCondition(
+            data.deleted === false &&
+              data.done === false &&
+              input.projectId === undefined &&
+              input.assigneeId === undefined,
+            409,
+            'Сначала верните удалённую задачу в работу',
+          );
+          requireCondition(
+            ['text', 'due', 'type', 'time', 'contactId'].every(
+              (key) => (data[key] ?? null) === (current.data[key] ?? null),
+            ),
+            409,
+            'Сначала верните удалённую задачу в работу',
+          );
+        }
+        data.deleted = data.deleted ?? current.data.deleted ?? false;
+        if (data.deleted) data.done = true;
+        if (input.projectId) {
+          const [project] = await tx.query(
+            "SELECT id FROM records WHERE id=$1 AND company_id=$2 AND kind='project' AND NOT deleted",
+            [input.projectId, row.company_id],
+          );
+          requireCondition(project, 400, 'Проект не принадлежит компании');
+        }
+        if (input.assigneeId !== undefined) {
+          const allowed = await employeeFilterOptions(tx, actor);
+          if (input.assigneeId && input.assigneeId !== current.assignee_id)
+            requireCondition(
+              allowed.some(
+                (employee) =>
+                  employee.id === input.assigneeId &&
+                  (employee.role !== 'manager' || employee.id === company.ownerId),
+              ),
+              403,
+              'Сотрудник недоступен для назначения',
+            );
+        }
+      }
       if (row.kind === 'contact' && data.extension === undefined && current.data.extension)
         data.extension = current.data.extension;
       await this.validateRecordLinks(actor, row.company_id, row.kind, data, tx, current.data);
       if (row.kind === 'task')
-        data.completedAt = data.done ? current.data.completedAt || new Date().toISOString() : null;
+        data.completedAt =
+          data.done && !data.deleted ? current.data.completedAt || new Date().toISOString() : null;
       const [updated] = await tx.query(
-        'UPDATE records SET data=$1,version=version+1 WHERE id=$2 RETURNING *',
-        [JSON.stringify(data), id],
+        'UPDATE records SET data=$1,project_id=$3,assignee_id=$4,version=version+1 WHERE id=$2 RETURNING *',
+        [
+          JSON.stringify(data),
+          id,
+          input.projectId === undefined ? current.project_id : input.projectId,
+          input.assigneeId === undefined ? current.assignee_id : input.assigneeId,
+        ],
       );
       await audit(tx, actor.id, `${row.kind}.updated`, id, row.company_id, {
         before: current.data,
         after: data,
         recordVersion: updated.version,
-        recordBefore: { data: current.data, contactSource: current.contact_source, deleted: false },
-        recordAfter: { data, contactSource: current.contact_source, deleted: false },
+        recordBefore: {
+          data: current.data,
+          contactSource: current.contact_source,
+          deleted: false,
+          projectId: current.project_id,
+          assigneeId: current.assignee_id,
+        },
+        recordAfter: {
+          data,
+          contactSource: current.contact_source,
+          deleted: false,
+          projectId: updated.project_id,
+          assigneeId: updated.assignee_id,
+        },
       });
       return mapRecord(updated);
     });

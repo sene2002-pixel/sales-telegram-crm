@@ -703,7 +703,7 @@ test('UI audit: legacy project and task edits persist; contact deletion cancel a
   });
 });
 
-test('UI audit: task detail and Home task navigation deletion accept native confirmation and persist after reload', async ({
+test('UI audit: task detail and Home task deletion can be undone and persist softly in Closed after reload', async ({
   page,
 }) => {
   await isolatedActor(page, 'manager');
@@ -722,33 +722,77 @@ test('UI audit: task detail and Home task navigation deletion accept native conf
   await navigate(page, 'Задачи');
   const row = page.locator('.pico-task-row').filter({ hasText: 'Удаление из деталей' });
   await row.locator('button.task-text').click();
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Открыть клиента', exact: true })
-    .click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Клиент', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText(company.name);
   await page.keyboard.press('Escape');
   await row.locator('button.task-text').click();
-  page.once('dialog', (native) => native.accept());
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Удалить задачу', exact: true })
-    .click();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  let nativeConfirmations = 0;
+  page.on('dialog', (native) => {
+    nativeConfirmations++;
+    void native.dismiss();
+  });
+  let writes = 0;
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PATCH' &&
+      [first.id, second.id].some((id) => request.url().endsWith(`/api/records/${id}`))
+    )
+      writes++;
+  });
+  await page.getByRole('dialog').getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(row).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(nativeConfirmations).toBe(0);
+  expect(writes).toBe(0);
+  await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+  await page.clock.runFor(3500);
+  expect(writes).toBe(0);
+  await expect(row).toBeVisible();
+  await row.locator('button.task-text').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Удалить', exact: true }).click();
+  await page.clock.runFor(2999);
+  expect(writes).toBe(0);
+  await page.clock.runFor(2);
+  await expect.poll(() => writes).toBe(1);
+  await expect
+    .poll(
+      async () =>
+        (await api(page, `/companies/${company.id}`, undefined, 'GET')).records.find(
+          (record: any) => record.id === first.id,
+        ).data.deleted,
+    )
+    .toBe(true);
   await navigate(page, 'Главная');
   const home = page.locator('.pico-task-row').filter({ hasText: 'Удаление с главной' });
   await home.locator('button.task-text').click();
-  page.once('dialog', (native) => native.accept());
-  await page
-    .locator('.pico-home-block')
-    .first()
-    .getByRole('button', { name: 'Удалить', exact: true })
-    .click();
+  await home.getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(home).toHaveCount(0);
+  expect(writes).toBe(1);
+  await page.clock.runFor(3001);
+  await expect.poll(() => writes).toBe(2);
+  await expect
+    .poll(
+      async () =>
+        (await api(page, `/companies/${company.id}`, undefined, 'GET')).records.find(
+          (record: any) => record.id === second.id,
+        ).data.deleted,
+    )
+    .toBe(true);
+  expect(nativeConfirmations).toBe(0);
+  await page.clock.resume();
   await page.reload();
   const records = (await api(page, `/companies/${company.id}`, undefined, 'GET')).records;
-  expect(records.some((r: any) => [first.id, second.id].includes(r.id))).toBe(false);
+  const deleted = records.filter((record: any) => [first.id, second.id].includes(record.id));
+  expect(deleted).toHaveLength(2);
+  expect(deleted.every((record: any) => record.data.deleted && record.data.done)).toBe(true);
   await expect(page.locator('.pico-task-row')).toHaveCount(0);
+  await navigate(page, 'Задачи');
+  await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
+  await expect(page.locator('.pico-task-row')).toHaveCount(2);
+  await expect(page.locator('.pico-task-row').filter({ hasText: first.data.text })).toBeVisible();
+  await expect(page.locator('.pico-task-row').filter({ hasText: second.data.text })).toBeVisible();
 });
 
 test('UI audit: equipment removal and participant down/drag/delete persist with recalculated total and client handoff', async ({

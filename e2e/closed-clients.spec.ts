@@ -64,22 +64,25 @@ for (const width of [320, 390]) {
       path: `/tmp/pico-closed-evidence/closed-${width}-${info.project.name}.png`,
     });
     await page.getByRole('button', { name: 'Фильтры клиентов', exact: true }).click();
-    const filters = page.getByRole('dialog', { name: 'Фильтры клиентов', exact: true });
+    const filters = page.getByRole('dialog', { name: 'Фильтры', exact: true });
     await expect(filters.getByRole('button', { name: /Архив компаний/ })).toHaveCount(0);
-    const sort = filters.getByRole('combobox', { name: 'Сортировка', exact: true });
-    await sort.selectOption('updated');
+    const sort = filters.getByRole('button', { name: /^Сортировка:/ });
+    await sort.click();
+    await filters.getByRole('menuitemradio', { name: 'По обновлению ↓', exact: true }).click();
     const reset = filters.getByRole('button', { name: 'Сбросить', exact: true });
-    const sortBox = (await sort.boundingBox())!,
-      resetBox = (await reset.boundingBox())!;
-    expect(resetBox.x).toBeGreaterThan(sortBox.x + sortBox.width);
-    expect(Math.abs(sortBox.y + sortBox.height - resetBox.y - resetBox.height)).toBeLessThanOrEqual(
-      2,
-    );
+    const show = filters.getByRole('button', { name: /^Показать/ });
+    const resetBox = (await reset.boundingBox())!,
+      showBox = (await show.boundingBox())!;
+    expect(resetBox.width).toBe(112);
+    expect(resetBox.height).toBe(48);
+    expect(showBox.height).toBe(48);
+    expect(resetBox.x + resetBox.width).toBeLessThan(showBox.x);
+    expect(Math.abs(resetBox.y - showBox.y)).toBeLessThanOrEqual(1);
     await page.screenshot({
       path: `/tmp/pico-closed-evidence/filters-${width}-${info.project.name}.png`,
     });
     await reset.click();
-    await expect(sort).toHaveValue('name');
+    await expect(sort).toHaveAccessibleName('Сортировка: По алфавиту А–Я');
     await filters.getByRole('button', { name: /^Показать/ }).click();
     await expect(cards).toHaveCount(3);
     await card.locator('.pico-client-row').click();

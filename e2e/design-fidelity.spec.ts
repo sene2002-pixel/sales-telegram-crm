@@ -207,7 +207,7 @@ test('Design fidelity: compact new forms keep core actions in viewport and task 
   });
 });
 
-test('Design fidelity: inline equipment editor saves split voltage without overwriting facts', async ({
+test('Design fidelity: equipment sheet saves split voltage without overwriting facts', async ({
   page,
 }, info) => {
   await login(page);
@@ -217,13 +217,20 @@ test('Design fidelity: inline equipment editor saves split voltage without overw
   const row = page.locator('.pico-client-accordion').filter({ hasText: company.name });
   await row.locator('.pico-client-row').click();
   await row.getByRole('button', { name: 'Добавить оборудование', exact: true }).click();
-  const direction = row.locator('.cc-inline-editor');
-  const selector = direction.getByRole('combobox', { name: 'Оборудование', exact: true });
-  await expect(selector.getByRole('option')).toHaveCount(5);
-  await selector.selectOption('drives_mv');
-  await direction.getByRole('textbox', { name: 'Потенциал, млн ₽', exact: true }).fill('90');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await screenshot(page, 'client-new-equipment-inline');
+  const direction = page.getByRole('dialog', { name: 'Новое оборудование', exact: true });
+  await expect(direction).toBeVisible();
+  const types = direction.getByRole('group', { name: 'Тип оборудования', exact: true });
+  await expect(types.getByRole('button')).toHaveCount(8);
+  await expect(types.locator('button:disabled')).toHaveCount(3);
+  await expect(types.locator('button:enabled')).toHaveCount(5);
+  for (const name of ['Выключатели 0,4 кВ', 'Выключатели 6–35 кВ', 'Теплотехника']) {
+    await expect(types.getByRole('button', { name, exact: true })).toBeDisabled();
+  }
+  await types.getByRole('button', { name: 'ПЧ и УПП 6–35 кВ', exact: true }).click();
+  const amount = direction.getByRole('textbox', { name: 'Потенциал, млн ₽', exact: true });
+  await expect(amount).toHaveAttribute('inputmode', 'none');
+  await amount.fill('90');
+  await screenshot(page, 'client-new-equipment-sheet');
   await direction.getByRole('button', { name: 'Добавить', exact: true }).click();
   await expect(direction).toHaveCount(0);
   await page.reload();
@@ -368,7 +375,21 @@ test('Design fidelity: each filter sheet and postpone keeps its full-width actio
   ]) {
     await navigate(page, screen);
     await page.getByRole('button', { name: label, exact: true }).click();
-    await fullWidthAction(page, /^Показать \(\d+\)$/);
+    if (screen === 'Клиенты') {
+      const filters = page.getByRole('dialog', { name: 'Фильтры', exact: true });
+      const reset = (await filters
+        .getByRole('button', { name: 'Сбросить', exact: true })
+        .boundingBox())!;
+      const show = filters.getByRole('button', { name: /^Показать \d+ клиентов$/ });
+      const showBox = (await show.boundingBox())!;
+      expect(reset.width).toBe(112);
+      expect(reset.height).toBe(48);
+      expect(showBox.height).toBe(48);
+      expect(reset.x + reset.width).toBeLessThan(showBox.x);
+      await expect(show).toBeInViewport();
+    } else {
+      await fullWidthAction(page, /^Показать \(\d+\)$/);
+    }
     await screenshot(page, label);
     await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
   }
@@ -376,12 +397,21 @@ test('Design fidelity: each filter sheet and postpone keeps its full-width actio
     .locator('.task-text')
     .filter({ hasText: 'Перенос ' + company.name })
     .click();
-  const detailBadge = page.getByRole('dialog').locator('.pico-detail-type .checkbox');
+  const taskDetail = page.getByRole('dialog');
+  const detailBadge = taskDetail.locator('.pico-task-sheet-badge');
   await expect(detailBadge).toBeVisible();
-  const color = await detailBadge.evaluate((el) => getComputedStyle(el).color);
-  const rgb = color.match(/\d+/g)!.map(Number);
-  expect(rgb[1]).toBeGreaterThan(rgb[0]);
-  await page.getByRole('dialog').getByRole('button', { name: 'Отложить', exact: true }).click();
+  await expect(detailBadge).toHaveCSS('width', '44px');
+  await expect(detailBadge).toHaveCSS('height', '44px');
+  await expect(detailBadge).toHaveCSS('color', 'rgb(240, 122, 26)');
+  await expect(taskDetail.getByRole('button', { name: 'Отложить', exact: true })).toHaveCount(0);
+  await taskDetail.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await navigate(page, 'Главная');
+  const homeTask = page
+    .getByRole('region', { name: 'Сегодня', exact: true })
+    .locator('.pico-task-row')
+    .filter({ hasText: 'Перенос ' + company.name });
+  await homeTask.locator('.task-text').click();
+  await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
   const postpone = page.getByRole('dialog', { name: 'Отложить задачу', exact: true });
   const morning = postpone.getByRole('button', { name: /Завтра утром/ });
   await expect(morning).toContainText(/10:00/);

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { navigate, prepareDemoAuth } from './helpers';
+import { action, navigate, prepareDemoAuth } from './helpers';
 
 for (const width of [320, 390, 1440]) {
   test(`Task type badges cannot complete tasks at ${width}`, async ({ page }, info) => {
@@ -16,6 +16,7 @@ for (const width of [320, 390, 1440]) {
         });
       });
     }
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await prepareDemoAuth(page);
     await page.route('https://telegram.org/js/telegram-web-app.js*', (r) =>
       r.fulfill({ body: '' }),
@@ -57,6 +58,11 @@ for (const width of [320, 390, 1440]) {
         return;
       }
       const id = r.request().url().split('/').pop();
+      const current = tasks.find((task) => task.id === id)!;
+      if (body.version !== current.version) {
+        await r.fulfill({ status: 409, json: { message: 'Запись изменена. Обновите страницу' } });
+        return;
+      }
       tasks = tasks.map((t) =>
         t.id === id ? { ...t, data: body.data, version: t.version + 1 } : t,
       );
@@ -64,6 +70,9 @@ for (const width of [320, 390, 1440]) {
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Администратор', exact: true }).click();
+    await expect(page.locator('.app-shell')).toBeVisible();
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     // Both Home variants: Today expands actions; Meetings opens details.
     for (const type of ['call', 'meeting']) {
       const row = page.locator('.pico-task-row').filter({ hasText: `Проверить ${type} ` });
@@ -71,6 +80,8 @@ for (const width of [320, 390, 1440]) {
       await expect(row.locator('.pico-task-actions')).toHaveCount(0);
       await expect(page.getByRole('dialog')).toHaveCount(0);
     }
+    await expect(page.locator('.pico-undo-toast')).toHaveCount(0);
+    await page.clock.runFor(3500);
     expect(patches).toHaveLength(0);
     const today = page.getByRole('region', { name: 'Сегодня', exact: true });
     await today.locator('.task-text').filter({ hasText: 'Проверить call ' }).click();
@@ -101,20 +112,56 @@ for (const width of [320, 390, 1440]) {
     await call.locator('.task-text').focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog');
-    await expect(dialog).toContainText('Тип задачи');
+    await expect(dialog.getByRole('button', { name: 'Тип', exact: true })).toBeVisible();
     await expect(dialog).toContainText('Звонок');
     expect(patches).toHaveLength(0);
     await dialog.getByRole('button', { name: 'Выполнено', exact: true }).click();
-    await expect(dialog.getByRole('alert')).toContainText('Повторите позже');
+    await expect(dialog).toHaveCount(0);
+    await expect(call.locator('.task-text strong')).toHaveClass(/done/);
+    expect(patches).toHaveLength(0);
+    await page.clock.runFor(2999);
+    expect(patches).toHaveLength(0);
+    await page.clock.runFor(2);
+    await expect(page.getByRole('alert')).toContainText('Повторите позже');
     await expect(call.locator('.checkbox')).not.toHaveClass(/checked/);
+    await expect(call.locator('.task-text strong')).not.toHaveClass(/done/);
+    expect(patches).toHaveLength(1);
+    expect(tasks[0].data.done).toBe(false);
+
+    // A concurrent writer changes version/time. Retrying the stale row must fail,
+    // without an automatic version upgrade or overwriting the newer time.
+    tasks = tasks.map((task) =>
+      task.id === 'badge-call'
+        ? { ...task, version: 2, data: { ...task.data, time: '16:00' } }
+        : task,
+    );
+    await call.locator('.task-text').click();
+    await dialog.getByRole('button', { name: 'Выполнено', exact: true }).click();
+    expect(patches).toHaveLength(1);
+    await page.clock.runFor(3001);
+    await expect(page.getByRole('alert')).toContainText('Запись изменена');
+    await expect(call.locator('.task-text strong')).not.toHaveClass(/done/);
+    expect(patches).toHaveLength(2);
+    expect(patches[1].version).toBe(1);
+    expect(tasks[0].data.done).toBe(false);
+    expect(tasks[0].data.time).toBe('16:00');
+    await page.clock.runFor(3500);
+    expect(patches).toHaveLength(2);
+
+    await action(page, 'Обновить');
+    await expect(call).toContainText('16:00');
+    await call.locator('.task-text').click();
     await dialog.getByRole('button', { name: 'Выполнено', exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    expect(patches).toHaveLength(2);
-    expect(patches[1]).toEqual({ version: 1, data: tasks[0].data });
-    expect(patches[1].data).toMatchObject({
+    await page.clock.runFor(3001);
+    await expect.poll(() => patches.length).toBe(3);
+    await expect(call).toHaveCount(0);
+    expect(patches[2]).toEqual({ version: 2, data: tasks[0].data });
+    expect(patches[2].data).toMatchObject({
       done: true,
+      deleted: false,
       due,
-      time: '12:30',
+      time: '16:00',
       contactId: null,
       type: 'call',
     });
@@ -124,7 +171,7 @@ for (const width of [320, 390, 1440]) {
     await filters.getByRole('button', { name: /^Показать/ }).click();
     await expect(call.locator('.checkbox')).toHaveClass(/checked/);
     await call.locator('.checkbox').click();
-    expect(patches).toHaveLength(2);
+    expect(patches).toHaveLength(3);
     await page.screenshot({
       path: `/tmp/task-completion-done-${width}-${info.project.name}.png`,
       animations: 'disabled',
@@ -134,6 +181,11 @@ for (const width of [320, 390, 1440]) {
     await dialog.getByRole('button', { name: 'Вернуть задачу', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(patches).toHaveLength(3);
-    expect(patches[2]).toEqual({ version: 2, data: { ...patches[1].data, done: false } });
+    await page.clock.runFor(3001);
+    await expect.poll(() => patches.length).toBe(4);
+    expect(patches[3]).toEqual({
+      version: 3,
+      data: { ...patches[2].data, done: false, deleted: false },
+    });
   });
 }

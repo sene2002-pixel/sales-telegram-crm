@@ -90,9 +90,11 @@ for (const target of ['notes', 'equipment', 'new-equipment'] as const) {
       await editor.getByRole('textbox').fill('2,5');
     } else {
       await card.getByRole('button', { name: 'Добавить оборудование', exact: true }).click();
-      editor = card
-        .locator('form')
-        .filter({ has: page.getByRole('textbox', { name: 'Потенциал, млн ₽', exact: true }) });
+      editor = page.getByRole('dialog', { name: 'Новое оборудование', exact: true });
+      await editor
+        .getByRole('group', { name: 'Тип оборудования', exact: true })
+        .getByRole('button', { name: 'Выключатели 6–35 кВ', exact: true })
+        .click();
       await editor.getByRole('textbox').fill('2,5');
     }
     const concurrentCompany = await concurrent({

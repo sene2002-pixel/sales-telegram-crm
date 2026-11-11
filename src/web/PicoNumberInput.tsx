@@ -9,6 +9,39 @@ import {
 import { createPortal } from 'react-dom';
 import { Icon } from './Icons';
 
+export function appendPicoNumberKey(current: string, value: string) {
+  return value === 'erase'
+    ? current.slice(0, -1)
+    : value === ',' && /[,.]/.test(current)
+      ? current
+      : current + value;
+}
+
+export function PicoNumberKeys({
+  onKey,
+  disabled = false,
+}: {
+  onKey: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="pico-number-keys" role="group" aria-label="Клавиатура Pico">
+      {['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'erase'].map((digit) => (
+        <button
+          type="button"
+          key={digit}
+          disabled={disabled}
+          aria-label={digit === ',' ? 'Запятая' : digit === 'erase' ? 'Стереть' : digit}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => onKey(digit)}
+        >
+          {digit === 'erase' ? <Icon name="close" size={22} /> : digit}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export type PicoNumberHandle = { open: () => void };
 export const PicoNumberInput = forwardRef<
   PicoNumberHandle,
@@ -159,13 +192,7 @@ export const PicoNumberInput = forwardRef<
     function key(value: string) {
       if (saving.current) return;
       setError('');
-      setDraft((current) =>
-        value === 'erase'
-          ? current.slice(0, -1)
-          : value === ',' && /[,.]/.test(current)
-            ? current
-            : current + value,
-      );
+      setDraft((current) => appendPicoNumberKey(current, value));
       requestAnimationFrame(() => {
         input.current?.focus({ preventScroll: true });
         input.current?.setSelectionRange(input.current.value.length, input.current.value.length);
@@ -216,20 +243,7 @@ export const PicoNumberInput = forwardRef<
                   {error}
                 </p>
               )}
-              <div className="pico-number-keys">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'erase'].map((digit) => (
-                  <button
-                    type="button"
-                    key={digit}
-                    disabled={busy}
-                    aria-label={digit === ',' ? 'Запятая' : digit === 'erase' ? 'Стереть' : digit}
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => key(digit)}
-                  >
-                    {digit === 'erase' ? <Icon name="close" size={22} /> : digit}
-                  </button>
-                ))}
-              </div>
+              <PicoNumberKeys onKey={key} disabled={busy} />
               <button
                 type="button"
                 className="pico-number-done"

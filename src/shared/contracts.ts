@@ -225,6 +225,7 @@ export const taskSchema = z
     text: name,
     due: dateSchema.nullable().default(null),
     done: z.boolean().default(false),
+    deleted: z.boolean().optional(),
     type: z.enum(taskTypes).default('reminder'),
     time: z
       .string()

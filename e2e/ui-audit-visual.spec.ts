@@ -1,6 +1,7 @@
 import { expect, Page, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
-import { clients, navigate, openCompany, prepareDemoAuth } from './helpers';
+import { browserToday, clients, navigate, openCompany, prepareDemoAuth } from './helpers';
+import { taskSchema } from '../src/shared/contracts';
 import { emptyDeal, emptySales } from '../src/shared/sales';
 
 test.beforeEach(async ({ page }) => {
@@ -315,8 +316,8 @@ for (const width of [360, 390, 1440]) {
     await api(page, `/companies/${company.id}/records/project`, {
       data: { name: projectName, amount: 15_000_000 },
     });
-    await api(page, `/companies/${company.id}/records/task`, {
-      data: { text: taskText, type: 'call' },
+    const longTask = await api(page, `/companies/${company.id}/records/task`, {
+      data: { text: taskText, type: 'call', due: await browserToday(page) },
     });
     const sales = emptySales();
     const deal = emptyDeal('Проект_' + 'Электроснабжение'.repeat(9));
@@ -347,21 +348,44 @@ for (const width of [360, 390, 1440]) {
     await navigate(page, 'Задачи');
     await page.locator('.task-text').filter({ hasText: taskText }).click();
     await capture(page, 'long-task-detail');
-    await page.getByRole('dialog').getByRole('button', { name: 'Отложить', exact: true }).click();
+    const taskDetail = page.getByRole('dialog');
+    await expect(taskDetail.getByRole('button', { name: 'Отложить', exact: true })).toHaveCount(0);
+    await expect(taskDetail.locator('.pico-task-sheet-badge')).toHaveCSS('width', '44px');
+    await taskDetail.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await navigate(page, 'Главная');
+    const homeTask = page
+      .getByRole('region', { name: 'Сегодня', exact: true })
+      .locator('.pico-task-row')
+      .filter({ hasText: taskText });
+    await homeTask.locator('.task-text').click();
+    await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
     await capture(page, 'long-task-postpone');
     await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await navigate(page, 'Задачи');
     await page.locator('.task-text').filter({ hasText: taskText }).click();
-    const confirmation = page.waitForEvent('dialog');
-    const deletion = page
-      .getByRole('dialog')
-      .getByRole('button', { name: 'Удалить задачу', exact: true })
-      .click();
-    const nativeConfirm = await confirmation;
-    expect(nativeConfirm.message()).toBe('Удалить задачу?');
-    await nativeConfirm.dismiss();
-    await deletion;
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
+    let nativeConfirmations = 0;
+    page.on('dialog', (native) => {
+      nativeConfirmations++;
+      void native.dismiss();
+    });
+    let taskWrites = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'PATCH' && request.url().endsWith(`/api/records/${longTask.id}`))
+        taskWrites++;
+    });
+    await page.getByRole('dialog').getByRole('button', { name: 'Удалить', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('.task-text').filter({ hasText: taskText })).toHaveCount(0);
+    expect(nativeConfirmations).toBe(0);
+    expect(taskWrites).toBe(0);
+    await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await page.clock.runFor(3500);
+    expect(taskWrites).toBe(0);
+    await page.clock.resume();
+    await expect(page.locator('.task-text').filter({ hasText: taskText })).toBeVisible();
     await capture(page, 'long-task-delete-cancelled');
-    await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
     await clients(page);
     await page.getByLabel('Поиск компаний').fill(name);
     await capture(page, 'long-client-list');
@@ -536,13 +560,36 @@ test('UI audit gaps: home onboarding task cancellation and hour/week postponemen
   const suffix = info.project.name + '-' + Date.now();
   const company = await api(page, '/companies', { name: 'Перенос ' + suffix });
   const task = await api(page, `/companies/${company.id}/records/task`, {
-    data: { text: 'Быстрые сроки ' + suffix, type: 'call' },
+    data: {
+      text: 'Быстрые сроки ' + suffix,
+      type: 'call',
+      due: await browserToday(page),
+    },
   });
   await page.reload();
-  await navigate(page, 'Задачи');
   for (const preset of ['Через час', 'Через неделю']) {
-    await page.locator('.task-text').filter({ hasText: task.data.text }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Отложить', exact: true }).click();
+    const current = (await api(page, `/companies/${company.id}`, undefined, 'GET')).records.find(
+      (record: any) => record.id === task.id,
+    );
+    const today = await browserToday(page);
+    if (current.data.due !== today)
+      await api(
+        page,
+        `/records/${task.id}`,
+        {
+          version: current.version,
+          data: taskSchema.strip().parse({ ...current.data, due: today }),
+        },
+        'PATCH',
+      );
+    await page.reload();
+    await navigate(page, 'Главная');
+    const homeTask = page
+      .getByRole('region', { name: 'Сегодня', exact: true })
+      .locator('.pico-task-row')
+      .filter({ hasText: task.data.text });
+    await homeTask.locator('.task-text').click();
+    await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Отложить задачу', exact: true });
     await dialog.getByRole('button', { name: new RegExp('^' + preset) }).click();
     const due = await dialog.getByLabel('Дата', { exact: true }).inputValue();

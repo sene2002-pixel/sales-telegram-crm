@@ -1,6 +1,6 @@
 import { companyDisplayName } from '../shared/company-display-name';
 import { companyContactChanges } from '../shared/company-edit-contacts';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Company,
   CompanyData,
@@ -16,8 +16,9 @@ import {
   primarySegments,
   divisionLabels,
 } from '../shared/contracts';
-import { AnalyticsSummary, ClientScore } from '../shared/analytics';
-import { api, ApiError, download, money, compactMoney, fullMoney, today, token } from './api';
+import { ClientScore, displayedClientPotential } from '../shared/analytics';
+import { loadClientScores, invalidateClientScores } from './client-scores';
+import { api, ApiError, download, money, compactMoney, fullMoney } from './api';
 import { millionValue } from './FormWidgets';
 import { HoldingMembers } from './HoldingMembers';
 import { FileUpload } from './FileUpload';
@@ -25,7 +26,7 @@ import { Icon, industryIcon } from './Icons';
 import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import { InlineAmount } from './InlineAmount';
-import { PicoNumberHandle } from './PicoNumberInput';
+import { PicoNumberHandle, PicoNumberKeys, appendPicoNumberKey } from './PicoNumberInput';
 import { GrowingTextarea } from './GrowingTextarea';
 import './client-card.css';
 
@@ -42,28 +43,13 @@ const levels = [
   ['partner', 'Партнёр', '#5FCDB8'],
   ['ours', 'Наш клиент', '#22A86B'],
 ];
-let analyticsRequest: Promise<AnalyticsSummary> | undefined;
-let analyticsSession = '';
-function loadScores() {
-  if (analyticsSession !== token) {
-    analyticsRequest = undefined;
-    analyticsSession = token;
-  }
-  if (analyticsRequest) return analyticsRequest;
-  const request = api<AnalyticsSummary>(`/analytics?mode=all&from=${today()}&to=${today()}`);
-  analyticsRequest = request;
-  const clear = () => {
-    if (analyticsRequest === request) analyticsRequest = undefined;
-  };
-  void request.then(clear, clear);
-  return request;
-}
 export function ClientRow({
   company,
   onOpen,
   onChanged,
   initiallyOpen = false,
   score: providedScore,
+  employeeId = '',
   actorRole,
   holdingMembers,
   onReveal,
@@ -74,6 +60,7 @@ export function ClientRow({
   onChanged: () => Promise<void>;
   onOpen: (c: Company, tab?: string) => void;
   score?: ClientScore;
+  employeeId?: string;
   actorRole?: Role;
   holdingMembers?: Company[];
   onReveal?: (id: string) => void;
@@ -89,13 +76,80 @@ export function ClientRow({
     [editorCompany, setEditorCompany] = useState<Company | null>(null),
     [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]),
     [editingContact, setEditingContact] = useState<CrmRecord | null>(null),
+    [savingContact, setSavingContact] = useState(false),
     [addingContact, setAddingContact] = useState(false),
     [newEquipment, setNewEquipment] = useState<Company | null>(null),
+    [addedEquipment, setAddedEquipment] = useState<string[]>([]),
     [uploading, setUploading] = useState(false),
     [uploadFile, setUploadFile] = useState<File | null>(null),
     [fileError, setFileError] = useState('');
   const articleRef = useRef<HTMLElement>(null);
   const amountEditors = useRef<Record<string, PicoNumberHandle | null>>({});
+  const contactRequest = useRef(0);
+  useEffect(
+    () => () => {
+      contactRequest.current++;
+    },
+    [open],
+  );
+  async function openContact(record: CrmRecord) {
+    const request = ++contactRequest.current;
+    try {
+      const latest = await read();
+      if (request !== contactRequest.current) return;
+      const contact = latest.records.find((r) => r.id === record.id && r.kind === 'contact');
+      if (!contact) throw new Error('Контакт больше недоступен. Обновите карточку.');
+      setEditingContact(structuredClone(contact));
+    } catch (cause) {
+      if (request === contactRequest.current) setError((cause as Error).message);
+    }
+  }
+  const closeContact = () => {
+    if (savingContact) return;
+    contactRequest.current++;
+    setEditingContact(null);
+  };
+  useLayoutEffect(() => {
+    if (!editingContact) return;
+    const element = articleRef.current?.querySelector<HTMLElement>('.cc-contact-selected');
+    const sheet = document.querySelector<HTMLElement>('[data-pico-modal]:has(.cc-contact-form)');
+    if (!element || !sheet) return;
+    const root = document.documentElement;
+    const reveal = () => {
+      root.style.setProperty(
+        '--pico-contact-sheet-height',
+        `${sheet.getBoundingClientRect().height}px`,
+      );
+      const bounds = element.getBoundingClientRect();
+      const top = (window.visualViewport?.offsetTop || 0) + 12;
+      const bottom = sheet.getBoundingClientRect().top - 12;
+      const delta =
+        bounds.bottom > bottom
+          ? Math.min(bounds.bottom - bottom, bounds.top - top)
+          : Math.min(0, bounds.top - top);
+      if (!delta) return;
+      let parent = element.parentElement;
+      while (
+        parent &&
+        !(
+          parent.scrollHeight > parent.clientHeight &&
+          /(auto|scroll)/.test(getComputedStyle(parent).overflowY)
+        )
+      )
+        parent = parent.parentElement;
+      if (parent) parent.scrollTop += delta;
+      else window.scrollBy(0, delta);
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(sheet);
+    window.visualViewport?.addEventListener('resize', reveal);
+    return () => {
+      observer.disconnect();
+      window.visualViewport?.removeEventListener('resize', reveal);
+      root.style.removeProperty('--pico-contact-sheet-height');
+    };
+  }, [editingContact?.id]);
   useEffect(() => {
     if (initiallyOpen) {
       setOpen(true);
@@ -105,18 +159,8 @@ export function ClientRow({
   const sequence = useRef(0);
   const c = detail && detail.company.version >= company.version ? detail.company : company;
   const isHolding = c.segment === 'holding';
-  const members = detail?.holdingMembers ?? holdingMembers ?? [];
-  const potential =
-    isHolding && members.length
-      ? members.reduce<number | null>((sum, child) => {
-          const amount =
-            child.potential ??
-            (Object.keys(child.divisions).length
-              ? Object.values(child.divisions).reduce<number>((n, v) => n + (v || 0), 0)
-              : null);
-          return amount === null ? sum : (sum ?? 0) + amount;
-        }, null)
-      : c.potential;
+  const members = holdingMembers ?? detail?.holdingMembers ?? [];
+  const potential = displayedClientPotential(c, members);
   const [icon, color] = industryIcon(c.industry, c.segment);
   async function read() {
     const seq = ++sequence.current;
@@ -125,12 +169,12 @@ export function ClientRow({
     return d;
   }
   async function changed() {
-    analyticsRequest = undefined;
+    invalidateClientScores();
     try {
       await read();
       await onChanged();
       if (!providedScore) {
-        const a = await loadScores();
+        const a = await loadClientScores(employeeId);
         setScore(a.clientAnalytics?.clients.find((s) => s.id === company.id));
       }
     } catch (e) {
@@ -157,12 +201,14 @@ export function ClientRow({
   useEffect(() => {
     if (providedScore) {
       setScore(providedScore);
+      setScoreError(false);
       return;
     }
     if (!open) return;
     let current = true;
     setScoreError(false);
-    loadScores()
+    setScore(undefined);
+    loadClientScores(employeeId)
       .then((a) => {
         if (current) {
           const found = a.clientAnalytics?.clients.find((s) => s.id === company.id);
@@ -176,7 +222,7 @@ export function ClientRow({
     return () => {
       current = false;
     };
-  }, [open, company.id, providedScore]);
+  }, [open, company.id, company.version, providedScore, employeeId]);
   async function patch(update: Partial<CompanyData>, snapshot = c) {
     const data = companySchema.strip().parse({ ...snapshot, ...update });
     let saved: Company;
@@ -373,8 +419,11 @@ export function ClientRow({
                       </>
                     ) : (
                       <>
-                        {divisions
-                          .filter((key) => c.divisions[key] != null)
+                        {[
+                          ...divisions.filter((key) => !addedEquipment.includes(key)),
+                          ...addedEquipment,
+                        ]
+                          .filter((key) => c.divisions[key as keyof typeof c.divisions] != null)
                           .map((key) => (
                             <SwipeAction
                               key={key}
@@ -387,7 +436,7 @@ export function ClientRow({
                                   amountEditors.current[key] = handle;
                                 }}
                                 label={divisionLabels[key]}
-                                value={millionValue(c.divisions[key])}
+                                value={millionValue(c.divisions[key as keyof typeof c.divisions])}
                                 unit="млн ₽"
                                 onSave={(value) => equipment(key, value)}
                               />
@@ -396,16 +445,7 @@ export function ClientRow({
                         {!Object.keys(c.divisions).length && (
                           <p className="muted">Оборудование пока не добавлено</p>
                         )}
-                        {newEquipment ? (
-                          <EquipmentForm
-                            keys={primaryDivisions.filter((key) => c.divisions[key] == null)}
-                            onCancel={() => setNewEquipment(null)}
-                            onSave={async (key, value) => {
-                              await equipment(key, value, newEquipment);
-                              setNewEquipment(null);
-                            }}
-                          />
-                        ) : (
+                        {primaryDivisions.some((key) => c.divisions[key] == null) && (
                           <button
                             className="cc-add"
                             onClick={() => setNewEquipment(structuredClone(c))}
@@ -429,20 +469,24 @@ export function ClientRow({
                         key={r.id}
                         label={`контакт «${r.data.name}»`}
                         onDelete={() => deleteRecord(r)}
-                        onEdit={() => {
-                          void read()
-                            .then((latest) => {
-                              const contact = latest.records.find(
-                                (record) => record.id === r.id && record.kind === 'contact',
-                              );
-                              if (!contact)
-                                throw new Error('Контакт больше недоступен. Обновите карточку.');
-                              setEditingContact(structuredClone(contact));
-                            })
-                            .catch((cause) => setError((cause as Error).message));
-                        }}
+                        onEdit={() => void openContact(r)}
                       >
-                        <div className="cc-contact">
+                        <div
+                          className={
+                            'cc-contact' +
+                            (editingContact?.id === r.id ? ' cc-contact-selected' : '')
+                          }
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Изменить контакт «${r.data.name}»`}
+                          onClick={() => void openContact(r)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              void openContact(r);
+                            }
+                          }}
+                        >
                           <div className="cc-contact-name">
                             <span>ФИО</span>
                             <strong>{r.data.name}</strong>
@@ -645,6 +689,27 @@ export function ClientRow({
           {error}
         </p>
       )}
+      {newEquipment && (
+        <EquipmentSheet
+          divisions={c.divisions}
+          onCancel={() => setNewEquipment(null)}
+          onSave={async (key, value) => {
+            if (c.divisions[key as keyof typeof c.divisions] != null)
+              throw new Error('Это оборудование уже добавлено. Выберите другой тип.');
+            try {
+              await equipment(key, value, newEquipment);
+            } catch (error) {
+              if (error instanceof ApiError && error.status === 409)
+                throw new Error(
+                  'Карточка изменилась. Сумма сохранена в форме. Закройте шторку и откройте её заново, чтобы проверить изменения перед сохранением.',
+                );
+              throw error;
+            }
+            setAddedEquipment((keys) => [...keys.filter((existing) => existing !== key), key]);
+            setNewEquipment(null);
+          }}
+        />
+      )}
       {editingClient && (
         <Modal sheet title="Редактирование карточки" onClose={() => setEditingClient(false)}>
           <CompanyForm
@@ -678,10 +743,11 @@ export function ClientRow({
         </Modal>
       )}
       {editingContact && (
-        <Modal sheet title="Контакт" onClose={() => setEditingContact(null)}>
+        <Modal sheet title="Контакт" closeDisabled={savingContact} onClose={closeContact}>
           <ContactForm
             initial={editingContact.data}
-            onCancel={() => setEditingContact(null)}
+            onCancel={closeContact}
+            onBusyChange={setSavingContact}
             onSave={async (data) => {
               try {
                 await api(`/records/${editingContact.id}`, 'PATCH', {
@@ -708,8 +774,10 @@ function ContactForm({
   initial,
   onSave,
   onCancel,
+  onBusyChange,
 }: {
   initial?: Record<string, string>;
+  onBusyChange?: (busy: boolean) => void;
   onSave: (data: Record<string, string>) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -721,19 +789,25 @@ function ContactForm({
     }),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const saving = useRef(false);
   return (
     <form
       className={`cc-inline-editor ${initial ? 'cc-contact-form' : ''}`}
       onSubmit={async (e) => {
         e.preventDefault();
+        if (saving.current) return;
+        saving.current = true;
         setBusy(true);
+        onBusyChange?.(true);
         setError('');
         try {
           await onSave(contactSchema.parse(draft));
         } catch (e) {
           setError((e as Error).message);
         } finally {
+          saving.current = false;
           setBusy(false);
+          onBusyChange?.(false);
         }
       }}
     >
@@ -745,25 +819,24 @@ function ContactForm({
       ].map(([key, label]) => (
         <label key={key}>
           {label}
-          {key === 'name' || key === 'role' ? (
-            <GrowingTextarea
-              singleLine
-              aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
-              value={draft[key as keyof typeof draft]}
-              required={key === 'name'}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-            />
-          ) : (
-            <input
-              aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
-              type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
-              value={draft[key as keyof typeof draft]}
-              required={key === 'name'}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-            />
-          )}
+          <GrowingTextarea
+            singleLine
+            aria-label={`${initial ? 'Контакт' : 'Новый контакт'} · ${label}`}
+            inputMode={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+            autoComplete={
+              key === 'email'
+                ? 'email'
+                : key === 'phone'
+                  ? 'tel'
+                  : key === 'name'
+                    ? 'name'
+                    : 'organization-title'
+            }
+            value={draft[key as keyof typeof draft]}
+            required={key === 'name'}
+            disabled={busy}
+            onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+          />
         </label>
       ))}
       {error && (
@@ -784,71 +857,119 @@ function ContactForm({
     </form>
   );
 }
-function EquipmentForm({
-  keys,
+function EquipmentSheet({
+  divisions: existing,
   onSave,
   onCancel,
 }: {
-  keys: readonly string[];
+  divisions: Company['divisions'];
   onSave: (key: string, value: string) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [key, setKey] = useState(keys[0] || ''),
-    [amount, setAmount] = useState(''),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+  const [key, setKey] = useState('');
+  const [amount, setAmount] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const close = () => {
+    if (!saving.current) onCancel();
+  };
+  const number = Number(amount.replace(',', '.'));
+  const valid =
+    amount.trim() !== '' && Number.isFinite(number) && number >= 0 && number <= 1_000_000;
   return (
-    <form
-      className="cc-inline-editor"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError('');
-        try {
-          await onSave(key, amount);
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
+    <Modal
+      sheet
+      swipeToClose
+      title="Новое оборудование"
+      onClose={close}
+      closeDisabled={busy}
+      initialFocusRef={amountRef}
     >
-      <label>
-        Оборудование
-        <select
-          aria-label="Оборудование"
-          value={key}
+      <form
+        className="cc-equipment-sheet"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (saving.current || !key || !valid || existing[key as keyof typeof existing] != null)
+            return;
+          saving.current = true;
+          setBusy(true);
+          setError('');
+          try {
+            await onSave(key, amount);
+          } catch (cause) {
+            setError((cause as Error).message);
+          } finally {
+            saving.current = false;
+            setBusy(false);
+          }
+        }}
+      >
+        <fieldset disabled={busy}>
+          <legend>Тип</legend>
+          <div className="cc-equipment-types" role="group" aria-label="Тип оборудования">
+            {primaryDivisions.map((type) => (
+              <button
+                type="button"
+                key={type}
+                aria-pressed={key === type}
+                disabled={existing[type] != null || busy}
+                onClick={() => {
+                  setKey(type);
+                  setError('');
+                }}
+              >
+                {divisionLabels[type]}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <label className="cc-equipment-potential">
+          <span>Потенциал</span>
+          <span className="cc-equipment-amount-field">
+            <input
+              ref={amountRef}
+              aria-label="Потенциал, млн ₽"
+              inputMode="none"
+              enterKeyHint="done"
+              autoComplete="off"
+              value={amount}
+              disabled={busy}
+              aria-invalid={amount !== '' && !valid}
+              onChange={(event) => {
+                setAmount(event.target.value);
+                setError('');
+              }}
+            />
+            <span>млн ₽</span>
+          </span>
+        </label>
+        <PicoNumberKeys
           disabled={busy}
-          onChange={(e) => setKey(e.target.value)}
-        >
-          {keys.map((k) => (
-            <option key={k} value={k}>
-              {divisionLabels[k]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Потенциал, млн ₽
-        <input
-          aria-label="Потенциал, млн ₽"
-          value={amount}
-          inputMode="decimal"
-          disabled={busy}
-          onChange={(e) => setAmount(e.target.value)}
+          onKey={(digit) => {
+            setAmount((value) => appendPicoNumberKey(value, digit));
+            setError('');
+            amountRef.current?.focus({ preventScroll: true });
+          }}
         />
-      </label>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="cc-editor-actions">
-        <button disabled={busy || !key}>Добавить</button>
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Отмена
+        {amount !== '' && !valid && (
+          <p className="error" role="alert">
+            Введите сумму от 0 до 1 000 000 млн ₽
+          </p>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          className="cc-equipment-submit"
+          disabled={busy || !key || !valid || existing[key as keyof typeof existing] != null}
+        >
+          {busy ? 'Добавление…' : 'Добавить'}
         </button>
-      </div>
-    </form>
+      </form>
+    </Modal>
   );
 }
