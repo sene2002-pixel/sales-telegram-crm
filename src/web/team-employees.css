@@ -1,0 +1,250 @@
+.team-roster {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.team-roster-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  text-align: left;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.team-roster-count,
+.team-employee-identity strong small {
+  display: inline-block;
+  color: #495974;
+  background: #eef2f7;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.team-roster-toggle > svg {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.team-roster-toggle[aria-expanded='true'] > svg {
+  transform: rotate(90deg);
+}
+
+.team-roster ul {
+  padding: 0 16px 4px;
+  margin: 0;
+  list-style: none;
+}
+
+.team-roster .employee-row {
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+
+.team-employee-summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 48px;
+}
+
+.team-employee-identity {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.team-employee-identity strong {
+  display: block;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.team-employee-identity strong small {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.team-employee-meta,
+.team-employee-id,
+.team-roster-empty {
+  display: block;
+  color: #586681;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.team-roster-empty {
+  margin: 0 16px 12px;
+}
+
+.team-employee-blocked {
+  color: #a03d34;
+}
+
+.team-employee-edit,
+.team-employee-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.team-employee-edit {
+  flex: 0 0 44px;
+  width: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: #426387;
+}
+
+.team-employee-edit[aria-expanded='true'] {
+  color: #1759a9;
+  background: var(--soft);
+}
+
+.team-employee-form {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #f6f8fc;
+  min-width: 0;
+}
+
+.team-employee-form fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+}
+
+.team-employee-form h3,
+.team-employee-form p,
+.team-employee-form .field {
+  margin: 0;
+}
+
+.team-employee-form .field {
+  min-width: 0;
+}
+
+.team-employee-form .field > span {
+  color: #495974;
+  font-size: 0.75rem;
+}
+
+.team-employee-form .field :is(select, input) {
+  font-size: 1rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+}
+
+.team-employee-selects {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.75rem), 1fr));
+}
+
+.team-employee-selects .field {
+  position: relative;
+}
+
+.team-employee-selects .field select {
+  appearance: none;
+  padding-inline-end: 26px;
+  text-overflow: ellipsis;
+}
+
+.team-employee-selects .field::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 20px;
+  width: 7px;
+  height: 7px;
+  border: solid #495974;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.team-employee-form .team-employee-id {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.team-employee-id input[readonly] {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+}
+
+.team-employee-active {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.875rem;
+}
+
+.team-employee-active input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.team-employee-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-employee-actions .primary {
+  background-color: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.team-employee-actions button,
+.team-employee-add {
+  min-height: 44px;
+  font-size: 0.8125rem;
+  padding: 8px 12px;
+}
+
+.team-employee-notice {
+  margin: 4px 0;
+  color: #24684c;
+  font-size: 0.8125rem;
+}

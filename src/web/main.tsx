@@ -348,7 +348,13 @@ function App() {
     clearAccountData();
     setError('');
   }
-  async function refreshActor() {
+  async function refreshActor(source: 'screen' | 'team-save' = 'screen') {
+    function handleUnavailableScope(error: unknown) {
+      clearScopeData();
+      // A transient read failure after a team save must leave its retry control mounted.
+      const temporary = !(error instanceof ApiError) || error.status >= 500;
+      if (source !== 'team-save' || !temporary) setScopeVersion((v) => v + 1);
+    }
     const sequence = ++refreshSequence.current;
     let actor: Actor;
     try {
@@ -362,8 +368,7 @@ function App() {
       )
         logout();
       else {
-        clearScopeData();
-        setScopeVersion((v) => v + 1);
+        handleUnavailableScope(e);
         setScopeFailed((e as Error).message);
         setScopeBusy(false);
       }
@@ -391,8 +396,7 @@ function App() {
       } catch (e) {
         if (sequence !== refreshSequence.current) return;
         if (sequence === refreshSequence.current) {
-          clearScopeData();
-          setScopeVersion((v) => v + 1);
+          handleUnavailableScope(e);
           setScopeFailed('Не удалось загрузить список сотрудников');
           setEmployeeError('Не удалось загрузить список сотрудников');
           setOptionsLoading(false);
@@ -453,8 +457,7 @@ function App() {
       setError(resetWarning);
     } catch (e) {
       if (sequence === refreshSequence.current) {
-        clearScopeData();
-        setScopeVersion((v) => v + 1);
+        handleUnavailableScope(e);
         setScopeFailed((e as Error).message);
         throw e;
       }
@@ -464,9 +467,9 @@ function App() {
     }
     return actor;
   }
-  async function refresh() {
+  async function refresh(source: 'screen' | 'team-save' = 'screen') {
     invalidateClientScores();
-    await refreshActor();
+    await refreshActor(source);
   }
   useEffect(() => {
     if (
@@ -1131,7 +1134,7 @@ function App() {
               </>
             )}
             {tab === 'team' && user.role !== 'manager' && (
-              <Team user={user} users={users} onChanged={refresh} />
+              <Team user={user} users={users} onChanged={() => refresh('team-save')} />
             )}
           </div>
         )}
