@@ -38,6 +38,7 @@ import {
 import './styles.css';
 import './home.css';
 import { HomeExtras } from './HomeExtras';
+import { HomeIdea } from './HomeIdea';
 import picoAvatar from '../../public/brand/pico-avatar.png';
 import { configureViewport, TelegramViewport } from './viewport';
 declare global {
@@ -172,6 +173,8 @@ function App() {
   const [analyticsSettingsOpen, setAnalyticsSettingsOpen] = useState(false),
     [analyticsRefreshVersion, setAnalyticsRefreshVersion] = useState(0);
   const [homeIntroOpen, setHomeIntroOpen] = useState(false);
+  const [ideaOpen, setIdeaOpen] = useState(false);
+  useEffect(() => setIdeaOpen(false), [user?.id, tab]);
   const [more, setMore] = useState(false),
     [recordCreate, setRecordCreate] = useState<'task' | 'project' | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
@@ -845,7 +848,7 @@ function App() {
                 onNavigate={setTab}
                 introOpen={homeIntroOpen}
                 onCloseIntro={() => setHomeIntroOpen(false)}
-                actions={<HomeExtras user={user} users={users} />}
+                actions={<HomeExtras user={user} users={users} onIdea={() => setIdeaOpen(true)} />}
                 onCreateCompany={() => setCreate(true)}
                 onCreateProject={() => setRecordCreate('project')}
               />
@@ -1253,13 +1256,20 @@ function App() {
     </div>
   );
   return (
-    <TaskActionsProvider
-      key={`${token}:${employeeId}:${scopeVersion}`}
-      session={token}
-      onChanged={refresh}
-    >
-      {application}
-    </TaskActionsProvider>
+    <>
+      <TaskActionsProvider
+        key={`${token}:${employeeId}:${scopeVersion}`}
+        session={token}
+        onChanged={refresh}
+      >
+        {application}
+      </TaskActionsProvider>
+      <HomeIdea
+        key={user.id}
+        open={ideaOpen && tab === 'home'}
+        onClose={() => setIdeaOpen(false)}
+      />
+    </>
   );
 }
 createRoot(document.getElementById('root')!).render(

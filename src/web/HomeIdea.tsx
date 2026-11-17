@@ -1,29 +1,40 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ideaTopics, maxIdeaScreenshotBytes } from '../shared/pico-ideas';
-import { api } from './api';
+import { api, ApiError } from './api';
 import { Modal } from './forms';
 import { Icon } from './Icons';
 import './home-idea.css';
 
-export function HomeIdea({ onClose }: { onClose: () => void }) {
+export function HomeIdea({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [topic, setTopic] = useState<(typeof ideaTopics)[number]>();
   const [text, setText] = useState('');
   const [screenshot, setScreenshot] = useState<{ file: File; preview: string }>();
-  const [submissionId] = useState(() => crypto.randomUUID());
+  const [submissionId, setSubmissionId] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
+  const [uncertain, setUncertain] = useState(false);
+  const successRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (open && submitted) successRef.current?.focus();
+  }, [open, submitted]);
+  const close = () => {
+    if (busy) return;
+    if (submitted) {
+      setTopic(undefined);
+      setText('');
+      setScreenshot(undefined);
+      setSubmissionId(crypto.randomUUID());
+      setSubmitted(false);
+      setUncertain(false);
+      setError('');
+    }
+    onClose();
+  };
+  if (!open) return null;
   return (
-    <Modal
-      title="Идея"
-      titleIcon={<Icon name="bulb" />}
-      sheet
-      closeDisabled={busy}
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-    >
+    <Modal title="Идея" titleIcon={<Icon name="bulb" />} sheet closeDisabled={busy} onClose={close}>
       <div className="pico-home-idea">
         {submitted ? (
           <div className="pico-home-idea-success" role="status">
@@ -32,7 +43,7 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
             </span>
             <h3>Спасибо за идею!</h3>
             <p>Мы прочитаем её и ответим вам в боте.</p>
-            <button type="button" className="primary" onClick={onClose}>
+            <button ref={successRef} type="button" className="primary" onClick={close}>
               На главную
             </button>
           </div>
@@ -50,9 +61,29 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
               if (screenshot) form.set('screenshot', screenshot.file);
               try {
                 await api('/pico-ideas', 'POST', form);
+                setUncertain(false);
                 setSubmitted(true);
               } catch (cause) {
-                setError((cause as Error).message);
+                if (
+                  cause instanceof ApiError &&
+                  cause.status >= 400 &&
+                  cause.status < 500 &&
+                  cause.status !== 408 &&
+                  cause.status !== 429
+                ) {
+                  setError(
+                    uncertain
+                      ? `${cause.message}. Предыдущая отправка могла состояться. Повторите без изменений или выберите изменение идеи.`
+                      : cause.message,
+                  );
+                } else {
+                  setUncertain(true);
+                  const reason =
+                    cause instanceof ApiError && cause.status === 429 ? `${cause.message}. ` : '';
+                  setError(
+                    `${reason}Не удалось подтвердить отправку. Повторите отправку без изменений позже: повтор не создаст дубль.`,
+                  );
+                }
               } finally {
                 setBusy(false);
               }
@@ -65,7 +96,7 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
                   key={value}
                   type="button"
                   aria-pressed={topic === value}
-                  disabled={busy}
+                  disabled={busy || uncertain}
                   onClick={() => setTopic(topic === value ? undefined : value)}
                 >
                   {value}
@@ -77,7 +108,7 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
               placeholder="Опишите идею"
               value={text}
               maxLength={2000}
-              disabled={busy}
+              disabled={busy || uncertain}
               onChange={(event) => setText(event.target.value)}
             />
             {screenshot ? (
@@ -86,7 +117,7 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   aria-label="Убрать скриншот"
-                  disabled={busy}
+                  disabled={busy || uncertain}
                   onClick={() => setScreenshot(undefined)}
                 >
                   <Icon name="close" />
@@ -98,7 +129,7 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
                 <input
                   type="file"
                   accept="image/png,image/jpeg"
-                  disabled={busy || reading}
+                  disabled={busy || reading || uncertain}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.target.value = '';
@@ -125,6 +156,19 @@ export function HomeIdea({ onClose }: { onClose: () => void }) {
               <p className="error" role="alert">
                 {error}
               </p>
+            )}
+            {uncertain && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setSubmissionId(crypto.randomUUID());
+                  setUncertain(false);
+                  setError('');
+                }}
+              >
+                Изменить идею (возможно, предыдущая уже отправлена)
+              </button>
             )}
             <button className="primary" disabled={busy || reading || !text.trim()}>
               {busy ? 'Отправляем…' : 'Отправить'}

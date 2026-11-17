@@ -316,7 +316,7 @@ function ShareSheet({
           onClick={() => void share('copy')}
         >
           <Icon name={copied ? 'check' : 'copy'} size={18} />
-          {copied ? 'Ссылка скопирована' : 'Скопировать ссылку'}
+          {copied ? 'Сообщение скопировано' : 'Скопировать сообщение'}
         </button>
         <button
           type="button"
@@ -334,7 +334,7 @@ function ShareSheet({
           </p>
         )}
         <span className="pico-share-announcement" role="status">
-          {busy ? 'Готовим ссылку…' : copied ? 'Ссылка скопирована' : ''}
+          {busy ? 'Готовим ссылку…' : copied ? 'Сообщение скопировано' : ''}
         </span>
       </div>
     </Modal>

@@ -9,4 +9,18 @@ export interface PicoStarInvoice {
 export interface PicoStarInvoiceStatus {
   amount: number;
   status: 'pending' | 'expired' | 'paid' | 'refunded';
+  canCancel: boolean;
+}
+
+export interface PicoStarReceipt {
+  id: string;
+  amount: number;
+  status: 'paid' | 'refunded';
+}
+
+export interface PicoStarInvoiceOverview {
+  id: string | null;
+  enabled: boolean;
+  termsUrl: string | null;
+  lastPayment: PicoStarReceipt | null;
 }

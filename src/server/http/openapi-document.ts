@@ -310,7 +310,11 @@ schemas.CsvLink = object({
   expiresAt: timestamp,
 });
 const sender = object(
-  { id: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, first_name: string },
+  {
+    id: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+    first_name: string,
+    is_bot: boolean,
+  },
   ['id'],
   true,
 );
@@ -394,6 +398,7 @@ const errorDescriptions: Record<number, string> = {
   403: 'Доступ не выдан/отозван либо роль/фильтр недоступны',
   404: 'Объект недоступен или ссылка истекла (не раскрывает чужую запись)',
   409: 'Конфликт версии, состояния или лимита записей',
+  412: 'Обновились условия поддержки Pico, требуется новое согласие',
   413: 'Превышен предел тела/файла',
   422: 'Не удалось достоверно подготовить содержимое',
   429: 'Превышен лимит запросов; повторить после Retry-After',
@@ -605,9 +610,45 @@ add(
   object({ id: uuid, url: { type: 'string', format: 'uri' } }),
   {
     body: jsonBody(jsonSchema(picoStarInvoiceInput)),
-    errors: [400, 401, 403, 429, 500, 502, 503],
+    errors: [400, 401, 403, 409, 412, 429, 500, 502, 503],
     description:
       'Доступно при настроенных платежах. Ссылка открывается в Telegram Mini App, счёт привязан к текущему сотруднику.',
+  },
+);
+add(
+  'get',
+  '/me/pico-stars/invoices/active',
+  'activePicoStarInvoice',
+  'Получить состояние платежей текущего сотрудника',
+  'Telegram',
+  object({
+    id: nullable(uuid),
+    enabled: boolean,
+    termsUrl: nullable({ type: 'string', format: 'uri' }),
+    lastPayment: nullable(
+      object({
+        id: uuid,
+        amount: { type: 'integer', minimum: picoStarsMinimum, maximum: picoStarsMaximum },
+        status: { type: 'string', enum: ['paid', 'refunded'] },
+      }),
+    ),
+  }),
+  {
+    errors: [401, 403, 429, 500],
+    description:
+      'Возвращает активный счёт, последний завершённый платёж и условия создания нового счёта.',
+  },
+);
+add(
+  'post',
+  '/me/pico-stars/invoices/{id}/cancel',
+  'cancelPicoStarInvoice',
+  'Отменить счёт до начала оплаты',
+  'Telegram',
+  object({ cancelled: { type: 'boolean' } }),
+  {
+    errors: [400, 401, 403, 429, 500],
+    description: 'Счёт не отменяется, если Telegram начал pre-checkout.',
   },
 );
 add(
@@ -619,10 +660,11 @@ add(
   object({
     amount: { type: 'integer', minimum: picoStarsMinimum, maximum: picoStarsMaximum },
     status: { type: 'string', enum: ['pending', 'expired', 'paid', 'refunded'] },
+    canCancel: boolean,
   }),
   {
     errors: [400, 401, 403, 404, 429, 500],
-    description: 'Статус paid выставляется после подтверждённого Telegram webhook.',
+    description: 'Статус paid требует подтверждённой операции Telegram.',
   },
 );
 add(

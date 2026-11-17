@@ -29,7 +29,7 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
     )
     .sort();
   assert.deepEqual(actual, declared);
-  assert.equal(actual.length, 66);
+  assert.equal(actual.length, 68);
   for (const [path, method] of [
     ['/team-invitations', 'get'],
     ['/team-invitations', 'post'],
