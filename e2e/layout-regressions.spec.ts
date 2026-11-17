@@ -43,21 +43,22 @@ for (const width of [360, 390, 1440]) {
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
     const crown = page.getByRole('button', { name: 'Управление пользователями', exact: true });
     const heading = page.locator('.pico-home-greeting h1');
-    const subtitle = page.locator('.pico-home-welcome > .muted');
-    const [crownBox, headingBox, subtitleBox] = await Promise.all([
+    const [crownBox, headingBox, overviewBox] = await Promise.all([
       crown.boundingBox(),
       heading.boundingBox(),
-      subtitle.boundingBox(),
+      page.locator('.pico-home-overview').boundingBox(),
     ]);
-    expect(crownBox!.x).toBeGreaterThan(headingBox!.x);
+    expect(crownBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
     expect(crownBox!.x + crownBox!.width).toBeLessThanOrEqual(
-      headingBox!.x + headingBox!.width + 1,
+      overviewBox!.x + overviewBox!.width + 1,
     );
-    expect(crownBox!.width).toBeLessThanOrEqual(30);
-    expect(crownBox!.y).toBeLessThan(headingBox!.y + headingBox!.height);
-    expect(Math.abs(subtitleBox!.x - headingBox!.x)).toBeLessThan(1);
-    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeGreaterThanOrEqual(0);
-    expect(subtitleBox!.y - headingBox!.y - headingBox!.height).toBeLessThanOrEqual(1);
+    expect(crownBox!.width).toBe(32);
+    expect(crownBox!.y + crownBox!.height / 2).toBeCloseTo(
+      headingBox!.y + headingBox!.height / 2,
+      0,
+    );
+    expect(Math.abs(overviewBox!.x - headingBox!.x)).toBeLessThan(1);
+    expect(overviewBox!.y - headingBox!.y - headingBox!.height).toBe(16);
     if (width <= 760) {
       await expect(page.locator('.mobile-brand')).toBeHidden();
     } else {

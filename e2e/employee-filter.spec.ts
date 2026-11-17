@@ -583,11 +583,10 @@ test('Employee filter: Home shared card, inline crown and settings stay usable a
     const crown = (await page
       .getByRole('button', { name: 'Управление пользователями' })
       .boundingBox())!;
-    expect(crown.y).toBeLessThan(title.y + title.height);
-    expect(crown.width).toBeLessThanOrEqual(30);
-    const subtitle = (await greeting.locator('p').boundingBox())!;
-    expect(subtitle.y - title.y - title.height).toBeGreaterThanOrEqual(0);
-    expect(subtitle.y - title.y - title.height).toBeLessThanOrEqual(1);
+    expect(crown.x).toBeGreaterThanOrEqual(title.x + title.width);
+    expect(crown.y + crown.height / 2).toBeCloseTo(title.y + title.height / 2, 0);
+    expect(crown.width).toBe(32);
+    expect(panel.y - title.y - title.height).toBe(16);
     await choose(page, f.a.id);
     await page.screenshot({ path: info.outputPath(`home-${width}.png`) });
     await navigate(page, 'Клиенты');

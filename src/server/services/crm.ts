@@ -816,14 +816,19 @@ export class CrmService {
     raw: unknown,
     projectId: string | null = null,
     tx?: Sql,
-    internal?: { contactSource: 'user' | 'bot' | 'unknown' },
+    options?: { contactSource?: 'user' | 'bot' | 'unknown'; assignToSelf?: boolean },
   ): Promise<CrmRecord> {
+    requireCondition(
+      !options?.assignToSelf || kind === 'task',
+      400,
+      'Ответственный задаётся для задачи',
+    );
     const data = recordSchemas[kind].parse(raw);
     if (kind === 'activity' && (data as any).sales)
       (data as any).sales = normalizeSales((data as any).sales);
     if (!tx)
       return this.db.transaction((t) =>
-        this.createRecord(actor, companyId, kind, data, projectId, t, internal),
+        this.createRecord(actor, companyId, kind, data, projectId, t, options),
       );
     await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const company = await this.company(actor, companyId, tx, true);
@@ -837,6 +842,8 @@ export class CrmService {
       requireCondition(project, 400, 'Проект не принадлежит компании');
     }
     const id = randomUUID();
+    const assigneeId =
+      kind === 'task' ? (options?.assignToSelf ? actor.id : company.ownerId) : null;
     const recordData =
       kind === 'task'
         ? {
@@ -854,9 +861,9 @@ export class CrmService {
         companyId,
         projectId,
         actor.id,
-        kind === 'task' ? company.ownerId : null,
+        assigneeId,
         JSON.stringify(recordData),
-        kind === 'contact' ? internal?.contactSource || 'user' : 'unknown',
+        kind === 'contact' ? options?.contactSource || 'user' : 'unknown',
       ],
     );
     await audit(tx, actor.id, `${kind}.created`, id, companyId, {

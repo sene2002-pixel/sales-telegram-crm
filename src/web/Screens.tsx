@@ -1,9 +1,10 @@
 import { SwipeAction } from './ClientCardWidgets';
 import { TaskDetailSheet } from './TaskDetailSheet';
+import { AgendaTaskType, HomeAgenda } from './HomeAgenda';
 import { useTaskActions } from './TaskActions';
 import { compactMoney, fullMoney } from './api';
 import { companyDisplayName } from '../shared/company-display-name';
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Actor,
   Company,
@@ -15,7 +16,6 @@ import {
   divisionLabels,
   labels,
   stages,
-  taskSchema,
   taskTypeLabels,
 } from '../shared/contracts';
 import { api, ApiError, money, today } from './api';
@@ -37,10 +37,14 @@ export function RecordCreate({
   projects,
   onClose,
   onChanged,
+  homeTask,
 }: Pick<Common, 'companies' | 'projects' | 'onChanged'> & {
   kind: 'task' | 'project';
   onClose: () => void;
+  homeTask?: { type: AgendaTaskType; user: Actor };
 }) {
+  const taskTextRef = useRef<HTMLTextAreaElement>(null);
+  const [saving, setSaving] = useState(false);
   const [companyId, setCompanyId] = useState(''),
     [contacts, setContacts] = useState<CrmRecord[]>([]),
     [contactError, setContactError] = useState(''),
@@ -63,7 +67,16 @@ export function RecordCreate({
     };
   }, [companyId]);
   return (
-    <Modal title={kind === 'task' ? 'Новая задача' : 'Новый проект'} onClose={onClose}>
+    <Modal
+      title={kind === 'task' ? 'Новая задача' : 'Новый проект'}
+      sheet={!!homeTask}
+      className={homeTask ? 'pico-agenda-create-sheet' : undefined}
+      initialFocusRef={homeTask ? taskTextRef : undefined}
+      closeDisabled={saving}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+    >
       {acknowledged ? (
         <>
           <p role="status">Запись сохранена. Обновите список, чтобы увидеть изменения.</p>
@@ -75,16 +88,32 @@ export function RecordCreate({
         <TaskComposer
           companies={companies}
           projects={projects}
+          homeTask={
+            homeTask && {
+              initialType: homeTask.type,
+              assigneeName: homeTask.user.name,
+              textRef: taskTextRef,
+            }
+          }
           onSave={async (data, cid, pid) => {
-            await api(`/companies/${cid}/records/task`, 'POST', { data, projectId: pid });
-            setAcknowledged(true);
+            setSaving(true);
             try {
-              await onChanged();
-              onClose();
-            } catch (e) {
-              setContactError(
-                'Запись сохранена, но обновление не удалось: ' + (e as Error).message,
-              );
+              await api(`/companies/${cid}/records/task`, 'POST', {
+                data,
+                projectId: pid,
+                ...(homeTask ? { assignToSelf: true } : {}),
+              });
+              setAcknowledged(true);
+              try {
+                await onChanged();
+                onClose();
+              } catch (e) {
+                setContactError(
+                  'Запись сохранена, но обновление не удалось: ' + (e as Error).message,
+                );
+              }
+            } finally {
+              setSaving(false);
             }
           }}
         />
@@ -258,75 +287,14 @@ function Empty({ icon, title, text }: { icon: string; title: string; text: strin
     </div>
   );
 }
-export function TaskList({
-  list,
-  inlineActions = false,
-  ...props
-}: Common & { list: NamedRecord[]; inlineActions?: boolean }) {
+export function TaskList({ list, ...props }: Common & { list: NamedRecord[] }) {
   const taskActions = useTaskActions();
-  const [selected, setSelected] = useState<NamedRecord | null>(null),
-    [postpone, setPostpone] = useState(false),
-    [due, setDue] = useState(today()),
-    [time, setTime] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [expanded, setExpanded] = useState('');
-  function remove(task: NamedRecord) {
-    taskActions.schedule(task, 'deleted');
-    setSelected(null);
-    setExpanded('');
-  }
-  async function update(task: NamedRecord, changes: Record<string, unknown>) {
-    if (typeof changes.done === 'boolean') {
-      taskActions.schedule(task, changes.done ? 'done' : 'restore');
-      setSelected(null);
-      setExpanded('');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await api(`/records/${task.id}`, 'PATCH', {
-        version: task.version,
-        data: taskSchema.parse({
-          text: task.data.text,
-          due: task.data.due,
-          done: task.data.done,
-          deleted: task.data.deleted,
-          type: task.data.type || 'reminder',
-          time: task.data.time || null,
-          contactId: task.data.contactId || null,
-          ...changes,
-        }),
-      });
-      await props.onChanged();
-      setSelected(null);
-      setPostpone(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const [selected, setSelected] = useState<NamedRecord | null>(null);
   return (
     <>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
       <div className="pico-compact-list pico-task-list">
         {taskActions.project(list).map((t) => {
-          const open = () => {
-            if (inlineActions) {
-              setExpanded(expanded === t.id ? '' : t.id);
-              return;
-            }
-            setSelected(t);
-            setDue(t.data.due || today());
-            setTime(t.data.time || '');
-            setError('');
-          };
+          const open = () => setSelected(t);
           const row = (
             <article
               className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
@@ -373,12 +341,11 @@ export function TaskList({
                     companyDisplayName(t.companyName)}
                   {t.data.due
                     ? ' · ' +
-                      (inlineActions
-                        ? ''
-                        : new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
-                            day: 'numeric',
-                            month: 'short',
-                          }) + ' · ') +
+                      new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
+                        day: 'numeric',
+                        month: 'short',
+                      }) +
+                      ' · ' +
                       (t.data.time || 'Без времени')
                     : ' · Без срока'}
                 </small>
@@ -388,30 +355,6 @@ export function TaskList({
               )}
               {t.data.deleted && <span className="status">Удалена</span>}
               <Icon name="chevron-right" size={16} />
-              {inlineActions && expanded === t.id && (
-                <div className="pico-task-actions">
-                  <button disabled={busy} onClick={() => update(t, { done: !t.data.done })}>
-                    <Icon name="check" size={14} />
-                    {t.data.done ? 'Вернуть' : 'Выполнено'}
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      setSelected(t);
-                      setPostpone(true);
-                      setDue(t.data.due || today());
-                      setTime(t.data.time || '');
-                    }}
-                  >
-                    <Icon name="clock" size={14} />
-                    Отложить
-                  </button>
-                  <button disabled={busy} onClick={() => remove(t)}>
-                    <Icon name="trash" size={14} />
-                    Удалить
-                  </button>
-                </div>
-              )}
             </article>
           );
           return t.data.done || t.data.deleted ? (
@@ -421,7 +364,7 @@ export function TaskList({
               key={t.id}
               label={`задачу «${t.data.text}»`}
               onEdit={open}
-              onDelete={async () => remove(t)}
+              onDelete={async () => taskActions.schedule(t, 'deleted')}
               confirmDelete={false}
               disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
             >
@@ -437,7 +380,7 @@ export function TaskList({
           text="Создайте задачу или отправьте отчёт в чат Pico."
         />
       )}
-      {selected && !postpone && (
+      {selected && (
         <TaskDetailSheet
           task={selected}
           {...props}
@@ -449,168 +392,56 @@ export function TaskList({
           onClose={() => setSelected(null)}
         />
       )}
-      {selected && postpone && (
-        <Modal
-          title="Отложить задачу"
-          onClose={() => {
-            setSelected(null);
-            setPostpone(false);
-          }}
-        >
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
-          {
-            <>
-              <Field label="Дата">
-                <input type="date" required value={due} onChange={(e) => setDue(e.target.value)} />
-              </Field>
-              <Field label="Время">
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </Field>
-              <div className="pico-quick-dates">
-                <button
-                  onClick={() => {
-                    const d = new Date();
-                    d.setHours(d.getHours() + 1);
-                    setDue(
-                      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-                    );
-                    setTime(
-                      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
-                    );
-                  }}
-                >
-                  <Icon name="clock" size={16} />
-                  <strong>Через час</strong>
-                  <small>
-                    {new Date(Date.now() + 3600000).toLocaleString('ru-RU', {
-                      day: 'numeric',
-                      month: 'long',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </small>
-                </button>
-                {[
-                  ['Завтра утром', 1],
-                  ['Через неделю', 7],
-                ].map(([label, n]) => (
-                  <button
-                    key={label}
-                    onClick={() => {
-                      const d = new Date(today() + 'T12:00:00');
-                      d.setDate(d.getDate() + Number(n));
-                      if (Number(n) === 1) setTime('10:00');
-                      setDue(
-                        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-                      );
-                    }}
-                  >
-                    <Icon name="calendar" size={16} />
-                    <strong>{label}</strong>
-                    <small>
-                      {(() => {
-                        const d = new Date(today() + 'T12:00:00');
-                        d.setDate(d.getDate() + Number(n));
-                        return (
-                          d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) +
-                          ', ' +
-                          (Number(n) === 1 ? '10:00' : time || 'без времени')
-                        );
-                      })()}
-                    </small>
-                  </button>
-                ))}
-              </div>
-              <button
-                disabled={busy || !due}
-                className="primary"
-                onClick={() => update(selected, { due, time: time || null })}
-              >
-                Отложить
-              </button>
-            </>
-          }
-        </Modal>
-      )}
     </>
   );
 }
 export function HomeScreen(
   props: Common & {
     user: Actor;
+    introOpen: boolean;
+    onCloseIntro: () => void;
     onNavigate: (tab: string) => void;
-    onOverdue?: () => void;
     onCreateCompany: () => void;
-    onCreateRecord: (kind: 'task' | 'project') => void;
+    onCreateProject: () => void;
+    actions?: ReactNode;
   },
 ) {
-  const taskActions = useTaskActions();
-  const tasks = taskActions.project(props.tasks);
-  const [introOpen, setIntroOpen] = useState(false);
-  const active = props.companies.filter((c) => !c.archived && c.stage !== 'closed');
-  const open = tasks.filter((t) => !t.data.done);
-  const todays = open.filter((t) => t.data.due === today() && t.data.type !== 'meeting');
-  const meetings = open
-    .filter((t) => t.data.type === 'meeting')
-    .sort((a, b) => String(a.data.due || '9999').localeCompare(String(b.data.due || '9999')));
-  const overdue = open.filter((t) => t.data.due && t.data.due < today());
+  const [selected, setSelected] = useState<NamedRecord | null>(null);
+  const [creating, setCreating] = useState<AgendaTaskType | null>(null);
   return (
-    <div className="pico-home pico-static-home">
-      {!active.length && (
-        <button className="pico-home-start" onClick={() => setIntroOpen(true)}>
-          С чего начать <Icon name="chevron-right" size={16} />
-        </button>
+    <div className="pico-home">
+      <HomeAgenda
+        tasks={props.tasks}
+        projects={props.projects}
+        onOpen={setSelected}
+        onCreate={setCreating}
+      />
+      {props.actions}
+      {selected && (
+        <TaskDetailSheet
+          task={selected}
+          {...props}
+          saveOnClose
+          advice={<TaskAdvice id={selected.id} />}
+          contactLabel={
+            <ContactLabel companyId={selected.companyId} contactId={selected.data.contactId} />
+          }
+          onSaved={setSelected}
+          onClose={() => setSelected(null)}
+        />
       )}
-      <div
-        className="pico-home-feed"
-        role="region"
-        aria-label="Задачи и встречи на главной"
-        tabIndex={0}
-      >
-        <section className="pico-home-block" aria-labelledby="home-today-heading">
-          <h2 id="home-today-heading">Сегодня</h2>
-          {todays.length ? (
-            <TaskList {...props} list={todays} inlineActions />
-          ) : (
-            <div className="pico-home-empty">
-              <span className="pico-home-empty-icon">
-                <Icon name="today-calendar" size={24} />
-              </span>
-              <strong>На сегодня задач нет</strong>
-              <p>Хорошее время, чтобы запланировать следующий контакт с клиентами.</p>
-            </div>
-          )}
-        </section>
-        <section className="pico-home-block" aria-labelledby="home-meetings-heading">
-          <h2 id="home-meetings-heading">Встречи</h2>
-          {meetings.length ? (
-            <TaskList {...props} list={meetings} />
-          ) : (
-            <div className="pico-home-empty">
-              <span className="pico-home-empty-icon">
-                <Icon name="handshake" size={24} />
-              </span>
-              <strong>Встреч не запланировано</strong>
-              <p>Каждая встреча приближает сделку. Назначьте первую, это займёт минуту.</p>
-            </div>
-          )}
-        </section>
-        {overdue.length > 0 && (
-          <button
-            className="pico-add-row"
-            onClick={() => (props.onOverdue ? props.onOverdue() : props.onNavigate('tasks'))}
-          >
-            Просроченные задачи · {overdue.length}
-            <Icon name="chevron-right" size={16} />
-          </button>
-        )}
-      </div>
-      {introOpen && (
-        <Modal title="С чего начать" onClose={() => setIntroOpen(false)}>
+      {creating && (
+        <RecordCreate
+          kind="task"
+          companies={props.companies}
+          projects={props.projects}
+          onChanged={props.onChanged}
+          onClose={() => setCreating(null)}
+          homeTask={{ type: creating, user: props.user }}
+        />
+      )}
+      {props.introOpen && (
+        <Modal title="С чего начать" onClose={() => props.onCloseIntro()}>
           <section className="pico-intro">
             <h2>Как работает Pico</h2>
             <p>
@@ -633,17 +464,12 @@ export function HomeScreen(
                 'Вручную или через Telegram-чат Pico',
                 props.onCreateCompany,
               ],
-              [
-                'projects',
-                'Создать проект',
-                'Объект, сумма и срок',
-                () => props.onCreateRecord('project'),
-              ],
+              ['projects', 'Создать проект', 'Объект, сумма и срок', props.onCreateProject],
               [
                 'tasks',
                 'Поставить задачу',
                 'Следующий шаг по клиенту',
-                () => props.onCreateRecord('task'),
+                () => setCreating('reminder'),
               ],
               [
                 'analytics',
@@ -655,7 +481,7 @@ export function HomeScreen(
               <button
                 key={String(title)}
                 onClick={() => {
-                  setIntroOpen(false);
+                  props.onCloseIntro();
                   (action as () => void)();
                 }}
               >
@@ -680,17 +506,16 @@ export function TasksScreen(
   props: Common & {
     calendarOnly?: boolean;
     onCreate: () => void;
-    initialFilter?: 'open' | 'overdue' | 'today' | 'meetings';
   },
 ) {
   const taskActions = useTaskActions();
   const tasks = taskActions.project(props.tasks);
   const [query, setQuery] = useState(''),
-    [filter, setFilter] = useState<string>(props.initialFilter === 'overdue' ? 'overdue' : 'open'),
+    [filter, setFilter] = useState('open'),
     [month, setMonth] = useState(today().slice(0, 7)),
     [date, setDate] = useState(today()),
-    [byDate, setByDate] = useState(!!props.calendarOnly || props.initialFilter === 'today'),
-    [type, setType] = useState(props.initialFilter === 'meetings' ? 'meeting' : ''),
+    [byDate, setByDate] = useState(!!props.calendarOnly),
+    [type, setType] = useState(''),
     [filtersOpen, setFiltersOpen] = useState(false);
   const search = tasks.filter((t) =>
     `${t.data.text} ${t.companyName} ${companyDisplayName(t.companyName)} ${props.projects.find((p) => p.id === t.projectId)?.data.name || t.projectName || ''}`

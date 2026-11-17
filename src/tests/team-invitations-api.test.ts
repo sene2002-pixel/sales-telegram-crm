@@ -62,6 +62,24 @@ test('HTTP ACL rejects managers before Telegram call and unauthenticated invitat
   await request(app.getHttpServer()).post('/api/team-invitations').send({}).expect(401);
   assert.equal(calls, before);
 });
+test('manager may share the current public bot profile without issuing an invitation', async () => {
+  const before = calls;
+  await request(app.getHttpServer()).get('/api/share/bot-link').expect(401);
+  assert.equal(calls, before);
+  const invitationsBefore = await db.query('SELECT count(*) FROM team_invitations');
+  await api(manager, 'get', '/share/bot-link').expect(200, {
+    url: 'https://t.me/PicoSalesBot',
+  });
+  assert.equal(calls, before + 1);
+  assert.deepEqual(await db.query('SELECT count(*) FROM team_invitations'), invitationsBefore);
+  const call = services.telegram.call;
+  services.telegram.call = async () => ({ username: 'bad/path' });
+  try {
+    await api(manager, 'get', '/share/bot-link').expect(503);
+  } finally {
+    services.telegram.call = call;
+  }
+});
 test('HTTP creation resolves current bot; teams are scoped and metadata never returns bearer link', async () => {
   const made = await api(supervisor, 'post', '/team-invitations', {}).expect(201);
   assert.match(made.body.url, /^https:\/\/t.me\/PicoSalesBot\?start=invite_[A-Za-z0-9_-]{43}$/);

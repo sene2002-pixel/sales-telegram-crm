@@ -17,6 +17,8 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     sessionSecret: env.SESSION_SECRET || randomBytes(32).toString('hex'),
     botToken: env.BOT_TOKEN || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
+    picoStarsEnabled: env.PICO_STARS_ENABLED === 'true',
+    picoStarsSupportUsername: (env.PICO_STARS_SUPPORT_USERNAME || '').trim().replace(/^@/, ''),
     adminTelegramId: env.BOOTSTRAP_ADMIN_TELEGRAM_ID || '',
     apiKey: env.OPENAI_API_KEY || '',
     sabyAccessToken: env.SABY_ACCESS_TOKEN || '',
@@ -34,6 +36,16 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     maxVoiceBytes: Number(env.MAX_VOICE_BYTES || 20_000_000),
     maxVoiceSeconds: Number(env.MAX_VOICE_SECONDS || 600),
   };
+  if (
+    (config.picoStarsSupportUsername &&
+      !/^[a-zA-Z][a-zA-Z0-9_]{3,31}$/.test(config.picoStarsSupportUsername)) ||
+    (config.picoStarsEnabled &&
+      (!config.picoStarsSupportUsername || !config.botToken || config.webhookSecret.length < 32))
+  ) {
+    throw new Error(
+      'Pico Stars requires a valid PICO_STARS_SUPPORT_USERNAME, BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET (32+ chars)',
+    );
+  }
   new Intl.DateTimeFormat('ru', { timeZone: config.timezone }).format();
   for (const [name, value] of [
     ['API_RATE_LIMIT_PER_USER', config.apiUserLimit],

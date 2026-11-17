@@ -115,11 +115,10 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     path: info.outputPath('reference-home-empty-native-frame.png'),
   });
   const homeFooter = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  await page
-    .locator('.pico-home-empty')
-    .last()
-    .evaluate((el) => el.scrollIntoView({ block: 'end', behavior: 'instant' }));
-  const homeEmpty = (await page.locator('.pico-home-empty').last().boundingBox())!;
+  const emptyAgenda = page.locator('.pico-agenda-empty');
+  await expect(emptyAgenda.getByText('День свободен')).toBeVisible();
+  await emptyAgenda.evaluate((el) => el.scrollIntoView({ block: 'end', behavior: 'instant' }));
+  const homeEmpty = (await emptyAgenda.boundingBox())!;
   expect(homeEmpty.y + homeEmpty.height).toBeLessThanOrEqual(homeFooter.y);
   await page.evaluate(() => document.fonts.ready);
   const font = await page.evaluate(async () => {
@@ -379,9 +378,13 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     path: info.outputPath('reference-tasks-empty-native-frame.png'),
   });
   await navigate(page, 'Главная');
-  await page.getByRole('button', { name: /Просроченные задачи/ }).scrollIntoViewIfNeeded();
-  await expect(page.getByRole('button', { name: /Просроченные задачи/ })).toBeVisible();
-  await page.getByRole('button', { name: /Просроченные задачи/ }).click();
+  const agenda = page.locator('.pico-agenda');
+  await expect(agenda.locator('.pico-agenda-row')).toHaveCount(10);
+  await expect(agenda.locator('.pico-agenda-row').first()).toContainText('Просрочено');
+  await page
+    .locator('.pico-summary')
+    .getByRole('button', { name: /Задачи/ })
+    .click();
   await expect(page.getByRole('heading', { name: 'Задачи', exact: true })).toBeVisible();
   await expect(page.locator('.pico-task-row')).toHaveCount(10);
 });

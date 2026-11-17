@@ -73,19 +73,24 @@ for (const width of [320, 390, 1440]) {
     await expect(page.locator('.app-shell')).toBeVisible();
     await page.clock.install();
     await page.clock.pauseAt(new Date(Date.now() + 1000));
-    // Both Home variants: Today expands actions; Meetings opens details.
-    for (const type of ['call', 'meeting']) {
-      const row = page.locator('.pico-task-row').filter({ hasText: `Проверить ${type} ` });
-      await row.locator('.checkbox').click();
-      await expect(row.locator('.pico-task-actions')).toHaveCount(0);
-      await expect(page.getByRole('dialog')).toHaveCount(0);
+    // Agenda badges open details; only the independent checkbox toggles completion.
+    const agenda = page.getByRole('region', { name: 'Дела', exact: true });
+    for (const type of ['call', 'meeting', 'email', 'reminder']) {
+      const row = agenda.locator('.pico-agenda-row').filter({ hasText: `Проверить ${type} ` });
+      await row.locator('.pico-agenda-badge').click();
+      const detail = page.getByRole('dialog');
+      await expect(detail.getByRole('button', { name: 'Выполнено', exact: true })).toBeVisible();
+      await detail.getByRole('button', { name: 'Закрыть', exact: true }).click();
+      const checkbox = row.getByRole('checkbox');
+      await checkbox.click();
+      await expect(checkbox).toBeChecked();
+      await expect(row).toHaveClass(/is-completing/);
+      await expect(page.locator('.pico-undo-toast')).toHaveCount(0);
+      await checkbox.click();
+      await expect(checkbox).not.toBeChecked();
     }
-    await expect(page.locator('.pico-undo-toast')).toHaveCount(0);
     await page.clock.runFor(3500);
     expect(patches).toHaveLength(0);
-    const today = page.getByRole('region', { name: 'Сегодня', exact: true });
-    await today.locator('.task-text').filter({ hasText: 'Проверить call ' }).click();
-    await expect(today.getByRole('button', { name: 'Выполнено', exact: true })).toBeVisible();
     await page.screenshot({
       path: `/tmp/task-completion-home-${width}-${info.project.name}.png`,
       animations: 'disabled',
@@ -187,5 +192,17 @@ for (const width of [320, 390, 1440]) {
       version: 3,
       data: { ...patches[2].data, done: false, deleted: false },
     });
+    await navigate(page, 'Главная');
+    const meeting = agenda.locator('.pico-agenda-row').filter({ hasText: 'Проверить meeting ' });
+    const checkbox = meeting.getByRole('checkbox');
+    const priorPatches = patches.length;
+    await checkbox.click();
+    await page.clock.runFor(2999);
+    await expect(checkbox).toBeChecked();
+    expect(patches).toHaveLength(priorPatches);
+    await page.clock.runFor(2);
+    await expect(meeting).toHaveCount(0);
+    await expect(page.locator('.pico-undo-toast')).toHaveCount(0);
+    expect(patches).toHaveLength(priorPatches + 1);
   });
 }

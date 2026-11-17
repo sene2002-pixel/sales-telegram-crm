@@ -25,6 +25,7 @@ import { securityIntent, securityReply } from './pico-security';
 import { picoGreeting } from './pico-greeting';
 import { DialogueService } from './dialogue';
 import { maxPhotoBytes } from './photo-input';
+import { PicoStars, telegramPreCheckout, telegramStarReceipt } from './pico-stars';
 const sender = z.object({
   id: z.number().int().positive().safe(),
   first_name: z.string().optional(),
@@ -39,6 +40,8 @@ const updateSchema = z.object({
       chat: z.object({ id: z.number().int().safe(), type: z.string() }),
       text: z.string().max(20_000).optional(),
       caption: z.string().max(20_000).optional(),
+      successful_payment: telegramStarReceipt.optional(),
+      refunded_payment: telegramStarReceipt.optional(),
       photo: z
         .array(
           z.object({
@@ -72,6 +75,7 @@ const updateSchema = z.object({
         .optional(),
     })
     .optional(),
+  pre_checkout_query: telegramPreCheckout.optional(),
 });
 export class BotService {
   constructor(
@@ -87,6 +91,7 @@ export class BotService {
     private dialogue?: DialogueService,
     private imports?: CompanyImports,
     private invitations?: TeamInvitations,
+    private stars?: PicoStars,
   ) {}
   verify(secret: string) {
     const a = Buffer.from(secret),
@@ -99,6 +104,10 @@ export class BotService {
   }
   async handle(raw: unknown) {
     const update = updateSchema.parse(raw);
+    if (update.pre_checkout_query) {
+      await this.stars?.preCheckout(update.pre_checkout_query);
+      return { ok: true };
+    }
     return this.diagnostics
       ? this.diagnostics.run({ traceId: `telegram:${update.update_id}` }, () =>
           this.handleUpdate(update),
@@ -114,6 +123,15 @@ export class BotService {
       await this.diagnostics?.record('telegram.update_ignored', {
         reason: 'not_private_or_mismatched_sender',
       });
+      return { ok: true };
+    }
+    const receipt = msg?.successful_payment || msg?.refunded_payment;
+    if (receipt) {
+      await this.stars?.recordReceipt(from.id, receipt, Boolean(msg?.refunded_payment));
+      return { ok: true };
+    }
+    if (this.stars && /^\/paysupport(?:@\w+)?(?:\s|$)/i.test(msg?.text || '')) {
+      await this.stars.paymentSupport(String(chat.id));
       return { ok: true };
     }
     const blocked =

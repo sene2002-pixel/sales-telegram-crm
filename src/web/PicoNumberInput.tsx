@@ -20,23 +20,29 @@ export function appendPicoNumberKey(current: string, value: string) {
 export function PicoNumberKeys({
   onKey,
   disabled = false,
+  integerOnly = false,
 }: {
   onKey: (value: string) => void;
   disabled?: boolean;
+  integerOnly?: boolean;
 }) {
   return (
     <div className="pico-number-keys" role="group" aria-label="Клавиатура Pico">
       {['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'erase'].map((digit) => (
-        <button
-          type="button"
-          key={digit}
-          disabled={disabled}
-          aria-label={digit === ',' ? 'Запятая' : digit === 'erase' ? 'Стереть' : digit}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => onKey(digit)}
-        >
-          {digit === 'erase' ? <Icon name="backspace" size={22} /> : digit}
-        </button>
+        integerOnly && digit === ',' ? (
+          <span key={digit} aria-hidden="true" />
+        ) : (
+          <button
+            type="button"
+            key={digit}
+            disabled={disabled}
+            aria-label={digit === ',' ? 'Запятая' : digit === 'erase' ? 'Стереть' : digit}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => onKey(digit)}
+          >
+            {digit === 'erase' ? <Icon name="backspace" size={22} /> : digit}
+          </button>
+        )
       ))}
     </div>
   );

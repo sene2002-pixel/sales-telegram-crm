@@ -17,6 +17,9 @@ async function main() {
       { command: 'crm', description: 'Открыть CRM' },
       { command: 'tasks', description: 'Мои задачи' },
       { command: 'myid', description: 'Узнать свой Telegram ID' },
+      ...(config.picoStarsSupportUsername
+        ? [{ command: 'paysupport', description: 'Помощь с платежами в Telegram Stars' }]
+        : []),
     ],
   });
   await telegram.call('setChatMenuButton', {
@@ -25,7 +28,7 @@ async function main() {
   await telegram.call('setWebhook', {
     url: `${config.publicUrl}/api/telegram/webhook`,
     secret_token: config.webhookSecret,
-    allowed_updates: ['message', 'callback_query'],
+    allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
     drop_pending_updates: false,
   });
   console.log('Webhook, команды и меню CRM настроены');

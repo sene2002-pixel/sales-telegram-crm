@@ -62,7 +62,16 @@ export class TelegramAdapter implements Messenger {
     private config: Config,
     private errors?: ErrorLog,
   ) {}
-  async call(method: string, payload: unknown): Promise<any> {
+  async botUsername(): Promise<string> {
+    const bot = await this.call('getMe', {});
+    requireCondition(
+      typeof bot?.username === 'string' && /^[a-zA-Z0-9_]{5,32}$/.test(bot.username),
+      503,
+      'Не удалось определить Telegram-бота',
+    );
+    return bot.username;
+  }
+  async call(method: string, payload: unknown, timeoutMs = 25_000): Promise<any> {
     requireCondition(this.config.botToken, 503, 'Бот не настроен');
     const wirePayload = redactSystemPayload(payload, this.config);
     // Telegram requires the configured credential verbatim for webhook authentication.
@@ -77,7 +86,7 @@ export class TelegramAdapter implements Messenger {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(wirePayload),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const result: any = await response.json().catch(() => null);
     if (!response.ok || !result?.ok)

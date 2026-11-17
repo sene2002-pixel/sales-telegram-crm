@@ -57,6 +57,19 @@ export async function action(page: Page, name: string) {
   }
 }
 
+export async function openHomeTaskSchedule(page: Page, taskName: string) {
+  await page
+    .getByRole('region', { name: 'Дела', exact: true })
+    .locator('.pico-agenda-open')
+    .filter({ hasText: taskName })
+    .click();
+  await page
+    .getByRole('dialog', { name: taskName, exact: true })
+    .getByRole('button', { name: 'Дата', exact: true })
+    .click();
+  return page.getByRole('dialog', { name: 'Изменить Дата', exact: true });
+}
+
 export async function saveNewClientAndOpen(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'Новый клиент', exact: true });
   const name = await dialog.getByLabel('Название', { exact: true }).inputValue();

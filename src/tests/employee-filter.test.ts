@@ -269,3 +269,33 @@ test('same session rechecks team, role and active access rather than caching eli
   await scoped().expect(403);
   await db.query('UPDATE users SET active=true WHERE id=$1', [supervisor.id]);
 });
+
+test('task creation can assign the acting employee without changing the default or company ACL', async () => {
+  const company = await s.crm.create(manager, { name: 'Создание задачи с главной' });
+  const createRecord = (actor: Actor, kind: string, body: object) =>
+    request(app.getHttpServer())
+      .post(`/api/companies/${company.id}/records/${kind}`)
+      .set('Authorization', `Bearer ${s.auth.issue(actor)}`)
+      .send(body);
+
+  const legacy = await createRecord(supervisor, 'task', {
+    data: { text: 'Обычная задача' },
+  }).expect(201);
+  assert.equal(legacy.body.assigneeId, manager.id);
+  const self = await createRecord(supervisor, 'task', {
+    data: { text: 'Задача с главной' },
+    assignToSelf: true,
+  }).expect(201);
+  assert.equal(self.body.assigneeId, supervisor.id);
+  const filtered = await get(supervisor, `/records/task?employeeId=${supervisor.id}`).expect(200);
+  assert.ok(filtered.body.some((record: { id: string }) => record.id === self.body.id));
+  assert.ok(!filtered.body.some((record: { id: string }) => record.id === legacy.body.id));
+  await createRecord(foreign, 'task', {
+    data: { text: 'Нет доступа к компании' },
+    assignToSelf: true,
+  }).expect(404);
+  await createRecord(supervisor, 'contact', {
+    data: { name: 'Не задача' },
+    assignToSelf: true,
+  }).expect(400);
+});

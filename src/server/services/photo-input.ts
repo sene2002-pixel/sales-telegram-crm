@@ -2,24 +2,28 @@ import { requireCondition } from '../domain/errors';
 
 export const maxPhotoBytes = 10 * 1024 * 1024;
 
+export function photoMime(bytes: Uint8Array): 'image/jpeg' | 'image/png' {
+  const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const mime = b.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+    ? 'image/jpeg'
+    : b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      ? 'image/png'
+      : null;
+  requireCondition(
+    mime,
+    400,
+    'Пришлите изображение JPEG или PNG. Другие файлы пока не поддерживаются.',
+  );
+  return mime;
+}
+
 export function photoDataUrl(bytes: Uint8Array) {
   requireCondition(
     bytes.length > 0 && bytes.length <= maxPhotoBytes,
     413,
     'Фото должно быть не больше 10 МБ',
   );
-  const b = Buffer.from(bytes);
-  const mime = b.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
-    ? 'image/jpeg'
-    : b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-      ? 'image/png'
-      : '';
-  requireCondition(
-    mime,
-    400,
-    'Пришлите изображение JPEG или PNG. Другие файлы пока не поддерживаются.',
-  );
-  return `data:${mime};base64,${b.toString('base64')}`;
+  return `data:${photoMime(bytes)};base64,${Buffer.from(bytes).toString('base64')}`;
 }
 
 export const photoInstructions = `

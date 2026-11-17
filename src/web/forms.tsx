@@ -3,7 +3,7 @@ import './company-form.css';
 import { GrowingTextarea } from './GrowingTextarea';
 import { companyDisplayName } from '../shared/company-display-name';
 import { createPortal } from 'react-dom';
-import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react';
+import { useState, useEffect, useRef, FormEvent, ReactNode, RefObject } from 'react';
 import {
   CompanyData,
   companySchema,
@@ -69,6 +69,8 @@ export function Modal({
   sheet = false,
   showHandle = true,
   swipeToClose = false,
+  className = '',
+  hideHeader = false,
   title,
   onClose,
   children,
@@ -80,6 +82,8 @@ export function Modal({
   sheet?: boolean;
   showHandle?: boolean;
   swipeToClose?: boolean;
+  className?: string;
+  hideHeader?: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
@@ -157,7 +161,7 @@ export function Modal({
       <section
         ref={dialogRef}
         tabIndex={-1}
-        className={'modal' + (sheet ? ' client-sheet' : '')}
+        className={'modal' + (sheet ? ' client-sheet' : '') + (className ? ' ' + className : '')}
         role={dialogRole}
         data-pico-modal="true"
         aria-modal="true"
@@ -188,21 +192,23 @@ export function Modal({
         }}
       >
         {sheet && showHandle && <div className="client-sheet-handle" aria-hidden="true" />}
-        <div className="section-head">
-          <h2 className={titleIcon ? 'pico-modal-icon-title' : undefined}>
-            {titleIcon}
-            <span className="pico-modal-title-text">{title}</span>
-          </h2>
-          <button
-            type="button"
-            className="icon"
-            onClick={onClose}
-            disabled={closeDisabled}
-            aria-label="Закрыть"
-          >
-            <Icon name="close" />
-          </button>
-        </div>
+        {!hideHeader && (
+          <div className="section-head">
+            <h2 className={titleIcon ? 'pico-modal-icon-title' : undefined}>
+              {titleIcon}
+              <span className="pico-modal-title-text">{title}</span>
+            </h2>
+            <button
+              type="button"
+              className="icon"
+              onClick={onClose}
+              disabled={closeDisabled}
+              aria-label="Закрыть"
+            >
+              <Icon name="close" />
+            </button>
+          </div>
+        )}
         {sheet ? <div className="client-sheet-body">{children}</div> : children}
       </section>
     </div>,
@@ -687,6 +693,11 @@ type TaskData = {
   done: boolean;
   contactId: string | null;
 };
+type HomeTaskDraft = {
+  initialType: (typeof taskTypes)[number];
+  assigneeName: string;
+  textRef: RefObject<HTMLTextAreaElement | null>;
+};
 function TaskFields({
   data,
   onChange,
@@ -695,6 +706,7 @@ function TaskFields({
   projectId,
   onProjectChange,
   clientRow,
+  homeTask,
 }: {
   data: TaskData;
   onChange: (data: TaskData) => void;
@@ -703,21 +715,45 @@ function TaskFields({
   projectId: string;
   onProjectChange: (id: string) => void;
   clientRow?: ReactNode;
+  homeTask?: HomeTaskDraft;
 }) {
   const [projectOpen, setProjectOpen] = useState(false),
     [contactOpen, setContactOpen] = useState(false);
-  return (
-    <>
+  const textInput = (
       <GrowingTextarea
         className="pico-task-textarea"
-        aria-label="Задача"
+        aria-label={homeTask ? 'Что нужно сделать?' : 'Задача'}
+        textareaRef={homeTask?.textRef}
         required
         maxLength={200}
         rows={3}
         value={data.text}
-        placeholder={'Что нужно сделать? Например: «Позвонить в Газпром по КП на ячейки»'}
+        placeholder={homeTask ? 'Например, подготовить КП' : 'Что нужно сделать? Например: «Позвонить в Газпром по КП на ячейки»'}
         onChange={(e) => onChange({ ...data, text: e.target.value })}
       />
+  );
+  const typePicker = (
+    <div className="pico-chip-field">
+      <div className="pico-field-heading">Тип задачи</div>
+      <div className="pico-chips">
+        {taskTypes.map((type) => (
+          <button
+            type="button"
+            key={type}
+            aria-pressed={data.type === type}
+            className={data.type === type ? 'active' : ''}
+            onClick={() => onChange({ ...data, type })}
+          >
+            <Icon name={type} size={13} />
+            {homeTask && type === 'reminder' ? 'Задача' : taskTypeLabels[type]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <>
+      {homeTask ? <Field label="Что нужно сделать?">{textInput}</Field> : textInput}
       <div className="pico-picker-box">
         <PickerRow label="Дата" icon="calendar">
           <input
@@ -735,6 +771,7 @@ function TaskFields({
             onChange={(e) => onChange({ ...data, time: e.target.value || null })}
           />
         </PickerRow>
+        {homeTask && typePicker}
         {clientRow}
         <PickerRow
           label="Проект"
@@ -803,24 +840,13 @@ function TaskFields({
             ))}
           </div>
         )}
+        {homeTask && (
+          <PickerRow label="Ответственный" icon="contact">
+            <strong className="pico-picker-value">{homeTask.assigneeName}</strong>
+          </PickerRow>
+        )}
       </div>
-      <div className="pico-chip-field">
-        <div className="pico-field-heading">Тип задачи</div>
-        <div className="pico-chips">
-          {taskTypes.map((type) => (
-            <button
-              type="button"
-              key={type}
-              aria-pressed={data.type === type}
-              className={data.type === type ? 'active' : ''}
-              onClick={() => onChange({ ...data, type })}
-            >
-              <Icon name={type} size={13} />
-              {taskTypeLabels[type]}
-            </button>
-          ))}
-        </div>
-      </div>
+      {!homeTask && typePicker}
     </>
   );
 }
@@ -828,17 +854,19 @@ export function TaskComposer({
   companies,
   projects,
   initial,
+  homeTask,
   onSave,
 }: {
   companies: Company[];
   projects: CrmRecord[];
   initial?: CrmRecord;
+  homeTask?: HomeTaskDraft;
   onSave: (data: any, companyId: string, projectId: string | null) => Promise<void>;
 }) {
   const [data, setData] = useState<TaskData>(() =>
       initial
         ? recordSchemas.task.parse(initial.data)
-        : { text: '', due: today(), time: null, type: 'meeting', done: false, contactId: null },
+        : { text: '', due: today(), time: null, type: homeTask?.initialType || 'meeting', done: false, contactId: null },
     ),
     [companyId, setCompanyId] = useState(initial?.companyId || ''),
     [projectId, setProjectId] = useState(initial?.projectId || ''),
@@ -891,6 +919,7 @@ export function TaskComposer({
       onSubmit={async (e) => {
         if (e.target !== e.currentTarget) return;
         e.preventDefault();
+        if (busy || !data.text.trim()) return;
         if (!companyId) {
           setError('Выберите клиента');
           setClientOpen(true);
@@ -915,6 +944,7 @@ export function TaskComposer({
         projectId={projectId}
         onProjectChange={setProjectId}
         clientRow={clientRow}
+        homeTask={homeTask}
       />
       {contactError && (
         <p role="alert" className="error">
@@ -926,8 +956,8 @@ export function TaskComposer({
           {error}
         </p>
       )}
-      <button className="primary" disabled={busy}>
-        {busy ? 'Сохраняем…' : 'Добавить задачу'}
+      <button className="primary" disabled={busy || (!!homeTask && !data.text.trim())}>
+        {busy ? 'Сохраняем…' : homeTask ? 'Создать задачу' : 'Добавить задачу'}
       </button>
     </form>
   );

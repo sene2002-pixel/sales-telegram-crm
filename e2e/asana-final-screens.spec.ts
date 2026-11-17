@@ -104,7 +104,7 @@ async function filterGeometry(page: Page, label: string) {
   ).toBeVisible();
 }
 
-test('Asana screens: compact Home counts and overdue shortcut show only actual overdue tasks at every width', async ({
+test('Asana screens: compact Home counts, overdue ordering and Tasks filtering at every width', async ({
   page,
 }, info) => {
   const f = await setup(page);
@@ -126,11 +126,20 @@ test('Asana screens: compact Home counts and overdue shortcut show only actual o
       await card.locator('select').evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
     ).toBe(16);
     await page.screenshot({ path: info.outputPath(`home-${width}.png`) });
-    await page.getByRole('button', { name: 'Просроченные задачи · 1', exact: true }).click();
+    const agenda = page.getByRole('region', { name: 'Дела', exact: true });
+    await expect(agenda.locator('.pico-agenda-row')).toHaveCount(3);
+    await expect(agenda.locator('.pico-agenda-row').first()).toContainText(
+      'Просрочена ' + f.actor.name,
+    );
+    await card.getByRole('button', { name: /Задачи/ }).click();
     await expect(page.getByRole('heading', { name: 'Задачи', exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Данные сотрудника' })).toHaveCount(0);
+    await filterGeometry(page, 'Фильтры задач');
+    const dialog = page.getByRole('dialog', { name: 'Фильтры задач', exact: true });
+    await dialog.getByRole('button', { name: 'Просроченные', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Показать (1)', exact: true }).click();
     await expect(page.locator('.pico-task-row')).toHaveCount(1);
     await expect(page.locator('.pico-task-row')).toContainText('Просрочена ' + f.actor.name);
-    await expect(page.getByRole('combobox', { name: 'Данные сотрудника' })).toHaveCount(0);
     await filterGeometry(page, 'Фильтры задач');
     await expect(
       page.getByRole('dialog').getByRole('button', { name: 'Просроченные', exact: true }),
