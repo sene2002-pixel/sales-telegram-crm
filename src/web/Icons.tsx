@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 const paths: Record<string, ReactNode> = {
+  restore: <path d="M4 5v6h6M4.5 11a8 8 0 1 0 3.1-5.3" />,
   'analytics-funnel': (
     <g strokeWidth="1.9">
       <path d="M3.5 4.5h17l-6 7.7v6.3L12 20l-2.5-1.5v-6.3z" />

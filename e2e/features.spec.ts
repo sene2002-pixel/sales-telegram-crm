@@ -126,36 +126,49 @@ test('[UI-02] search, city, segment, division and archive filters', async ({ pag
   await expect(page.locator('.pico-client-accordion')).toHaveCount(1);
   await expect(page.locator('.pico-client-accordion')).toContainText(prefix + ' Архив');
 });
-test('Company archive and restore buttons require confirmation and preserve contacts', async ({
+test('Company archive and restore can be undone from client details and preserve contacts', async ({
   page,
 }) => {
   await login(page, 'Администратор');
   const c = await company(page);
   await api(page, `/companies/${c.id}/records/contact`, { data: { name: 'Сохранённый контакт' } });
+  const stored = () => api(page, `/companies/${c.id}`, undefined, 'GET');
   await reload(page);
-  await openCompany(page, c.name);
   const dialog = page.getByRole('dialog');
-  await openCompanySection(page, 'actions');
-  await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
-  const confirmation = page.getByRole('alertdialog');
-  await expect(confirmation).toContainText('Контакты, задачи и файлы сохранятся');
-  await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click();
-  await openCompanySection(page, 'actions');
-  await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
-  await openCompanySection(page, 'actions');
-  await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
-  await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
-  await expect(
-    dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }),
-  ).toBeVisible();
-  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  const toast = page.locator('.pico-undo-toast');
+  const archive = dialog.getByRole('button', { name: 'Удалить компанию', exact: true });
+  const restore = dialog.getByRole('button', { name: 'Восстановить компанию', exact: true });
+  const openActions = async () => {
+    await openCompany(page, c.name);
+    await openCompanySection(page, 'actions');
+  };
+  await openActions();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await archive.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(toast).toContainText('Клиент удалён');
+  expect((await stored()).company.archived).toBe(false);
+  await toast.getByRole('button', { name: 'Отменить', exact: true }).click();
+  await page.clock.runFor(3100);
+  expect((await stored()).company.archived).toBe(false);
+  await openActions();
+  await archive.click();
+  await page.clock.runFor(3100);
+  await expect.poll(async () => (await stored()).company.archived).toBe(true);
+  await expect(toast).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
+  await openActions();
+  await restore.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(toast).toContainText('Клиент снова в работе');
+  expect((await stored()).company.archived).toBe(true);
+  await page.clock.runFor(3100);
+  await expect.poll(async () => (await stored()).company.archived).toBe(false);
+  await expect(toast).toHaveCount(0);
+  await page.getByRole('button', { name: 'Все', exact: true }).click();
   await openCompany(page, c.name);
-  await openCompanySection(page, 'actions');
-  await dialog.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();
-  await confirmation.getByRole('button', { name: 'Подтвердить', exact: true }).click();
-  await openCompanySection(page, 'actions');
-  await expect(dialog.getByRole('button', { name: 'Удалить компанию', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Контакты', exact: true }).click();
   await expect(dialog).toContainText('Сохранённый контакт');
 });

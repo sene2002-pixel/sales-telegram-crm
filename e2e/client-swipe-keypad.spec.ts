@@ -143,14 +143,15 @@ for (const width of [320, 390, 1440]) {
     await file.press('ArrowRight');
     await expect(file).not.toHaveClass(/cc-revealed/);
     await reveal(equipment);
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     await equipment
       .locator(':scope > .cc-trash-track')
       .getByRole('button', { name: /Удалить/ })
       .click();
-    await page
-      .getByRole('alertdialog', { name: 'Подтверждение удаления', exact: true })
-      .getByRole('button', { name: 'Подтвердить удаление', exact: true })
-      .click();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(page.locator('.pico-undo-toast')).toContainText('Оборудование удалено');
+    await page.clock.runFor(3100);
     await expect
       .poll(async () => (await api(`/companies/${company.id}`)).company.potential)
       .toBe(3_000_000);

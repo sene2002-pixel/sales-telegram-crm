@@ -2,7 +2,8 @@ import { ClientFilters } from './ClientFilters';
 import { ClientSort, compareClients, matchesClientFilters } from '../shared/client-filters';
 import { ClientScore } from '../shared/analytics';
 import { loadClientScores, invalidateClientScores } from './client-scores';
-import { TaskActionsProvider } from './TaskActions';
+import { TaskActionsProvider, useUndoActions } from './TaskActions';
+import { contactDeleteKey, projectClientUndo } from './client-undo';
 import { companyDisplayName } from '../shared/company-display-name';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -59,6 +60,14 @@ declare global {
     };
   }
 }
+function WithPendingActions({
+  children,
+}: {
+  children: (pending: ReadonlySet<string>) => React.ReactNode;
+}) {
+  return children(useUndoActions().pending);
+}
+
 function App() {
   const [user, setUser] = useState<Actor | null>(null),
     [users, setUsers] = useState<Actor[]>([]),
@@ -602,20 +611,6 @@ function App() {
     onChanged: refresh,
     onCompany: openCompany,
   };
-  const visible = companies.filter(
-    (c) =>
-      (clientStatus === 'closed'
-        ? c.archived || c.stage === 'closed'
-        : !c.archived && c.stage !== 'closed') &&
-      (!query ||
-        `${c.name} ${companyDisplayName(c.name)} ${(c.alternativeNames || []).join(' ')} ${c.inn} ${contacts
-          .filter((contact) => contact.companyId === c.id)
-          .map((contact) => `${contact.data.name} ${contact.data.phone} ${contact.data.email}`)
-          .join(' ')}`
-          .toLowerCase()
-          .includes(query.toLowerCase())) &&
-      matchesClientFilters(c, city, clientSegments, clientDivisions),
-  );
   const application = (
     <div
       className={`app-shell${window.Telegram?.WebApp?.initData ? ' telegram-native-header' : ''}`}
@@ -842,152 +837,184 @@ function App() {
               />
             )}
             {tab === 'companies' && (
-              <>
-                <div className="section-head">
-                  <h1>Клиенты</h1>
-                </div>
-                <div className="pico-search pico-client-list-search">
-                  <Icon name="search" />
-                  <input
-                    aria-label="Поиск компаний"
-                    enterKeyHint="done"
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === 'Enter' &&
-                        !event.nativeEvent.isComposing &&
-                        event.nativeEvent.keyCode !== 229
-                      ) {
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                      }
-                    }}
-                    placeholder="Поиск клиента, компании или контакта"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </div>
-                <div className="tabs pico-chips pico-filter-chip-row">
-                  {[
-                    ['all', 'Все'],
-                    ['open', 'В работе'],
-                    ['closed', 'Закрытые'],
-                  ].map(([key, label]) => (
-                    <button
-                      key={key}
-                      aria-pressed={clientStatus === key}
-                      className={clientStatus === key ? 'active' : ''}
-                      onClick={() => setClientStatus(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  <button
-                    className="pico-filter-chip"
-                    aria-label="Фильтры клиентов"
-                    onClick={() => setFiltersOpen(true)}
-                  >
-                    <Icon name="filter" size={16} />
-                  </button>
-                </div>
-                <button className="pico-add-row" onClick={() => setCreate(true)}>
-                  <Icon name="plus" /> Добавить клиента <Icon name="chevron-right" size={16} />
-                </button>
-                {filtersOpen && (
-                  <ClientFilters
-                    city={city}
-                    cities={[
-                      ...new Set(companies.map((company) => company.city).filter(Boolean)),
-                    ].sort((a, b) => a.localeCompare(b, 'ru'))}
-                    segments={clientSegments}
-                    divisions={clientDivisions}
-                    sort={clientSort}
-                    count={visible.length}
-                    scoresLoading={scoresLoading}
-                    scoresError={scoresError}
-                    onRetry={() => {
-                      invalidateClientScores();
-                      setScoresRetry((version) => version + 1);
-                    }}
-                    onCity={setCity}
-                    onSegments={setClientSegments}
-                    onDivisions={setClientDivisions}
-                    onSort={setClientSort}
-                    onReset={() => {
-                      setCity('');
-                      setClientSegments([]);
-                      setClientDivisions([]);
-                      setClientSort('name');
-                    }}
-                    onClose={() => setFiltersOpen(false)}
-                  />
-                )}
-                {!filtersOpen &&
-                  (clientSort === 'processed' || clientSort === 'processedAsc') &&
-                  (scoresLoading ? (
-                    <p role="status">Загрузка проработки клиентов…</p>
-                  ) : scoresError ? (
-                    <p className="error" role="alert">
-                      {scoresError}
-                      <button
-                        type="button"
-                        onClick={() => setScoresRetry((version) => version + 1)}
-                      >
-                        Повторить
+              <WithPendingActions>
+                {(pending) => {
+                  const projectedCompanies = companies.map((company) =>
+                    projectClientUndo(company, pending),
+                  );
+                  const companyById = new Map(companies.map((company) => [company.id, company]));
+                  const visible = projectedCompanies.filter(
+                    (c) =>
+                      (clientStatus === 'closed'
+                        ? c.archived || c.stage === 'closed'
+                        : !c.archived && c.stage !== 'closed') &&
+                      (!query ||
+                        `${c.name} ${companyDisplayName(c.name)} ${(c.alternativeNames || []).join(' ')} ${c.inn} ${contacts
+                          .filter(
+                            (contact) =>
+                              contact.companyId === c.id &&
+                              !pending.has(contactDeleteKey(contact.id)),
+                          )
+                          .map(
+                            (contact) =>
+                              `${contact.data.name} ${contact.data.phone} ${contact.data.email}`,
+                          )
+                          .join(' ')}`
+                          .toLowerCase()
+                          .includes(query.toLowerCase())) &&
+                      matchesClientFilters(c, city, clientSegments, clientDivisions),
+                  );
+                  return (
+                    <>
+                      <div className="section-head">
+                        <h1>Клиенты</h1>
+                      </div>
+                      <div className="pico-search pico-client-list-search">
+                        <Icon name="search" />
+                        <input
+                          aria-label="Поиск компаний"
+                          enterKeyHint="done"
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === 'Enter' &&
+                              !event.nativeEvent.isComposing &&
+                              event.nativeEvent.keyCode !== 229
+                            ) {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            }
+                          }}
+                          placeholder="Поиск клиента, компании или контакта"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                        />
+                      </div>
+                      <div className="tabs pico-chips pico-filter-chip-row">
+                        {[
+                          ['all', 'Все'],
+                          ['open', 'В работе'],
+                          ['closed', 'Закрытые'],
+                        ].map(([key, label]) => (
+                          <button
+                            key={key}
+                            aria-pressed={clientStatus === key}
+                            className={clientStatus === key ? 'active' : ''}
+                            onClick={() => setClientStatus(key)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        <button
+                          className="pico-filter-chip"
+                          aria-label="Фильтры клиентов"
+                          onClick={() => setFiltersOpen(true)}
+                        >
+                          <Icon name="filter" size={16} />
+                        </button>
+                      </div>
+                      <button className="pico-add-row" onClick={() => setCreate(true)}>
+                        <Icon name="plus" /> Добавить клиента{' '}
+                        <Icon name="chevron-right" size={16} />
                       </button>
-                    </p>
-                  ) : null)}
-                <div className="pico-client-list">
-                  {[...visible]
-                    .sort((a, b) => compareClients(a, b, clientSort, clientScores, companies))
-                    .map((c) => (
-                      <ClientRow
-                        key={c.id}
-                        company={c}
-                        actorRole={user.role}
-                        employeeId={employeeId}
-                        score={processedSort ? clientScores[c.id] : undefined}
-                        revealVersion={clientRevealVersion}
-                        onReveal={(id) => {
-                          setQuery('');
-                          setCity('');
-                          setClientSegments([]);
-                          setClientDivisions([]);
-                          setClientStatus('all');
-                          setCreatedClientId(id);
-                          setClientRevealVersion((version) => version + 1);
-                        }}
-                        holdingMembers={
-                          c.segment === 'holding'
-                            ? companies.filter(
-                                (child) => child.holdingId === c.id && !child.archived,
-                              )
-                            : undefined
-                        }
-                        onOpen={openCompany}
-                        onChanged={refresh}
-                        initiallyOpen={c.id === createdClientId}
-                      />
-                    ))}
-                </div>
-                {!visible.length && (
-                  <div className="empty">
-                    <h3>
-                      {companies.length
-                        ? 'Нет компаний по выбранным фильтрам'
-                        : employeeId
-                          ? 'У сотрудника пока нет клиентов'
-                          : 'Начните с первого клиента'}
-                    </h3>
-                    {employeeId ? (
-                      <button className="text-button" onClick={() => void changeEmployee('')}>
-                        Показать всех сотрудников
-                      </button>
-                    ) : (
-                      <p>Добавьте компанию вручную или отправьте голосовой отчёт боту.</p>
-                    )}
-                  </div>
-                )}
-              </>
+                      {filtersOpen && (
+                        <ClientFilters
+                          city={city}
+                          cities={[
+                            ...new Set(companies.map((company) => company.city).filter(Boolean)),
+                          ].sort((a, b) => a.localeCompare(b, 'ru'))}
+                          segments={clientSegments}
+                          divisions={clientDivisions}
+                          sort={clientSort}
+                          count={visible.length}
+                          scoresLoading={scoresLoading}
+                          scoresError={scoresError}
+                          onRetry={() => {
+                            invalidateClientScores();
+                            setScoresRetry((version) => version + 1);
+                          }}
+                          onCity={setCity}
+                          onSegments={setClientSegments}
+                          onDivisions={setClientDivisions}
+                          onSort={setClientSort}
+                          onReset={() => {
+                            setCity('');
+                            setClientSegments([]);
+                            setClientDivisions([]);
+                            setClientSort('name');
+                          }}
+                          onClose={() => setFiltersOpen(false)}
+                        />
+                      )}
+                      {!filtersOpen &&
+                        (clientSort === 'processed' || clientSort === 'processedAsc') &&
+                        (scoresLoading ? (
+                          <p role="status">Загрузка проработки клиентов…</p>
+                        ) : scoresError ? (
+                          <p className="error" role="alert">
+                            {scoresError}
+                            <button
+                              type="button"
+                              onClick={() => setScoresRetry((version) => version + 1)}
+                            >
+                              Повторить
+                            </button>
+                          </p>
+                        ) : null)}
+                      <div className="pico-client-list">
+                        {[...visible]
+                          .sort((a, b) =>
+                            compareClients(a, b, clientSort, clientScores, projectedCompanies),
+                          )
+                          .map((c) => (
+                            <ClientRow
+                              key={c.id}
+                              company={companyById.get(c.id)!}
+                              actorRole={user.role}
+                              employeeId={employeeId}
+                              score={processedSort ? clientScores[c.id] : undefined}
+                              revealVersion={clientRevealVersion}
+                              onReveal={(id) => {
+                                setQuery('');
+                                setCity('');
+                                setClientSegments([]);
+                                setClientDivisions([]);
+                                setClientStatus('all');
+                                setCreatedClientId(id);
+                                setClientRevealVersion((version) => version + 1);
+                              }}
+                              holdingMembers={
+                                c.segment === 'holding'
+                                  ? companies.filter((child) => child.holdingId === c.id)
+                                  : undefined
+                              }
+                              onOpen={openCompany}
+                              onChanged={refresh}
+                              initiallyOpen={c.id === createdClientId}
+                            />
+                          ))}
+                      </div>
+                      {!visible.length && (
+                        <div className="empty">
+                          <h3>
+                            {companies.length
+                              ? 'Нет компаний по выбранным фильтрам'
+                              : employeeId
+                                ? 'У сотрудника пока нет клиентов'
+                                : 'Начните с первого клиента'}
+                          </h3>
+                          {employeeId ? (
+                            <button className="text-button" onClick={() => void changeEmployee('')}>
+                              Показать всех сотрудников
+                            </button>
+                          ) : (
+                            <p>Добавьте компанию вручную или отправьте голосовой отчёт боту.</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                }}
+              </WithPendingActions>
             )}
             {tab === 'companies' && !companies.length && !employeeId && (
               <ScreenGuide

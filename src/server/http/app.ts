@@ -637,8 +637,22 @@ class CrmController {
       .type('application/octet-stream')
       .download(path, redactSystemText(row.data.name, this.s.config));
   }
-  @Delete('contacts/:id') deleteContact(@Req() r: AuthedRequest, @Param('id') id: string) {
-    return this.s.crm.deleteContact(r.actor, id);
+  @Delete('contacts/:id') deleteContact(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Query('version') version?: unknown,
+  ) {
+    return this.s.crm.deleteContact(
+      r.actor,
+      id,
+      z
+        .string()
+        .regex(/^[1-9]\d*$/)
+        .transform(Number)
+        .pipe(z.number().int().positive())
+        .optional()
+        .parse(version),
+    );
   }
   @Delete('files/:id') deleteFile(@Req() r: AuthedRequest, @Param('id') id: string) {
     return this.s.crm.deleteFile(r.actor, id);

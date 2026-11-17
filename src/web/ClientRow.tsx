@@ -28,12 +28,21 @@ import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import { InlineAmount } from './InlineAmount';
 import { PicoNumberHandle, PicoNumberKeys, appendPicoNumberKey } from './PicoNumberInput';
 import { GrowingTextarea } from './GrowingTextarea';
+import {
+  applyCommittedRecord,
+  companyTransitionPending,
+  contactDeleteKey,
+  EquipmentKey,
+  equipmentRemoval,
+  pendingEquipment,
+  projectClientUndo,
+  useClientUndo,
+} from './client-undo';
 import './client-card.css';
 
 type Detail = CompanyDetail & {
   holdingAllocationRequired?: boolean;
   holdingMembers?: Company[];
-  holdingPotential?: number | null;
   holdingDivisions?: Record<string, number>;
 };
 const levels = [
@@ -83,6 +92,8 @@ export function ClientRow({
     [uploading, setUploading] = useState(false),
     [uploadFile, setUploadFile] = useState<File | null>(null),
     [fileError, setFileError] = useState('');
+  const clientUndo = useClientUndo();
+  const latestCommit = useRef(clientUndo.committedRecord);
   const articleRef = useRef<HTMLElement>(null);
   const amountEditors = useRef<Record<string, PicoNumberHandle | null>>({});
   const contactRequest = useRef(0);
@@ -157,17 +168,62 @@ export function ClientRow({
     }
   }, [initiallyOpen, revealVersion]);
   const sequence = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      ++sequence.current;
+    };
+  }, []);
   const c = detail && detail.company.version >= company.version ? detail.company : company;
+  const view = projectClientUndo(c, clientUndo.pending);
+  const companyPending = companyTransitionPending(c, clientUndo.pending);
+  const equipmentPending = pendingEquipment(c, clientUndo.pending);
   const isHolding = c.segment === 'holding';
   const members = holdingMembers ?? detail?.holdingMembers ?? [];
-  const potential = displayedClientPotential(c, members);
+  const visibleMembers = members
+    .map((member) => projectClientUndo(member, clientUndo.pending))
+    .filter((member) => !member.archived);
+  const holdingUndoPending =
+    isHolding &&
+    members.some(
+      (member) =>
+        companyTransitionPending(member, clientUndo.pending) ||
+        pendingEquipment(member, clientUndo.pending),
+    );
+  const holdingDivisions: Record<string, number> = {};
+  const useVisibleHoldingTotals = isHolding && (holdingUndoPending || holdingMembers !== undefined);
+  if (useVisibleHoldingTotals) {
+    for (const member of visibleMembers) {
+      for (const [key, amount] of Object.entries(member.divisions))
+        holdingDivisions[key] = (holdingDivisions[key] ?? 0) + amount;
+    }
+  }
+  const potential = displayedClientPotential(view, visibleMembers);
+  const currentDetail = detail && applyCommittedRecord(detail, clientUndo.committedRecord);
   const [icon, color] = industryIcon(c.industry, c.segment);
   async function read() {
     const seq = ++sequence.current;
-    const d = await api<Detail>(`/companies/${company.id}`);
+    const d = applyCommittedRecord(
+      await api<Detail>(`/companies/${company.id}`),
+      latestCommit.current,
+    );
     if (seq === sequence.current) setDetail(d);
     return d;
   }
+  useLayoutEffect(() => {
+    const committed = clientUndo.committedRecord;
+    if (latestCommit.current === committed) return;
+    latestCommit.current = committed;
+    if (committed?.companyId !== company.id) return;
+    setDetail((current) => current && applyCommittedRecord(current, committed));
+    if (open) {
+      void read().catch((cause) => {
+        if (mounted.current) setError((cause as Error).message);
+      });
+    } else ++sequence.current;
+  }, [clientUndo.committedRecord, company.id, open]);
   async function changed() {
     invalidateClientScores();
     try {
@@ -223,35 +279,39 @@ export function ClientRow({
       current = false;
     };
   }, [open, company.id, company.version, providedScore, employeeId]);
-  async function patch(update: Partial<CompanyData>, snapshot = c) {
+  async function saveCompany(update: Partial<CompanyData>, snapshot: Company) {
     const data = companySchema.strip().parse({ ...snapshot, ...update });
     let saved: Company;
     try {
-      saved = await api<Company>(`/companies/${c.id}`, 'PATCH', {
+      saved = await api<Company>(`/companies/${snapshot.id}`, 'PATCH', {
         version: snapshot.version,
         data,
       });
     } catch (error) {
-      if (error instanceof ApiError && error.status === 409) await read();
+      if (mounted.current && error instanceof ApiError && error.status === 409)
+        await read().catch(() => undefined);
       throw error;
     }
-    setDetail((d) => (d ? { ...d, company: saved } : d));
+    if (mounted.current)
+      setDetail((d) => (!d || d.company.version > saved.version ? d : { ...d, company: saved }));
+  }
+  async function patch(update: Partial<CompanyData>, snapshot = c) {
+    await saveCompany(update, snapshot);
     await changed();
   }
-  async function deleteRecord(r: CrmRecord) {
-    await api(`/${r.kind === 'file' ? 'files' : 'contacts'}/${r.id}`, 'DELETE');
+  async function refreshUndoDetail() {
+    if (mounted.current) await read();
+  }
+  async function deleteFile(r: CrmRecord) {
+    await api(`/files/${r.id}`, 'DELETE');
     setDetail((d) => (d ? { ...d, records: d.records.filter((row) => row.id !== r.id) } : d));
     await changed();
   }
-  async function equipment(key: string, raw: string | null, snapshot = c) {
-    const next = { ...snapshot.divisions };
-    if (raw === null) delete next[key as keyof typeof next];
-    else {
-      const amount = Number(raw.replace(',', '.').replace(/\s/g, ''));
-      if (!raw.trim() || !Number.isFinite(amount) || amount < 0 || amount > 1_000_000)
-        throw new Error('Введите сумму от 0 до 1 000 000 млн ₽');
-      next[key as keyof typeof next] = amount * 1_000_000;
-    }
+  async function equipment(key: EquipmentKey, raw: string, snapshot = c) {
+    const amount = Number(raw.replace(',', '.').replace(/\s/g, ''));
+    if (!raw.trim() || !Number.isFinite(amount) || amount < 0 || amount > 1_000_000)
+      throw new Error('Введите сумму от 0 до 1 000 000 млн ₽');
+    const next = { ...snapshot.divisions, [key]: amount * 1_000_000 };
     await patch(
       {
         divisions: next,
@@ -277,23 +337,25 @@ export function ClientRow({
       setUploading(false);
     }
   }
-  const contacts = detail?.records.filter((r) => r.kind === 'contact') || [],
+  const contacts =
+      currentDetail?.records.filter(
+        (r) => r.kind === 'contact' && !clientUndo.pending.has(contactDeleteKey(r.id)),
+      ) || [],
     files = detail?.records.filter((r) => r.kind === 'file') || [];
   const levelIndex = levels.findIndex((l) => l[0] === score?.level);
-  const canArchive = !c.archived && (actorRole === 'admin' || actorRole === 'supervisor');
+  const canArchive =
+    !c.archived &&
+    !companyPending &&
+    !equipmentPending &&
+    (actorRole === 'admin' || actorRole === 'supervisor');
   return (
     <article ref={articleRef} className={`pico-client-accordion cc-card ${open ? 'expanded' : ''}`}>
       <SwipeAction
         label={`клиента «${companyDisplayName(c.name, c.country)}» в архив`}
-        confirmation={{
-          title: 'Перенести клиента в архив?',
-          message: `«${companyDisplayName(c.name, c.country)}» появится во вкладке «Закрытые». Контакты, потенциал, заметки и файлы сохранятся. Восстановить клиента сможет администратор.`,
-          action: 'Перенести в архив',
-          pending: 'Переносим…',
-          triggerLabel: `Перенести клиента «${companyDisplayName(c.name, c.country)}» в архив`,
-        }}
+        confirmDelete={false}
+        deleteLabel={`Перенести клиента «${companyDisplayName(c.name, c.country)}» в архив`}
         onEdit={
-          c.archived
+          c.archived || companyPending
             ? undefined
             : () => {
                 void read()
@@ -307,17 +369,7 @@ export function ClientRow({
                   .catch((e) => setError(e.message));
               }
         }
-        onDelete={
-          canArchive
-            ? async () => {
-                await api(`/companies/${c.id}/archive`, 'POST', {
-                  archived: true,
-                  version: c.version,
-                });
-                await onChanged();
-              }
-            : undefined
-        }
+        onDelete={canArchive ? async () => clientUndo.setArchived(c, refreshUndoDetail) : undefined}
       >
         <button className="pico-client-row" aria-expanded={open} onClick={() => setOpen(!open)}>
           <span className={`icon-badge badge-${color}`}>
@@ -336,7 +388,7 @@ export function ClientRow({
           </span>
           <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
         </button>
-        {open && (
+        {open && !companyPending && (
           <div className="cc-body">
             {loading && <p role="status">Загрузка…</p>}
             {error && (
@@ -398,7 +450,11 @@ export function ClientRow({
                     {isHolding ? (
                       <>
                         <p className="muted">Суммарный потенциал заказчиков холдинга</p>
-                        {Object.entries(detail.holdingDivisions || {}).map(([key, value]) => (
+                        {Object.entries(
+                          useVisibleHoldingTotals
+                            ? holdingDivisions
+                            : detail.holdingDivisions || {},
+                        ).map(([key, value]) => (
                           <div className="cc-equipment" key={key}>
                             <span>{divisionLabels[key] || key}</span>
                             <strong>{millionValue(value)} млн ₽</strong>
@@ -412,7 +468,8 @@ export function ClientRow({
                         )}
                         <HoldingMembers
                           company={c}
-                          members={members}
+                          members={visibleMembers}
+                          allocationDisabled={holdingUndoPending}
                           onReveal={onReveal}
                           onChanged={changed}
                         />
@@ -423,12 +480,24 @@ export function ClientRow({
                           ...divisions.filter((key) => !addedEquipment.includes(key)),
                           ...addedEquipment,
                         ]
-                          .filter((key) => c.divisions[key as keyof typeof c.divisions] != null)
+                          .filter((key) => view.divisions[key as EquipmentKey] != null)
                           .map((key) => (
                             <SwipeAction
                               key={key}
                               label={`оборудование «${divisionLabels[key]}»`}
-                              onDelete={() => equipment(key, null)}
+                              confirmDelete={false}
+                              onDelete={
+                                equipmentPending
+                                  ? undefined
+                                  : async () =>
+                                      clientUndo.deleteEquipment(
+                                        c,
+                                        key as EquipmentKey,
+                                        () =>
+                                          saveCompany(equipmentRemoval(c, key as EquipmentKey), c),
+                                        refreshUndoDetail,
+                                      )
+                              }
                               onEdit={() => amountEditors.current[key]?.open()}
                             >
                               <InlineAmount
@@ -438,11 +507,11 @@ export function ClientRow({
                                 label={divisionLabels[key]}
                                 value={millionValue(c.divisions[key as keyof typeof c.divisions])}
                                 unit="млн ₽"
-                                onSave={(value) => equipment(key, value)}
+                                onSave={(value) => equipment(key as EquipmentKey, value)}
                               />
                             </SwipeAction>
                           ))}
-                        {!Object.keys(c.divisions).length && (
+                        {!Object.keys(view.divisions).length && (
                           <p className="muted">Оборудование пока не добавлено</p>
                         )}
                         {primaryDivisions.some((key) => c.divisions[key] == null) && (
@@ -468,7 +537,8 @@ export function ClientRow({
                       <SwipeAction
                         key={r.id}
                         label={`контакт «${r.data.name}»`}
-                        onDelete={() => deleteRecord(r)}
+                        confirmDelete={false}
+                        onDelete={async () => clientUndo.deleteContact(r, refreshUndoDetail)}
                         onEdit={() => void openContact(r)}
                       >
                         <div
@@ -536,7 +606,7 @@ export function ClientRow({
                       <SwipeAction
                         key={f.id}
                         label={`файл «${f.data.name}»`}
-                        onDelete={() => deleteRecord(f)}
+                        onDelete={() => deleteFile(f)}
                       >
                         <button
                           className="cc-file"
@@ -671,7 +741,7 @@ export function ClientRow({
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => onOpen(c, 'actions')}
+                    onClick={() => clientUndo.setArchived(c, refreshUndoDetail)}
                   >
                     Восстановить компанию
                   </button>
@@ -697,7 +767,7 @@ export function ClientRow({
             if (c.divisions[key as keyof typeof c.divisions] != null)
               throw new Error('Это оборудование уже добавлено. Выберите другой тип.');
             try {
-              await equipment(key, value, newEquipment);
+              await equipment(key as EquipmentKey, value, newEquipment);
             } catch (error) {
               if (error instanceof ApiError && error.status === 409)
                 throw new Error(
