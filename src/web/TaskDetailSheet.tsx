@@ -16,6 +16,7 @@ import { useTaskActions } from './TaskActions';
 type Task = CrmRecord & { companyName: string; projectName?: string | null };
 type Props = {
   task: Task;
+  saveOnClose?: boolean;
   projects: Task[];
   users: Actor[];
   companies: Company[];
@@ -35,11 +36,31 @@ const formatDate = (value: string | null) => {
   });
   return text[0]!.toUpperCase() + text.slice(1);
 };
+const localDate = (date: Date) => {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+};
+const localTime = (date: Date) =>
+  date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+function quickDates(time: string) {
+  const hour = new Date(Date.now() + 3_600_000);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const week = new Date();
+  week.setDate(week.getDate() + 7);
+  return [
+    { date: hour, time: localTime(hour), label: 'Через час', icon: 'clock' },
+    { date: tomorrow, time: '10:00', label: 'Завтра утром', icon: 'calendar' },
+    { date: week, time, label: 'Через неделю', icon: 'calendar' },
+  ];
+}
 export function TaskDetailSheet(props: Props) {
   const { task } = props;
   const actions = useTaskActions();
   const [field, setField] = useState('');
   const [value, setValue] = useState('');
+  const [time, setTime] = useState('');
+  const editSchedule = props.saveOnClose && field === 'Дата';
   const [contacts, setContacts] = useState<CrmRecord[]>([]);
   const [assignees, setAssignees] = useState<Pick<Actor, 'id' | 'name' | 'role'>[]>([]);
   const [busy, setBusy] = useState(false);
@@ -124,6 +145,7 @@ export function TaskDetailSheet(props: Props) {
     }
     setOptionsFailed(false);
     setValue(raw[label] || '');
+    setTime(raw.Время);
     setField(label);
   }
   async function saveField() {
@@ -145,6 +167,7 @@ export function TaskDetailSheet(props: Props) {
             ? { assigneeId: value || null }
             : {};
       if (keys[field]) (data as any)[keys[field]!] = value || null;
+      if (editSchedule) data.time = time || null;
       const saved = await api<CrmRecord>(`/records/${task.id}`, 'PATCH', {
         version: task.version,
         data,
@@ -173,6 +196,15 @@ export function TaskDetailSheet(props: Props) {
     actions.schedule(task, 'restore');
     props.onClose();
   }
+  function closeField() {
+    if (busy) return;
+    if (props.saveOnClose && (value !== raw[field] || (editSchedule && time !== raw.Время))) {
+      if (!loading && !optionsFailed && !unavailableSelection) void saveField();
+      return;
+    }
+    setField('');
+    setError('');
+  }
   const unavailableSelection =
     !!value &&
     ((field === 'Проект' &&
@@ -184,6 +216,7 @@ export function TaskDetailSheet(props: Props) {
   return (
     <Modal
       sheet
+      className={props.saveOnClose ? 'pico-agenda-task-sheet' : undefined}
       showHandle={false}
       title={task.data.text}
       titleIcon={
@@ -254,13 +287,7 @@ export function TaskDetailSheet(props: Props) {
         )}
       </div>
       {field && (
-        <Modal
-          title={'Изменить ' + field}
-          onClose={() => {
-            if (!busy) setField('');
-          }}
-          closeDisabled={busy}
-        >
+        <Modal title={'Изменить ' + field} onClose={closeField} closeDisabled={busy}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -326,6 +353,45 @@ export function TaskDetailSheet(props: Props) {
                 </select>
               )}
             </Field>
+            {editSchedule && (
+              <>
+                <Field label="Время">
+                  <input
+                    type="time"
+                    value={time}
+                    disabled={busy}
+                    onChange={(event) => {
+                      setTime(event.target.value);
+                      setError('');
+                    }}
+                  />
+                </Field>
+                <div className="pico-quick-dates">
+                  {quickDates(time).map((option) => (
+                    <button
+                      type="button"
+                      key={option.label}
+                      disabled={busy}
+                      onClick={() => {
+                        setValue(localDate(option.date));
+                        setTime(option.time);
+                        setError('');
+                      }}
+                    >
+                      <Icon name={option.icon} size={16} />
+                      <strong>{option.label}</strong>
+                      <small>
+                        {option.date.toLocaleDateString('ru-RU', {
+                          day: 'numeric',
+                          month: 'long',
+                        })}
+                        , {option.time || 'без времени'}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             {loading && <p role="status">Загрузка…</p>}
             {error && (
               <p className="error" role="alert">
@@ -333,10 +399,22 @@ export function TaskDetailSheet(props: Props) {
               </p>
             )}
             <div className="actions">
-              <button className="primary" disabled={busy || loading || optionsFailed}>
+              <button
+                className="primary"
+                disabled={
+                  busy || loading || optionsFailed || (props.saveOnClose && unavailableSelection)
+                }
+              >
                 Сохранить
               </button>
-              <button type="button" disabled={busy} onClick={() => setField('')}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setField('');
+                  setError('');
+                }}
+              >
                 Отмена
               </button>
             </div>

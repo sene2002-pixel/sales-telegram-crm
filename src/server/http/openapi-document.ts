@@ -1,3 +1,4 @@
+import { ideaInputSchema, ideaTopics } from '../../shared/pico-ideas';
 import { z } from 'zod';
 import {
   companySchema,
@@ -17,6 +18,12 @@ import {
   dateSchema,
 } from '../../shared/contracts';
 import { signatureSchema, cardSchema } from '../../shared/letters';
+import {
+  picoStarInvoiceInput,
+  telegramPreCheckout,
+  telegramStarReceipt,
+} from '../services/pico-stars';
+import { picoStarsMaximum, picoStarsMinimum } from '../../shared/pico-stars';
 
 // Input schemas are derived from the same validators used by the HTTP services.
 // Descriptions also document refinements (calendar dates, INN checksum, ACL) which JSON Schema cannot enforce.
@@ -325,6 +332,8 @@ schemas.TelegramUpdate = object(
         }),
         text: { type: 'string', maxLength: 20000 },
         caption: { type: 'string', maxLength: 20000 },
+        successful_payment: jsonSchema(telegramStarReceipt),
+        refunded_payment: jsonSchema(telegramStarReceipt),
         photo: array(
           object(
             { file_id: string, width: number, height: number, file_size: number },
@@ -351,6 +360,7 @@ schemas.TelegramUpdate = object(
       ['message_id', 'date', 'from', 'chat'],
       true,
     ),
+    pre_checkout_query: jsonSchema(telegramPreCheckout),
     callback_query: object(
       {
         id: string,
@@ -580,12 +590,41 @@ add(
     body: jsonBody(ref('TelegramUpdate')),
     errors: [400, 401, 413, 429, 500, 502, 503],
     description:
-      'Обязательный X-Telegram-Bot-Api-Secret-Token. Рабочие операции только в private чате, с допущенным активным отправителем (исключение: /start invite_ для нового пользователя с действующим одноразовым приглашением); повторная доставка обрабатывается идемпотентно. Callback повторно проверяет владельца, состояние и версию. Прототип платежей не является частью API.',
+      'Обязательный X-Telegram-Bot-Api-Secret-Token. Рабочие операции проверяют private чат и активность отправителя; /start invite_ работает для нового участника, /paysupport доступна в личном чате. Stars проверяют плательщика, сумму, валюту, счёт и идентификатор платежа.',
   },
 );
 add('get', '/me', 'currentActor', 'Получить актуального сотрудника', 'Сотрудники', ref('Actor'), {
   errors: [401, 403, 429, 500],
 });
+add(
+  'post',
+  '/me/pico-stars/invoices',
+  'createPicoStarInvoice',
+  'Создать счёт поддержки Pico в Telegram Stars',
+  'Telegram',
+  object({ id: uuid, url: { type: 'string', format: 'uri' } }),
+  {
+    body: jsonBody(jsonSchema(picoStarInvoiceInput)),
+    errors: [400, 401, 403, 429, 500, 502, 503],
+    description:
+      'Доступно при настроенных платежах. Ссылка открывается в Telegram Mini App, счёт привязан к текущему сотруднику.',
+  },
+);
+add(
+  'get',
+  '/me/pico-stars/invoices/{id}',
+  'picoStarInvoiceStatus',
+  'Проверить собственный счёт поддержки Pico',
+  'Telegram',
+  object({
+    amount: { type: 'integer', minimum: picoStarsMinimum, maximum: picoStarsMaximum },
+    status: { type: 'string', enum: ['pending', 'expired', 'paid', 'refunded'] },
+  }),
+  {
+    errors: [400, 401, 403, 404, 429, 500],
+    description: 'Статус paid выставляется после подтверждённого Telegram webhook.',
+  },
+);
 add(
   'get',
   '/users',
@@ -637,6 +676,19 @@ add(
     ),
     description:
       'Создаёт активного manager, имя-плейсхолдер до доверенного Telegram-профиля. Повторный ID — 409, существующие права не перезаписываются. ID должен помещаться в safe integer.',
+  },
+);
+add(
+  'get',
+  '/share/bot-link',
+  'shareBotLink',
+  'Получить ссылку на профиль Pico Bot в Telegram',
+  'Сотрудники',
+  object({ url: string }),
+  {
+    errors: [401, 403, 429, 500, 502, 503],
+    description:
+      'Возвращает публичный профиль настроенного бота. Ссылка не содержит приглашения и не меняет права доступа.',
   },
 );
 const invitationMetadata = object({
@@ -839,6 +891,11 @@ add(
         {
           data: { anyOf: ['ContactInput', 'ProjectInput', 'TaskInput', 'ActivityInput'].map(ref) },
           projectId: nullable(uuid),
+          assignToSelf: {
+            type: 'boolean',
+            description:
+              'Для задачи назначить ответственным текущего пользователя. По умолчанию ответственным остаётся владелец компании.',
+          },
         },
         ['data'],
       ),
@@ -1064,6 +1121,76 @@ add(
     deprecated: true,
     body: jsonBody(ref('SignatureInput')),
     description: '409 при более одной существующей подписи; используйте plural endpoints.',
+  },
+);
+const ideaRequest = object(
+  {
+    ...jsonSchema(ideaInputSchema).properties,
+    screenshot: { ...binary, description: 'JPEG или PNG, до 2 МиБ.' },
+  },
+  ['submissionId', 'text'],
+);
+add(
+  'post',
+  '/pico-ideas',
+  'submitPicoIdea',
+  'Отправить идею о Pico',
+  'Идеи',
+  object({ id: uuid }),
+  {
+    body: { required: true, content: { 'multipart/form-data': { schema: ideaRequest } } },
+    errors: [400, 401, 403, 409, 413, 429, 500],
+  },
+);
+add(
+  'get',
+  '/pico-ideas',
+  'listPicoIdeas',
+  'Получить идеи',
+  'Идеи',
+  array(
+    object({
+      id: uuid,
+      author: string,
+      topic: nullable({ type: 'string', enum: [...ideaTopics] }),
+      text: string,
+      screenshotMime: nullable({ type: 'string', enum: ['image/png', 'image/jpeg'] }),
+      createdAt: timestamp,
+      implementedAt: nullable(timestamp),
+    }),
+  ),
+  {
+    queries: [
+      query(
+        'offset',
+        { type: 'integer', minimum: 0, maximum: 9999999 },
+        'Смещение, до 30 записей на страницу.',
+      ),
+    ],
+    roles: ['admin'],
+  },
+);
+add(
+  'get',
+  '/pico-ideas/{id}/screenshot',
+  'downloadPicoIdeaScreenshot',
+  'Скачать скриншот идеи',
+  'Идеи',
+  binary,
+  {
+    media: 'application/octet-stream',
+    roles: ['admin'],
+  },
+);
+add(
+  'post',
+  '/pico-ideas/{id}/implemented',
+  'markPicoIdeaImplemented',
+  'Отметить внедрение идеи',
+  'Идеи',
+  ref('Ok'),
+  {
+    roles: ['admin'],
   },
 );
 const imageUpload = object({
@@ -1340,6 +1467,7 @@ export const openApiDocument = {
     'Файлы',
     'Аналитика',
     'Команда',
+    'Идеи',
   ].map((name) => ({ name })),
   security: [{ SessionBearer: [] }],
   paths,

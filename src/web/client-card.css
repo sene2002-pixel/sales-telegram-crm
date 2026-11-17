@@ -951,7 +951,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   min-height: 36px;
   padding: 0 12px;
   border-radius: 10px;
-  border: 1px solid #dde4f0;
+  border: 1px solid #cdd5e3;
   background: #fff;
   color: #4a5370;
   font-size: 13px;
@@ -966,7 +966,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
 .cc-equipment-types > button:disabled {
   background: #f3f6fb;
   color: #a3abbf;
-  border-color: #dde4f0;
+  border-color: #cdd5e3;
   opacity: 1;
 }
 .cc-equipment-potential {

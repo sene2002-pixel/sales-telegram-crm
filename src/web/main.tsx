@@ -2,7 +2,7 @@ import { ClientFilters } from './ClientFilters';
 import { ClientSort, compareClients, matchesClientFilters } from '../shared/client-filters';
 import { ClientScore } from '../shared/analytics';
 import { loadClientScores, invalidateClientScores } from './client-scores';
-import { TaskActionsProvider, useUndoActions } from './TaskActions';
+import { TaskActionsProvider, useTaskActions, useUndoActions } from './TaskActions';
 import { contactDeleteKey, projectClientUndo } from './client-undo';
 import { companyDisplayName } from '../shared/company-display-name';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -36,6 +36,8 @@ import {
   ScreenGuide,
 } from './Screens';
 import './styles.css';
+import './home.css';
+import { HomeExtras } from './HomeExtras';
 import picoAvatar from '../../public/brand/pico-avatar.png';
 import { configureViewport, TelegramViewport } from './viewport';
 declare global {
@@ -66,6 +68,62 @@ function WithPendingActions({
   children: (pending: ReadonlySet<string>) => React.ReactNode;
 }) {
   return children(useUndoActions().pending);
+}
+
+function HomeSummary({
+  companies,
+  projects,
+  tasks,
+  onNavigate,
+}: {
+  companies: Company[];
+  projects: CrmRecord[];
+  tasks: CrmRecord[];
+  onNavigate: (route: string) => void;
+}) {
+  const actions = useTaskActions();
+  return (
+    <div className="pico-summary">
+      {[
+        [
+          'Клиенты',
+          companies.filter((company) => !company.archived && company.stage !== 'closed').length,
+          'companies',
+        ],
+        ['Проекты', projects.length, 'projects'],
+        [
+          'Задачи',
+          actions.project(tasks, true).filter((task) => !task.data.done && !task.data.deleted)
+            .length,
+          'tasks',
+        ],
+      ].map(([label, count, route]) => (
+        <button key={label} type="button" onClick={() => onNavigate(String(route))}>
+          <strong>{count}</strong>
+          <small>{label}</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function HomeCrown() {
+  return (
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="pico-home-crown-gradient" x2="0" y2="1">
+          <stop stopColor="#C98A00" />
+          <stop offset="1" stopColor="#A86C00" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"
+        stroke="url(#pico-home-crown-gradient)"
+        strokeWidth="2.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 function App() {
@@ -113,6 +171,7 @@ function App() {
   const [help, setHelp] = useState(false);
   const [analyticsSettingsOpen, setAnalyticsSettingsOpen] = useState(false),
     [analyticsRefreshVersion, setAnalyticsRefreshVersion] = useState(0);
+  const [homeIntroOpen, setHomeIntroOpen] = useState(false);
   const [more, setMore] = useState(false),
     [recordCreate, setRecordCreate] = useState<'task' | 'project' | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
@@ -120,8 +179,7 @@ function App() {
     [clientSort, setClientSort] = useState<ClientSort>('name'),
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
-    [clientRevealVersion, setClientRevealVersion] = useState(0),
-    [taskView, setTaskView] = useState<'open' | 'overdue' | 'today' | 'meetings'>('open');
+    [clientRevealVersion, setClientRevealVersion] = useState(0);
   const [creationHoldings, setCreationHoldings] = useState<Company[]>([]);
   const [holdingsError, setHoldingsError] = useState('');
   useEffect(() => {
@@ -174,7 +232,6 @@ function App() {
     setScoresLoading(false);
     invalidateClientScores();
     setAnalyticsSettingsOpen(false);
-    setTaskView('open');
     ++scopeGeneration.current;
     setCompanies([]);
     setTasks([]);
@@ -246,7 +303,6 @@ function App() {
     setScoresLoading(false);
     invalidateClientScores();
     setAnalyticsSettingsOpen(false);
-    setTaskView('open');
     setCompanies([]);
     setUsers([]);
     setTasks([]);
@@ -261,6 +317,7 @@ function App() {
     setFiltersOpen(false);
     setHelp(false);
     setMore(false);
+    setHomeIntroOpen(false);
     setQuery('');
     setCity('');
     setClientSegments([]);
@@ -420,22 +477,7 @@ function App() {
     if (!user || tab !== 'home') return;
     document.documentElement.classList.add('pico-home-active');
     window.scrollTo(0, 0);
-    const preventHomeDrag = (event: TouchEvent) => {
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(
-          '[role="dialog"], [role="alertdialog"], .pico-more-menu, aside, .pico-home-feed',
-        )
-      )
-        return;
-      if (event.cancelable) event.preventDefault();
-    };
-    document.addEventListener('touchmove', preventHomeDrag, { passive: false });
-    return () => {
-      document.documentElement.classList.remove('pico-home-active');
-      document.removeEventListener('touchmove', preventHomeDrag);
-    };
+    return () => document.documentElement.classList.remove('pico-home-active');
   }, [user, tab]);
   async function login(role?: string) {
     setError('');
@@ -588,6 +630,8 @@ function App() {
     ...(user.role === 'admin' ? [['users', 'Пользователи']] : []),
   ];
   const scopeScreen = !['profile', 'users', 'team'].includes(tab);
+  const firstName = user.name.trim().split(/\s+/)[0];
+  const homeGreeting = `Привет, ${firstName}!`;
   const renderedScopeGeneration = scopeGeneration.current;
   const handleScopeDenied = (e: Error) => {
     if (renderedScopeGeneration !== scopeGeneration.current) return;
@@ -627,7 +671,6 @@ function App() {
               key={key}
               className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
               onClick={() => {
-                if (key === 'tasks') setTaskView('open');
                 setTab(key!);
                 setError('');
               }}
@@ -694,6 +737,16 @@ function App() {
               >
                 Права и помощь
               </button>
+              {tab === 'home' && !scopeBusy && !scopeFailed && (
+                <button
+                  onClick={() => {
+                    setMore(false);
+                    setHomeIntroOpen(true);
+                  }}
+                >
+                  С чего начать
+                </button>
+              )}
               {secondary.map(([key, label]) => (
                 <button
                   key={key}
@@ -731,29 +784,16 @@ function App() {
         {tab === 'home' && (
           <>
             <div className="pico-home-greeting">
-              <div className="pico-home-welcome">
-                <h1 aria-label={`Привет, ${user.name.split(' ')[0]}!`}>
-                  <span
-                    className="pico-home-greeting-text"
-                    title={`Привет, ${user.name.split(' ')[0]}!`}
-                  >
-                    Привет, {user.name.split(' ')[0]}!
-                  </span>
-                  {user.role === 'admin' && (
-                    <>
-                      {' '}
-                      <button
-                        className="pico-admin-button"
-                        aria-label="Управление пользователями"
-                        onClick={() => setTab('users')}
-                      >
-                        <Icon name="crown" size={16} />
-                      </button>
-                    </>
-                  )}
-                </h1>
-                <p className="muted">Вот что важно на сегодня</p>
-              </div>
+              <h1 title={homeGreeting}>{homeGreeting}</h1>
+              {user.role === 'admin' && (
+                <button
+                  className="pico-admin-button"
+                  aria-label="Управление пользователями"
+                  onClick={() => setTab('users')}
+                >
+                  <HomeCrown />
+                </button>
+              )}
             </div>
             <div className="pico-home-overview">
               {user.role !== 'manager' && (
@@ -768,22 +808,12 @@ function App() {
                 />
               )}
               {!scopeBusy && !scopeFailed && (
-                <div className="pico-summary">
-                  {[
-                    [
-                      'Клиенты',
-                      companies.filter((c) => !c.archived && c.stage !== 'closed').length,
-                      'companies',
-                    ],
-                    ['Проекты', projects.length, 'projects'],
-                    ['Задачи', tasks.filter((t) => !t.data.done).length, 'tasks'],
-                  ].map(([label, count, route]) => (
-                    <button key={label} onClick={() => setTab(String(route))}>
-                      <strong>{count}</strong>
-                      <small>{label}</small>
-                    </button>
-                  ))}
-                </div>
+                <HomeSummary
+                  companies={companies}
+                  projects={projects}
+                  tasks={tasks}
+                  onNavigate={setTab}
+                />
               )}
             </div>
           </>
@@ -812,18 +842,12 @@ function App() {
               <HomeScreen
                 {...screenProps}
                 user={user}
-                onNavigate={(next) => {
-                  if (next === 'tasks' || next === 'calendar') {
-                    setTaskView(next === 'calendar' ? 'meetings' : 'today');
-                    setTab('tasks');
-                  } else setTab(next);
-                }}
-                onOverdue={() => {
-                  setTaskView('overdue');
-                  setTab('tasks');
-                }}
+                onNavigate={setTab}
+                introOpen={homeIntroOpen}
+                onCloseIntro={() => setHomeIntroOpen(false)}
+                actions={<HomeExtras user={user} users={users} />}
                 onCreateCompany={() => setCreate(true)}
-                onCreateRecord={setRecordCreate}
+                onCreateProject={() => setRecordCreate('project')}
               />
             )}
             {tab === 'analytics' && (
@@ -1057,11 +1081,7 @@ function App() {
               <UsersScreen users={users} user={user} onChanged={refresh} />
             )}
             {tab === 'tasks' && (
-              <TasksScreen
-                {...screenProps}
-                initialFilter={taskView}
-                onCreate={() => setRecordCreate('task')}
-              />
+              <TasksScreen {...screenProps} onCreate={() => setRecordCreate('task')} />
             )}
             {tab === 'calendar' && (
               <TasksScreen
@@ -1119,7 +1139,6 @@ function App() {
             key={key}
             className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
             onClick={() => {
-              if (key === 'tasks') setTaskView('open');
               setTab(key!);
               setError('');
             }}

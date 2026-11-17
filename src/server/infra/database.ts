@@ -84,6 +84,18 @@ export class Database implements Sql {
       await tx.query(
         'CREATE INDEX IF NOT EXISTS team_invitations_issuer ON team_invitations(created_by,created_at)',
       );
+      await tx.query(`CREATE TABLE IF NOT EXISTS pico_star_invoices (
+        id uuid PRIMARY KEY,
+        actor_id uuid NOT NULL REFERENCES users(id),
+        telegram_user_id text NOT NULL,
+        amount integer NOT NULL CHECK (amount BETWEEN 1 AND 10000),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 minutes'),
+        pre_checkout_id text,
+        telegram_payment_charge_id text UNIQUE,
+        paid_at timestamptz,
+        refunded_at timestamptz
+      )`);
       await tx.query(`CREATE TABLE IF NOT EXISTS error_logs (
         id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),
         event text NOT NULL, request_id uuid, actor_id uuid, status integer,
@@ -101,6 +113,18 @@ export class Database implements Sql {
       await tx.query(
         'CREATE INDEX IF NOT EXISTS diagnostic_logs_created ON diagnostic_logs(created_at)',
       );
+      await tx.query(`CREATE TABLE IF NOT EXISTS pico_ideas (
+        id uuid PRIMARY KEY,
+        author_id uuid NOT NULL REFERENCES users(id),
+        submission_id uuid NOT NULL,
+        topic text,
+        body text NOT NULL,
+        screenshot bytea,
+        screenshot_mime text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        implemented_at timestamptz,
+        UNIQUE(author_id, submission_id)
+      )`);
       await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS trace_id text');
       await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS actor_id uuid');
       await tx.query('ALTER TABLE outbox ADD COLUMN IF NOT EXISTS processing_key text');

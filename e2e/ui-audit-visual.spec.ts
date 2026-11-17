@@ -1,6 +1,14 @@
 import { expect, Page, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
-import { browserToday, clients, navigate, openCompany, prepareDemoAuth } from './helpers';
+import {
+  action,
+  browserToday,
+  clients,
+  navigate,
+  openCompany,
+  openHomeTaskSchedule,
+  prepareDemoAuth,
+} from './helpers';
 import { taskSchema } from '../src/shared/contracts';
 import { emptyDeal, emptySales } from '../src/shared/sales';
 
@@ -115,7 +123,12 @@ async function capture(page: Page, state: string) {
       .filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
       .map((el) => {
         const box = el.getBoundingClientRect();
+        const carousel = el.closest('.pico-home-actions-track');
         const scrollParent = el.closest('.table-wrap,.tabs,.pico-picker-list');
+        const track =
+          carousel && ['auto', 'scroll'].includes(getComputedStyle(carousel).overflowX)
+            ? carousel.getBoundingClientRect()
+            : null;
         return {
           tag: el.tagName,
           label: (
@@ -130,6 +143,7 @@ async function capture(page: Page, state: string) {
           left: box.left,
           right: box.right,
           viewport: innerWidth,
+          carouselClip: track ? { left: track.left, right: track.right } : null,
           horizontalScrollAllowed:
             !!scrollParent && scrollParent.scrollWidth > scrollParent.clientWidth,
         };
@@ -144,8 +158,17 @@ async function capture(page: Page, state: string) {
     JSON.stringify({ state, requestedWidth, elements: inventory }, null, 2),
   );
   for (const item of inventory.filter((item) => !item.horizontalScrollAllowed)) {
-    expect(item.left, `${state}: ${item.tag} ${item.label} left`).toBeGreaterThanOrEqual(-1);
-    expect(item.right, `${state}: ${item.tag} ${item.label} right`).toBeLessThanOrEqual(
+    const clip = item.carouselClip;
+    if (clip) {
+      expect(clip.left, `${state}: carousel left`).toBeGreaterThanOrEqual(-1);
+      expect(clip.right, `${state}: carousel right`).toBeLessThanOrEqual(item.viewport + 1);
+    }
+    const left = clip ? Math.max(item.left, clip.left) : item.left;
+    const right = clip ? Math.min(item.right, clip.right) : item.right;
+    // The Home carousel tests verify that horizontally scrolled cards can become fully visible.
+    if (clip && left >= right) continue;
+    expect(left, `${state}: ${item.tag} ${item.label} left`).toBeGreaterThanOrEqual(-1);
+    expect(right, `${state}: ${item.tag} ${item.label} right`).toBeLessThanOrEqual(
       item.viewport + 1,
     );
   }
@@ -294,9 +317,10 @@ for (const width of [360, 390, 1440]) {
     await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
     if (info.project.name === 'mobile' && width === 1440) await portraitTablet(page);
     await login(page);
-    const name = 'Компания_' + 'Оченьдлинноеназвание'.repeat(8) + '-' + Date.now();
-    const projectName = 'Реконструкция_' + 'Подстанция'.repeat(13) + '-' + Date.now();
-    const taskText = 'Согласовать_' + 'Спецификацию'.repeat(11) + '-' + Date.now();
+    const suffix = `-${info.project.name}-${width}-${Date.now()}`;
+    const name = 'Компания_' + 'Оченьдлинноеназвание'.repeat(8) + suffix;
+    const projectName = 'Реконструкция_' + 'Подстанция'.repeat(13) + suffix;
+    const taskText = 'Согласовать_' + 'Спецификацию'.repeat(11) + suffix;
     const company = await api(page, '/companies', {
       name,
       city: 'Санкт-Петербург',
@@ -353,14 +377,10 @@ for (const width of [360, 390, 1440]) {
     await expect(taskDetail.locator('.pico-task-sheet-badge')).toHaveCSS('width', '44px');
     await taskDetail.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await navigate(page, 'Главная');
-    const homeTask = page
-      .getByRole('region', { name: 'Сегодня', exact: true })
-      .locator('.pico-task-row')
-      .filter({ hasText: taskText });
-    await homeTask.locator('.task-text').click();
-    await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
+    const schedule = await openHomeTaskSchedule(page, taskText);
     await capture(page, 'long-task-postpone');
-    await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await schedule.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await taskDetail.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await navigate(page, 'Задачи');
     await page.locator('.task-text').filter({ hasText: taskText }).click();
     await page.clock.install();
@@ -432,17 +452,24 @@ for (const width of [360, 390, 1440]) {
     await dialog.getByRole('button', { name: 'Редактировать компанию', exact: true }).click();
     await capture(page, 'company-edit');
     await dialog.getByRole('button', { name: 'Скрыть форму', exact: true }).click();
+    await page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 1000));
     await dialog.getByRole('button', { name: 'Удалить компанию', exact: true }).click();
-    await capture(page, 'archive-confirmation');
-    await page
-      .getByRole('alertdialog')
-      .getByRole('button', { name: 'Отмена', exact: true })
-      .click();
-    await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await capture(page, 'archive-undo');
+    await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await page.clock.runFor(3500);
+    await page.clock.resume();
+    expect((await api(page, `/companies/${company.id}`, undefined, 'GET')).company.archived).toBe(
+      false,
+    );
+    const restoredRow = page.locator('.pico-client-accordion').filter({ hasText: name });
+    await restoredRow.locator('.pico-client-row').click();
+    const detailAction = restoredRow.getByRole('button', { name: 'Задачи и проекты', exact: true });
+    await expect(detailAction).toBeVisible();
     await page.route(`**/api/companies/${company.id}`, (route) =>
       route.fulfill({ status: 503, json: { message: 'Локальная проверка ошибки загрузки' } }),
     );
-    await openCompany(page, name);
+    await detailAction.click();
     await expect(page.getByRole('dialog')).toContainText('Локальная проверка ошибки загрузки');
     await capture(page, 'company-load-error');
   });
@@ -550,10 +577,10 @@ test('UI audit gaps: home onboarding task cancellation and hour/week postponemen
     route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.continue(),
   );
   await page.reload();
-  await page.locator('.pico-home-start').click();
+  await action(page, 'С чего начать');
   await page.getByRole('button', { name: /^Поставить задачу/ }).click();
   await expect(page.getByRole('dialog', { name: 'Новая задача', exact: true })).toBeVisible();
-  await page.getByLabel('Задача', { exact: true }).fill('Отменённая из onboarding');
+  await page.getByLabel('Что нужно сделать?', { exact: true }).fill('Отменённая из onboarding');
   await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.unroute('**/api/companies');
@@ -584,13 +611,7 @@ test('UI audit gaps: home onboarding task cancellation and hour/week postponemen
       );
     await page.reload();
     await navigate(page, 'Главная');
-    const homeTask = page
-      .getByRole('region', { name: 'Сегодня', exact: true })
-      .locator('.pico-task-row')
-      .filter({ hasText: task.data.text });
-    await homeTask.locator('.task-text').click();
-    await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Отложить задачу', exact: true });
+    const dialog = await openHomeTaskSchedule(page, task.data.text);
     await dialog.getByRole('button', { name: new RegExp('^' + preset) }).click();
     const due = await dialog.getByLabel('Дата', { exact: true }).inputValue();
     const time = await dialog.getByLabel('Время', { exact: true }).inputValue();
@@ -608,7 +629,7 @@ test('UI audit gaps: home onboarding task cancellation and hour/week postponemen
     expect(due).toBe(expected.date);
     if (preset === 'Через час') expect(time).toBe(expected.time);
     await capture(page, 'gap-postpone-' + (preset === 'Через час' ? 'hour' : 'week'));
-    await dialog.getByRole('button', { name: 'Отложить', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await page.reload();
     const stored = (await api(page, `/companies/${company.id}`, undefined, 'GET')).records.find(

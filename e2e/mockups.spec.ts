@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { browserToday, prepareDemoAuth, pickInline } from './helpers';
+import { action, browserToday, openHomeTaskSchedule, prepareDemoAuth, pickInline } from './helpers';
 test.beforeEach(async ({ page }) => prepareDemoAuth(page));
 
 async function login(page: Page) {
@@ -91,19 +91,16 @@ test('Mockups: empty screens explain the next step without fabricated metrics', 
     );
   }
   await login(page);
-  const onboarding = page.locator('.pico-home-start');
-  await expect(onboarding).not.toHaveAttribute('open', '');
-  await onboarding.click();
+  await expect(page.getByRole('dialog', { name: 'С чего начать', exact: true })).toHaveCount(0);
+  await action(page, 'С чего начать');
   await expect(page.getByRole('heading', { name: 'Как работает Pico', exact: true })).toBeVisible();
   await page
     .getByRole('dialog', { name: 'С чего начать', exact: true })
     .getByRole('button', { name: 'Закрыть', exact: true })
     .click();
-  await expect(
-    page.locator('.pico-home-block').first().getByRole('heading', { name: 'Сегодня', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText('На сегодня задач нет', { exact: true })).toBeVisible();
-  await expect(page.locator('.pico-task-row')).toHaveCount(0);
+  const agenda = page.getByRole('region', { name: 'Дела', exact: true });
+  await expect(agenda.getByText('День свободен', { exact: true })).toBeVisible();
+  await expect(agenda.locator('.pico-agenda-row')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('empty-home.png'), fullPage: true });
   await nav(page, 'Клиенты');
   await expect(
@@ -273,17 +270,13 @@ test('Mockups: project equipment, participant and typed timed task persist; reje
   await expect(detail.getByRole('button', { name: 'Отложить', exact: true })).toHaveCount(0);
   await detail.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await nav(page, 'Главная');
-  const homeTask = page
-    .getByRole('region', { name: 'Сегодня', exact: true })
-    .locator('.pico-task-row')
-    .filter({ hasText: 'Звонок QA ' + suffix });
-  await homeTask.locator('.task-text').click();
-  await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
-  const postpone = page.getByRole('dialog', { name: 'Отложить задачу', exact: true });
+  const postpone = await openHomeTaskSchedule(page, 'Звонок QA ' + suffix);
   await postpone.getByRole('button', { name: /^Завтра утром/ }).click();
   await postpone.getByLabel('Время', { exact: true }).fill('10:00');
   const postponedDate = await postpone.getByLabel('Дата', { exact: true }).inputValue();
-  await postpone.getByRole('button', { name: 'Отложить', exact: true }).click();
+  await postpone.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(postpone).toHaveCount(0);
+  await detail.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await nav(page, 'Задачи');
   await page
     .getByRole('button')

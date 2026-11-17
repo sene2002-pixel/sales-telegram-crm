@@ -1,25 +1,37 @@
-import { expect, test, Page } from '@playwright/test';
-import { navigate, prepareDemoAuth } from './helpers';
+import { expect, Page, test } from '@playwright/test';
+import { action, browserToday, navigate, pickInline, prepareDemoAuth } from './helpers';
+
+test.use({ locale: 'ru-RU' });
+
+const agenda = (page: Page) => page.getByRole('region', { name: 'Дела', exact: true });
+const rows = (page: Page) => agenda(page).locator('.pico-agenda-row');
+const scrollable = (page: Page) => agenda(page).getByRole('region', { name: 'Список дел' });
+const companyId = '35e34f14-db30-4fd1-9a46-e7b70d601925';
 
 async function login(page: Page) {
   await prepareDemoAuth(page);
-  await page.route('https://telegram.org/js/telegram-web-app.js*', (r) => r.fulfill({ body: '' }));
   await page.goto('/');
   await page.getByRole('button', { name: 'Администратор', exact: true }).click();
+  await expect(agenda(page)).toBeVisible();
 }
-const today = () => {
-  const day = new Date();
-  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-};
-const feed = (page: Page) => page.getByRole('region', { name: 'Задачи и встречи на главной' });
+
+function task(id: string, due: string | null, time: string | null, type: string) {
+  return {
+    id,
+    version: 1,
+    companyId,
+    companyName: 'Компания',
+    kind: 'task',
+    data: { text: id, due, time, type, done: false },
+  };
+}
+
 for (const size of [
   { width: 320, height: 568 },
   { width: 390, height: 844 },
   { width: 1440, height: 900 },
 ]) {
-  test(`Home restores exact empty blocks with reachable content at ${size.width}`, async ({
-    page,
-  }, info) => {
+  test(`Home empty agenda and actions stay reachable at ${size.width}`, async ({ page }, info) => {
     await page.setViewportSize(size);
     if (size.width > 760 && info.project.name === 'mobile') {
       await page.addInitScript(() => {
@@ -36,239 +48,225 @@ for (const size of [
     await page.route('**/api/records/task*', (r) => r.fulfill({ json: [] }));
     await login(page);
     await expect(page.locator('html')).toHaveClass(/pico-home-active/);
-    const blocks = page.locator('.pico-home-block');
-    await expect(blocks).toHaveCount(2);
-    const cards = page.locator('.pico-home-empty');
-    await expect(cards).toHaveCount(2);
-    await expect(blocks.first().getByRole('heading', { name: 'Сегодня', exact: true })).toHaveCSS(
-      'font-size',
-      '18px',
-    );
-    await expect(blocks.first().locator('h2')).toHaveCSS('line-height', '24px');
-    await expect(blocks.first().locator('h2')).toHaveCSS('font-weight', '800');
-    await expect(blocks.first().locator('h2')).toHaveCSS('margin-top', '20px');
-    await expect(blocks.first().locator('h2')).toHaveCSS('margin-bottom', '8px');
-    await expect(cards.first()).toContainText(
-      'Хорошее время, чтобы запланировать следующий контакт с клиентами.',
-    );
-    await expect(cards.last()).toContainText(
-      'Каждая встреча приближает сделку. Назначьте первую, это займёт минуту.',
-    );
-    for (const card of await cards.all()) {
-      await expect(card).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-      await expect(card).toHaveCSS('border-radius', '20px');
-      await expect(card).toHaveCSS('border-top-color', 'rgb(230, 235, 243)');
-      await expect(card).toHaveCSS('padding', '16px 20px 18px');
-      await expect(card.locator('.pico-home-empty-icon')).toHaveCSS('width', '40px');
-      await expect(card.locator('.pico-home-empty-icon')).toHaveCSS('height', '40px');
-      await expect(card.locator('.pico-home-empty-icon')).toHaveCSS('border-radius', '13px');
-      await expect(card.locator('strong')).toHaveCSS('font-size', '15px');
-      await expect(card.locator('p')).toHaveCSS('font-size', '13px');
-      await expect(card.locator('p')).toHaveCSS('line-height', '18px');
-      await expect(card.locator('button')).toHaveCount(0);
-      await expect(card.locator('svg')).toHaveCount(1);
+    const panel = agenda(page).locator('.pico-agenda-panel');
+    await expect(panel).toHaveCSS('height', '296px');
+    await expect(agenda(page).getByRole('heading', { name: 'Дела' })).toHaveCSS('height', '44px');
+    await expect(panel).toContainText('День свободен');
+    await expect(panel).toContainText('Время сделать шаг к новой сделке');
+    await expect(scrollable(page)).toHaveCount(0);
+    await expect(panel.locator('.pico-agenda-fade, .pico-agenda-scroll-track')).toHaveCount(0);
+
+    const add = panel.getByRole('button', { name: 'Добавить задачу', exact: true });
+    await expect(add).toHaveCSS('height', '48px');
+    for (const [label, type] of [
+      ['Позвонить клиенту', 'Звонок'],
+      ['Назначить встречу', 'Встреча'],
+      ['Поставить задачу', 'Задача'],
+      ['Добавить задачу', 'Задача'],
+    ]) {
+      await panel.getByRole('button', { name: new RegExp('^' + label) }).click();
+      const sheet = page.getByRole('dialog', { name: 'Новая задача', exact: true });
+      await expect(sheet.getByRole('textbox', { name: 'Что нужно сделать?' })).toBeFocused();
+      await expect(sheet.getByRole('button', { name: type, exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await expect(sheet.getByLabel('Срок')).toHaveValue(await browserToday(page));
+      await expect(sheet.getByLabel('Время', { exact: true })).toHaveValue('');
+      await expect(sheet.getByRole('button', { name: 'Создать задачу' })).toBeDisabled();
+      await sheet.getByRole('button', { name: 'Закрыть' }).click();
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-    await page.screenshot({
-      animations: 'disabled',
-      path: `/tmp/pico-home-evidence/empty-top-${size.width}-${info.project.name}.png`,
+
+    await page.locator('.pico-home-workspace').evaluate((el) => {
+      el.scrollTop = 0;
     });
-    const nav = page.locator('.pico-bottom-nav');
-    const navBefore = await nav.boundingBox();
-    await feed(page).evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
-    const bottom = size.width <= 760 ? (await nav.boundingBox())!.y : size.height;
-    const lastBox = (await cards.last().boundingBox())!;
-    expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(bottom);
-    expect(await page.evaluate(() => window.scrollY)).toBe(0);
-    expect(await nav.boundingBox()).toEqual(navBefore);
-    expect(
-      await feed(page).evaluate((el) => {
-        const e = new Event('touchmove', { bubbles: true, cancelable: true });
-        el.dispatchEvent(e);
-        return e.defaultPrevented;
-      }),
-    ).toBe(false);
-    await page.screenshot({
-      animations: 'disabled',
-      path: `/tmp/pico-home-evidence/empty-bottom-${size.width}-${info.project.name}.png`,
-    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(size.width);
+    if (size.width === 390) {
+      const nav = (await page.locator('.pico-bottom-nav').boundingBox())!;
+      const dots = (await page.locator('.pico-home-action-dots').boundingBox())!;
+      expect(nav.y).toBe(772);
+      expect(dots.y + dots.height).toBeLessThanOrEqual(nav.y - 5);
+      await expect(page.locator('.pico-home-workspace')).toHaveJSProperty('scrollTop', 0);
+    }
+    await page.screenshot({ path: info.outputPath(`home-empty-${size.width}.png`) });
+    await action(page, 'С чего начать');
+    await expect(page.getByRole('dialog', { name: 'С чего начать' })).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Закрыть' }).click();
     await navigate(page, 'Задачи');
     await expect(page.locator('html')).not.toHaveClass(/pico-home-active/);
-    await navigate(page, 'Главная');
-    await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
-    await page
-      .locator('.pico-more-menu')
-      .getByRole('button', { name: 'Права и помощь', exact: true })
-      .click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    expect(
-      await page.getByRole('dialog').evaluate((el) => {
-        const e = new Event('touchmove', { bubbles: true, cancelable: true });
-        el.dispatchEvent(e);
-        return e.defaultPrevented;
-      }),
-    ).toBe(false);
   });
 }
 
-test('Home restores task and meeting lists, actions and bounded scrolling', async ({
+test('Home agenda and carousel fit the Telegram header reserve at 390x844', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
-    (window as any).swipeCalls = [];
-    (window as any).Telegram = {
+    Object.defineProperties(screen, {
+      width: { configurable: true, value: 390 },
+      height: { configurable: true, value: 844 },
+    });
+    Object.defineProperties(screen.orientation, {
+      type: { configurable: true, value: 'portrait-primary' },
+      angle: { configurable: true, value: 0 },
+    });
+    (window as typeof window & { Telegram: unknown }).Telegram = {
       WebApp: {
-        isVerticalSwipesEnabled: true,
-        isVersionAtLeast: () => true,
-        disableVerticalSwipes() {
-          (window as any).swipeCalls.push('disable');
-        },
-        enableVerticalSwipes() {
-          (window as any).swipeCalls.push('enable');
-        },
+        platform: 'ios',
+        viewportStableHeight: 844,
+        safeAreaInset: { top: 47 },
+        contentSafeAreaInset: { top: 68 },
       },
     };
   });
-  const date = today();
-  let tasks = [
-    { id: 'today', data: { text: 'Сегодняшний звонок', type: 'call', due: date } },
-    { id: 'todaymeeting', data: { text: 'Встреча сегодня', type: 'meeting', due: date } },
-    { id: 'future', data: { text: 'Будущая встреча', type: 'meeting', due: '2099-01-01' } },
-    { id: 'nodate', data: { text: 'Встреча без срока', type: 'meeting', due: null } },
-    { id: 'futurecall', data: { text: 'Будущий звонок', type: 'call', due: '2099-01-01' } },
-    { id: 'done', data: { text: 'Завершённая задача', type: 'call', due: date, done: true } },
-    ...Array.from({ length: 18 }, (_, i) => ({
-      id: `old${i}`,
-      data: { text: `Просроченная задача ${i}`, type: 'reminder', due: '2020-01-01' },
-    })),
-  ].map((t) => ({
-    ...t,
-    version: 1,
-    companyId: 'company',
-    companyName: 'Компания',
-    kind: 'task',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }));
-  await page.route('**/api/records/task*', (r) => r.fulfill({ json: tasks }));
-  await page.route('**/api/records/today', async (r) => {
-    const body = r.request().postDataJSON();
-    tasks = tasks.map((t) =>
-      t.id === 'today' ? { ...t, data: body.data, version: t.version + 1 } : t,
-    );
-    await r.fulfill({ json: tasks.find((t) => t.id === 'today') });
-  });
+  await page.route('**/api/records/task*', (route) => route.fulfill({ json: [] }));
   await login(page);
-  const todayBlock = page.getByRole('region', { name: 'Сегодня', exact: true });
-  const meetingBlock = page.getByRole('region', { name: 'Встречи', exact: true });
-  await expect(todayBlock.locator('.pico-task-row')).toHaveCount(1);
-  await expect(todayBlock).toContainText('Сегодняшний звонок');
-  await expect(meetingBlock.locator('.pico-task-row .task-text strong')).toHaveText([
-    'Встреча сегодня',
-    'Будущая встреча',
-    'Встреча без срока',
-  ]);
-  await expect(feed(page)).not.toContainText('Будущий звонок');
-  await expect(feed(page)).not.toContainText('Завершённая задача');
-  await expect(page.getByRole('button', { name: 'Просроченные задачи · 18' })).toHaveCount(1);
-  await page.screenshot({
-    animations: 'disabled',
-    path: `/tmp/pico-home-evidence/populated-${info.project.name}.png`,
+  const dots = page.locator('.pico-home-action-dots > button').first();
+  await expect(dots).toBeVisible();
+  const dotBottom = await dots.evaluate((el) => {
+    const size = parseFloat(getComputedStyle(el, '::before').height);
+    const bounds = el.getBoundingClientRect();
+    return bounds.top + (bounds.height + size) / 2;
   });
-  await todayBlock.locator('.task-text').click();
-  await expect(todayBlock.getByRole('button', { name: 'Отложить', exact: true })).toBeVisible();
-  await todayBlock.getByRole('button', { name: 'Выполнено', exact: true }).click();
-  await expect(todayBlock).toContainText('На сегодня задач нет');
-  await meetingBlock.locator('.task-text').first().click();
-  await expect(page.getByRole('dialog')).toContainText('Встреча сегодня');
-  await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByRole('button', { name: 'Просроченные задачи · 18' }).click();
-  await expect(page.locator('.pico-task-row')).toHaveCount(18);
-  expect(await page.evaluate(() => (window as any).swipeCalls)).toEqual(['disable']);
-  await navigate(page, 'Главная');
-  // A long list uses the home feed without shifting the header or bottom navigation.
-  await page.setViewportSize({ width: 320, height: 568 });
-  tasks = Array.from({ length: 25 }, (_, i) => ({
-    ...tasks[0],
-    id: `long${i}`,
-    data: {
-      text: `Задача с длинным названием для проверки прокрутки ${i}`,
-      type: 'call',
-      due: date,
-    },
-  }));
-  await page.reload();
-  await expect(page.locator('.pico-home-block').first().locator('.pico-task-row')).toHaveCount(25);
-  const navBefore = await page.locator('.pico-bottom-nav').boundingBox();
-  await feed(page).focus();
-  await feed(page).press('End');
-  await expect.poll(() => feed(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await expect(page.getByText('Встреч не запланировано', { exact: true })).toBeInViewport();
-  expect(await page.locator('.pico-bottom-nav').boundingBox()).toEqual(navBefore);
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
-  await page.screenshot({
-    animations: 'disabled',
-    path: `/tmp/pico-home-evidence/long-bottom-${info.project.name}.png`,
-  });
+  const navigation = (await page.locator('.pico-bottom-nav').boundingBox())!;
+  expect(dotBottom).toBe(767);
+  expect(navigation.y).toBe(772);
+  await expect(page.locator('.pico-home-workspace')).toHaveJSProperty('scrollTop', 0);
+  await page.screenshot({ path: info.outputPath('home-telegram-390.png') });
 });
 
-test('Home fits long names, safe insets, onboarding and overdue together', async ({
+test('Home sorts open tasks, keeps one agenda height and shows scrollbar only during scrolling', async ({
   page,
 }, info) => {
-  await page.setViewportSize({ width: 320, height: 568 });
-  await prepareDemoAuth(page);
-  await page.route('https://telegram.org/js/telegram-web-app.js*', (route) =>
-    route.fulfill({ body: '', contentType: 'application/javascript' }),
-  );
-  await page.addInitScript(() => {
-    (window as any).Telegram = { WebApp: { safeAreaInset: { top: 32, bottom: 20 } } };
-  });
-  await page.route('**/api/me', async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({
-      json: { ...(await response.json()), name: 'Константин-Александр Оченьдлиннаяфамилия' },
-    });
-  });
-  await page.route('**/api/companies*', (route) => route.fulfill({ json: [] }));
-  await page.route('**/api/records/task*', (route) =>
-    route.fulfill({
+  await page.setViewportSize({ width: 390, height: 844 });
+  const date = await browserToday(page);
+  let data = [
+    task('Без даты', null, null, 'reminder'),
+    task('Сегодня без времени', date, null, 'meeting'),
+    task('Позже', '2099-01-01', '12:30', 'call'),
+    task('Сегодня после обеда', date, '13:00', 'meeting'),
+    task('Старая задача', '2020-01-01', null, 'reminder'),
+    task('Сегодня утром', date, '09:00', 'call'),
+  ];
+  const done = task('Завершённая', date, '07:00', 'call');
+  const deleted = task('Удалённая', date, '08:00', 'call');
+  await page.route('**/api/records/task*', (r) =>
+    r.fulfill({
       json: [
+        ...data,
+        { ...done, data: { ...done.data, done: true } },
         {
-          id: 'overdue',
-          companyId: 'company',
-          companyName: 'Компания',
-          version: 1,
-          kind: 'task',
-          data: { text: 'Старая задача', due: '2020-01-01', type: 'reminder' },
+          ...deleted,
+          data: { ...deleted.data, deleted: true },
         },
       ],
     }),
   );
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Администратор', exact: true }).click();
-  const footer = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  for (const target of await page
-    .locator('.pico-home-start, .pico-home-feed > .pico-add-row')
-    .all()) {
-    await target.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
-    const box = (await target.boundingBox())!;
-    expect(box.y + box.height).toBeLessThanOrEqual(footer.y);
-    expect(await target.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  await login(page);
+  const add = agenda(page).getByRole('button', { name: 'Добавить задачу' });
+  const addBox = await add.boundingBox();
+  const navBox = await page.locator('.pico-bottom-nav').boundingBox();
+  await expect(rows(page).locator('strong')).toHaveText([
+    'Старая задача',
+    'Сегодня утром',
+    'Сегодня после обеда',
+    'Сегодня без времени',
+    'Позже',
+    'Без даты',
+  ]);
+  await expect(page.locator('.pico-summary strong').last()).toHaveText('6');
+  await expect(rows(page).first().locator('.pico-agenda-overdue')).toContainText('Просрочено');
+  await expect(rows(page).first().locator('.pico-agenda-checkbox')).toHaveCSS('width', '44px');
+  await expect(agenda(page).locator('.pico-agenda-fade')).toBeVisible();
+  const thumb = agenda(page).locator('.pico-agenda-scroll-track > span');
+  await expect(thumb).toHaveCSS('opacity', '0');
+  await page.screenshot({ path: info.outputPath('home-populated.png') });
+  await scrollable(page).focus();
+  await scrollable(page).press('End');
+  await expect.poll(() => scrollable(page).evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect(agenda(page).locator('.pico-agenda-fade')).toHaveCount(0);
+  await expect(thumb).toHaveCSS('opacity', '1');
+  await expect(thumb).toHaveCSS('opacity', '0');
+  expect(await add.boundingBox()).toEqual(addBox);
+  expect(await page.locator('.pico-bottom-nav').boundingBox()).toEqual(navBox);
+
+  for (const n of [4, 3, 2, 1]) {
+    data = data.slice(0, n);
+    await page.reload();
+    await expect(rows(page)).toHaveCount(n);
+    await expect(scrollable(page)).toHaveCount(0);
+    await expect(agenda(page).locator('.pico-agenda-fade, .pico-agenda-scroll-track')).toHaveCount(
+      0,
+    );
+    await expect(agenda(page).locator('.pico-agenda-hint')).toHaveCount(n <= 2 ? 1 : 0);
+    expect(await add.boundingBox()).toEqual(addBox);
   }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
-  await page.screenshot({ path: info.outputPath('home-long-name-insets.png') });
-  await page.getByRole('button', { name: /С чего начать/ }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.evaluate((el) => {
-    el.scrollTop = 10000;
+});
+
+test('Home task details save changes on close, and creation sends the selected client and default actor', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const date = await browserToday(page);
+  let tasks = [task('Позвонить коллеге', date, '12:30', 'call')];
+  await page.route('**/api/companies', (r) =>
+    r.fulfill({
+      json: [
+        { id: companyId, name: 'Компания для задачи', archived: false, industry: '', city: '' },
+      ],
+    }),
+  );
+  await page.route(`**/api/companies/${companyId}`, (r) => r.fulfill({ json: { records: [] } }));
+  await page.route('**/api/records/task*', (r) => r.fulfill({ json: tasks }));
+  await page.route('**/api/tasks/*/advice', (r) =>
+    r.fulfill({ json: { text: 'Проверьте следующий шаг.' } }),
+  );
+  await page.route('**/api/records/*', async (r) => {
+    if (r.request().method() !== 'PATCH') return r.fallback();
+    const body = r.request().postDataJSON();
+    tasks[0] = { ...tasks[0], version: tasks[0].version + 1, data: body.data };
+    await r.fulfill({ json: tasks[0] });
   });
-  expect(await dialog.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await dialog.getByRole('button', { name: /Поставить задачу/ }).click();
-  await expect(page.getByRole('dialog', { name: 'Новая задача', exact: true })).toBeVisible();
+  await page.route(`**/api/companies/${companyId}/records/task`, async (r) => {
+    const body = r.request().postDataJSON();
+    expect(body).toEqual({
+      assignToSelf: true,
+      projectId: null,
+      data: {
+        text: 'Подготовить КП',
+        due: date,
+        time: null,
+        contactId: null,
+        type: 'reminder',
+        done: false,
+      },
+    });
+    tasks.push({ ...task('Подготовить КП', date, null, 'reminder'), data: body.data });
+    await r.fulfill({ status: 201, json: tasks.at(-1) });
+  });
+  await login(page);
+  await rows(page).locator('.pico-agenda-open').click();
+  const detail = page.getByRole('dialog', { name: 'Позвонить коллеге', exact: true });
+  await expect(detail.getByRole('button', { name: 'Выполнено' })).toHaveCSS(
+    'background-color',
+    'rgb(255, 255, 255)',
+  );
+  await detail.getByRole('button', { name: 'Время', exact: true }).click();
+  const field = page.getByRole('dialog', { name: 'Изменить Время', exact: true });
+  await field.getByLabel('Время', { exact: true }).fill('16:45');
+  await field.getByRole('button', { name: 'Закрыть' }).click();
+  await expect(field).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Время', exact: true })).toContainText('16:45');
+  await detail.getByRole('button', { name: 'Закрыть' }).click();
+  await expect(rows(page)).toContainText('Сегодня, 16:45');
+
+  await agenda(page).getByRole('button', { name: 'Добавить задачу' }).click();
+  const create = page.getByRole('dialog', { name: 'Новая задача', exact: true });
+  await create.getByRole('textbox', { name: 'Что нужно сделать?' }).fill('Подготовить КП');
+  await pickInline(page, create, 'Клиент', 'Компания для задачи');
+  await page.screenshot({ path: info.outputPath('home-create.png') });
+  await create.getByRole('button', { name: 'Создать задачу' }).click();
+  await expect(create).toHaveCount(0);
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).last()).toContainText('Подготовить КП');
 });

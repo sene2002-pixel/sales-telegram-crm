@@ -1,0 +1,113 @@
+.pico-home-idea form,
+.pico-home-idea-success {
+  display: grid;
+  gap: 16px;
+}
+
+.pico-home-idea form > p {
+  margin: 0;
+  color: #5f6880;
+}
+
+.pico-home-idea-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pico-home-idea-topics button {
+  min-height: 44px;
+  border-color: #cdd5e3;
+  border-radius: 22px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.pico-home-idea-topics button[aria-pressed='true'] {
+  color: #1668d8;
+  border-color: currentColor;
+  background: #eaf2fe;
+}
+
+.pico-home-idea textarea {
+  min-height: 112px;
+  border-color: #cdd5e3;
+}
+
+.pico-home-idea-upload {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: #1668d8;
+  cursor: pointer;
+}
+
+.pico-home-idea-upload:focus-within {
+  outline: 2px solid #1668d8;
+  outline-offset: 2px;
+}
+
+.pico-home-idea-upload input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pico-home-idea-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pico-home-idea-preview img {
+  width: 96px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #cdd5e3;
+}
+
+.pico-home-idea-preview button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.pico-home-idea form > .primary,
+.pico-home-idea-success > .primary {
+  min-height: 52px;
+}
+
+.pico-home-idea-success {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.pico-home-idea-success > span {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: auto;
+  border-radius: 24px;
+  background: #e3f3ea;
+  color: #178a55;
+}
+
+.pico-home-idea-success :is(h3, p) {
+  margin: 0;
+}
+
+.pico-idea-review {
+  padding-block: 12px;
+  border-top: 1px solid #cdd5e3;
+}
+
+.pico-idea-review > p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -67,6 +67,7 @@ const paths: Record<string, ReactNode> = {
       <path d="M10 18h4" />
     </>
   ),
+  'arrow-up-down': <path d="M7 19V5m-4 4 4-4 4 4m6-4v14m-4-4 4 4 4-4" />,
   'chevron-right': <path d="m9 5 7 7-7 7" />,
   'chevron-left': <path d="m15 5-7 7 7 7" />,
   'chevron-down': <path d="m5 9 7 7 7-7" />,
@@ -90,6 +91,20 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   send: <path d="m2 10 20-8-8 20-3-9zm9 3L22 2" />,
+  star: <path d="m12 2.5 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3.1-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9z" />,
+  'user-plus': (
+    <>
+      <circle cx="9" cy="7.5" r="3.5" />
+      <path d="M3 20v-2a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v2M19 7v6m-3-3h6" />
+    </>
+  ),
+  bulb: <path d="M9 18h6m-5 3h4m-5-6c0-2-3-3.3-3-7a6 6 0 0 1 12 0c0 3.7-3 5-3 7z" />,
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 5V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v10a1 1 0 0 0 1 1h1" />
+    </>
+  ),
   home: (
     <>
       <path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z" />

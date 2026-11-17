@@ -1,0 +1,220 @@
+.modal.client-sheet.pico-support-modal {
+  max-width: 460px;
+  padding: 20px clamp(16px, 5vw, 28px) calc(18px + var(--pico-safe-bottom, 0px));
+}
+
+.pico-support {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  color: #212950;
+}
+
+.pico-support .pico-support-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+}
+
+.pico-support-hero {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  text-align: center;
+}
+
+.pico-support-emblem {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  margin-bottom: 4px;
+  border-radius: 22px;
+  background: #fff3d8;
+}
+
+:is(.pico-support-emblem, .pico-support-preset, .pico-support-input-row) > svg:first-child {
+  flex: none;
+  fill: #ffc55e;
+  stroke: #eb9b22;
+  stroke-width: 1.2;
+}
+
+.pico-support-hero h2,
+.pico-support p {
+  margin: 0;
+}
+
+.pico-support-hero h2 {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.pico-support-hero p {
+  max-width: 31ch;
+  color: #5d6584;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.pico-support-amounts {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pico-support-amounts legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pico-support-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pico-support :is(.pico-support-preset, .pico-support-custom) {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #212950;
+  background: #f7f9fd;
+  border: 1.5px solid #e6ebf5;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.pico-support .pico-support-preset {
+  grid-template-columns: 24px minmax(0, 1fr) 15px;
+  min-height: 64px;
+  padding: 5px clamp(7px, 2.5vw, 12px);
+  text-align: left;
+}
+
+.pico-support :is(.pico-support-preset, .pico-support-custom)[aria-pressed='true'] {
+  color: #1b5fae;
+  background: #f0f6ff;
+  border-color: #2875d4;
+}
+
+.pico-support-quantity {
+  display: grid;
+  gap: 3px;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pico-support-quantity small {
+  color: #5d6584;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.pico-support .pico-support-custom {
+  grid-template-columns: minmax(0, 1fr) 16px;
+  min-height: 44px;
+  padding: 7px 13px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.pico-support .pico-support-pay {
+  min-height: 52px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  background: #196dce;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.pico-support .pico-support-pay:not(:disabled):hover {
+  background: #165fb5;
+}
+
+.pico-support .pico-support-hint,
+.pico-support .pico-support-status,
+.pico-support .pico-support-error {
+  color: #5d6584;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pico-support .pico-support-error {
+  color: #9d2936;
+}
+
+.pico-support-custom-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.pico-support-custom-editor label {
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pico-support-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1.5px solid #2875d4;
+  border-radius: 14px;
+  background: #f5f8ff;
+}
+
+.pico-support-custom-editor .pico-support-input-row input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  color: #212950;
+  background: transparent;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.pico-support-custom-editor .pico-support-input-row:focus-within {
+  outline: 2px solid #2875d4;
+  outline-offset: 1px;
+}
+
+.pico-support-custom-editor .pico-support-input-row input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.pico-support .pico-support-cancel {
+  min-height: 44px;
+  border-color: transparent;
+  background: transparent;
+  color: #385779;
+  box-shadow: none;
+}
+
+@media (max-height: 560px) {
+  .pico-support-custom-editor .pico-number-keys > button {
+    height: 44px;
+    min-height: 44px;
+  }
+}

@@ -54,29 +54,16 @@ for (const width of [320, 390, 1440])
     );
     await page.goto('/');
     await page.getByRole('button', { name: 'Администратор', exact: true }).click();
-    await expect(page.locator('.pico-home-feed')).toBeVisible();
-    const gap = await page.evaluate(
-      () =>
-        document.querySelector('.pico-home-block h2')!.getBoundingClientRect().top -
-        document.querySelector('.pico-home-overview')!.getBoundingClientRect().bottom,
-    );
-    expect(gap).toBe(20);
+    await expect(page.locator('.pico-agenda')).toBeVisible();
     const homeGeometry = await page.evaluate(() => {
-      const blocks = [...document.querySelectorAll('.pico-home-block')];
-      const rect = (el: Element) => el.getBoundingClientRect();
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
       return {
-        cardGap: rect(blocks[0].children[1]).top - rect(blocks[0].children[0]).bottom,
-        meetingGap: rect(blocks[1].children[0]).top - rect(blocks[0].lastElementChild!).bottom,
-        feedBottom: rect(document.querySelector('.pico-home-feed')!).bottom,
-        overdueGap:
-          rect(document.querySelector('.pico-home-feed > .pico-add-row')!).top -
-          rect(blocks[1].lastElementChild!).bottom,
+        headingGap: rect('.pico-agenda h2').top - rect('.pico-home-overview').bottom,
+        cardHeight: rect('.pico-agenda-panel').height,
+        actionGap: rect('.pico-home-actions').top - rect('.pico-agenda-panel').bottom,
       };
     });
-    expect(homeGeometry.cardGap).toBe(8);
-    expect(homeGeometry.meetingGap).toBe(20);
-    expect(homeGeometry.overdueGap).toBe(10);
-    if (width <= 760) expect(homeGeometry.feedBottom).toBe(844);
+    expect(homeGeometry).toEqual({ headingGap: 8, cardHeight: 296, actionGap: 12 });
     for (const inset of [0, 34]) {
       await page.evaluate(
         (v) => document.documentElement.style.setProperty('--pico-safe-bottom', `${v}px`),
@@ -85,27 +72,11 @@ for (const width of [320, 390, 1440])
       for (const tab of ['Главная', 'Клиенты', 'Проекты', 'Задачи', 'Аналитика']) {
         await navigate(page, tab);
         const mobile = width <= 760;
-        const scroller =
-          tab === 'Главная' ? page.locator('.pico-home-feed') : page.locator('.workspace');
-        if (mobile) await expect(scroller).toHaveCSS('padding-bottom', `${72 + inset + 16}px`);
-        if (mobile)
+        const scroller = page.locator('.workspace');
+        if (mobile) {
+          const bottom = 72 + inset + (tab === 'Главная' ? 5 : 16);
+          await expect(scroller).toHaveCSS('padding-bottom', `${bottom}px`);
           await expect(page.locator('.pico-bottom-nav')).toHaveCSS('height', `${72 + inset}px`);
-        if (tab === 'Главная') {
-          await scroller.evaluate((el) => {
-            el.scrollTop = el.scrollHeight;
-          });
-          const overdue = page.getByRole('button', {
-            name: 'Просроченные задачи · 1',
-            exact: true,
-          });
-          if (mobile) {
-            const nav = await page.locator('.pico-bottom-nav').boundingBox();
-            const box = await overdue.boundingBox();
-            expect(box!.y + box!.height).toBeLessThanOrEqual(nav!.y);
-          }
-          await overdue.click();
-          await expect(page.getByRole('heading', { name: 'Задачи', exact: true })).toBeVisible();
-          await navigate(page, 'Главная');
         }
         // Synthetic long content tests scroll geometry independently of seeded record counts.
         await scroller.evaluate((el) => {

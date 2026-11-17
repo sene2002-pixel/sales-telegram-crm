@@ -1,0 +1,239 @@
+.pico-home-actions {
+  min-width: 0;
+  margin-top: 12px;
+}
+
+.pico-home-actions-track {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  touch-action: pan-x pan-y;
+}
+
+.pico-home-actions-track::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .pico-home-actions-track {
+    margin-right: -16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pico-home-actions-track {
+    scroll-behavior: auto;
+  }
+}
+
+.pico-home-action {
+  flex: 0 0 171px;
+  height: 108px;
+  display: grid;
+  grid-template-rows: 36px 18px auto;
+  row-gap: 3px;
+  justify-items: start;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #cdd5e3;
+  border-radius: 16px;
+  background: #fff;
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.pico-home-action:focus-visible,
+.pico-home-action-dots > button:focus-visible {
+  outline: 2px solid #1668d8;
+  outline-offset: -3px;
+}
+
+.pico-home-action > strong {
+  font-size: 16px;
+  line-height: 18px;
+  font-weight: 700;
+  color: #1a2151;
+}
+
+.pico-home-action-description {
+  font-size: 14px;
+  line-height: 16px;
+  font-weight: 500;
+  color: #5f6880;
+}
+
+.pico-home-action-icon {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+}
+
+.pico-home-action-icon.is-support {
+  color: #fff;
+  background: linear-gradient(145deg, #ffc94a, #e39a00);
+}
+
+.pico-home-action-icon.is-share {
+  color: #13849b;
+  background: #ddf2f5;
+}
+
+.pico-home-action-icon.is-idea {
+  color: #1668d8;
+  background: #e7f1ff;
+}
+
+.pico-home-action-dots {
+  display: flex;
+  justify-content: center;
+}
+
+.pico-home-action-dots > button {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  min-width: 0;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.pico-home-action-dots > button::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 6px;
+  background: #5f6880;
+}
+
+.pico-home-action-dots > button[aria-current='true'] {
+  width: 24px;
+}
+
+.pico-home-action-dots > button[aria-current='true']::before {
+  width: 16px;
+  background: #1668d8;
+}
+
+.pico-share-sheet {
+  display: grid;
+  gap: 8px;
+}
+
+.pico-share-sheet > p {
+  margin: 0;
+}
+
+.pico-share-sheet > .pico-share-intro {
+  margin-bottom: 4px;
+  color: #5f6880;
+}
+
+.pico-share-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #e1e9f3;
+  border-radius: 16px;
+  background: #f5f8ff;
+  color: #1a2151;
+}
+
+.pico-share-preview > label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #5f6880;
+}
+
+.pico-share-preview > textarea {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 16px;
+  line-height: 20px;
+  color: #1a2151;
+}
+
+.pico-share-preview > textarea:focus {
+  border-color: #1668d8;
+  outline: 2px solid #1668d8;
+  outline-offset: -1px;
+}
+
+.pico-share-bot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #e7effc;
+}
+
+.pico-share-bot > img {
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.pico-share-bot > span {
+  display: grid;
+  gap: 2px;
+}
+
+.pico-share-bot strong {
+  font-size: 14px;
+}
+
+.pico-share-bot small,
+.pico-share-hint,
+.pico-share-scope {
+  font-size: 13px;
+  line-height: 18px;
+  color: #5f6880;
+}
+
+.pico-share-copy,
+.pico-share-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pico-share-copy[data-copied='true'] {
+  color: #167447;
+}
+
+.pico-share-sheet > button[aria-disabled='true'] {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.pico-share-announcement {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

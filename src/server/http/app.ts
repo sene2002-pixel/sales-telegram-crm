@@ -1,4 +1,7 @@
+import { PicoIdeas } from '../services/pico-ideas';
+import { maxIdeaScreenshotBytes } from '../../shared/pico-ideas';
 import { TeamInvitations } from '../services/team-invitations';
+import { PicoStars } from '../services/pico-stars';
 import { CompanyImports } from '../services/company-imports';
 import { SabyRegistry } from '../services/company-registry';
 import { assertImportPrivacy } from '../services/company-import-parser';
@@ -62,7 +65,9 @@ import { DomainError, requireCondition } from '../domain/errors';
 import { Actor, idSchema, roles, extractionSchema, RecordKind } from '../../shared/contracts';
 
 export class Services {
+  ideas: PicoIdeas;
   invitations: TeamInvitations;
+  stars: PicoStars;
   telegram: TelegramAdapter;
   diagnostics: DiagnosticLog;
   voiceSignatures: VoiceSignatures;
@@ -88,6 +93,7 @@ export class Services {
     this.diagnostics = new DiagnosticLog(db, config);
     this.auth = new AuthService(db, config);
     this.crm = new CrmService(db);
+    this.ideas = new PicoIdeas(db);
     this.fileDownloads = new FileDownloads(this.crm, config);
     const ai = new OpenAiAdapter(config, this.diagnostics);
     this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
@@ -95,6 +101,7 @@ export class Services {
     const telegram = new TelegramAdapter(config, this.errors);
     this.telegram = telegram;
     this.invitations = new TeamInvitations(db);
+    this.stars = new PicoStars(db, telegram, config);
     this.voiceSignatures = new VoiceSignatures(db, this.letters, this.reports, config);
     this.voiceContacts = new VoiceContacts(db, this.crm, this.letters, this.reports, config);
     this.letterBot = new LetterBot(
@@ -149,6 +156,7 @@ export class Services {
         }),
       ),
       this.invitations,
+      this.stars,
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.commercial = new CommercialReportService(db);
@@ -279,6 +287,18 @@ class PublicController {
 @UseGuards(AuthGuard)
 class CrmController {
   constructor(@Inject(Services) private s: Services) {}
+  @Post('me/pico-stars/invoices') createStarInvoice(
+    @Req() r: AuthedRequest,
+    @Body() body: unknown,
+  ) {
+    return this.s.stars.create(r.actor, body);
+  }
+  @Get('me/pico-stars/invoices/:id') starInvoiceStatus(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.s.stars.status(r.actor, id);
+  }
   @Get('me/signature-drafts') signatureDrafts(@Req() r: AuthedRequest) {
     return this.s.voiceSignatures.list(r.actor);
   }
@@ -363,6 +383,9 @@ class CrmController {
   @Post('users/admit') admitUser(@Req() r: AuthedRequest, @Body() body: unknown) {
     return this.s.auth.admitUser(r.actor, body);
   }
+  @Get('share/bot-link') async shareBotLink() {
+    return { url: `https://t.me/${await this.s.telegram.botUsername()}` };
+  }
   @Get('team-invitations') teamInvitations(@Req() r: AuthedRequest) {
     return this.s.invitations.list(r.actor);
   }
@@ -375,13 +398,7 @@ class CrmController {
       403,
       'Только руководитель или администратор приглашает сотрудников',
     );
-    const bot = await this.s.telegram.call('getMe', {});
-    requireCondition(
-      typeof bot?.username === 'string' && /^[a-zA-Z0-9_]{5,32}$/.test(bot.username),
-      503,
-      'Не удалось определить Telegram-бота',
-    );
-    return this.s.invitations.create(r.actor, body, bot.username);
+    return this.s.invitations.create(r.actor, body, await this.s.telegram.botUsername());
   }
   @Post('team-invitations/:id/revoke') revokeTeamInvitation(
     @Req() r: AuthedRequest,
@@ -459,7 +476,11 @@ class CrmController {
     @Body() b: unknown,
   ) {
     const input = z
-      .object({ data: z.unknown(), projectId: idSchema.nullable().optional() })
+      .object({
+        data: z.unknown(),
+        projectId: idSchema.nullable().optional(),
+        assignToSelf: z.boolean().optional(),
+      })
       .strict()
       .parse(b);
     return this.s.crm.createRecord(
@@ -468,6 +489,8 @@ class CrmController {
       z.enum(['contact', 'project', 'task', 'activity']).parse(kind),
       input.data,
       input.projectId || null,
+      undefined,
+      { assignToSelf: input.assignToSelf },
     );
   }
   @Patch('records/:id') updateRecord(
@@ -658,12 +681,58 @@ class CrmController {
     return this.s.crm.deleteFile(r.actor, id);
   }
 }
+@Controller('api')
+@UseGuards(AuthGuard)
+class IdeasController {
+  constructor(@Inject(Services) private s: Services) {}
+
+  @Post('pico-ideas')
+  @UseInterceptors(
+    FileInterceptor('screenshot', {
+      limits: { fileSize: maxIdeaScreenshotBytes, files: 1, fields: 3 },
+    }),
+  )
+  submit(
+    @Req() r: AuthedRequest,
+    @Body() body: unknown,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.s.ideas.submit(r.actor, body, file);
+  }
+
+  @Get('pico-ideas')
+  list(@Req() r: AuthedRequest, @Query('offset') offset?: string) {
+    const value = z
+      .string()
+      .regex(/^\d{1,7}$/)
+      .transform(Number)
+      .optional()
+      .parse(offset);
+    return this.s.ideas.list(r.actor, value ?? 0);
+  }
+
+  @Get('pico-ideas/:id/screenshot')
+  async screenshot(@Req() r: AuthedRequest, @Param('id') id: string, @Res() res: Response) {
+    const image = await this.s.ideas.screenshot(r.actor, idSchema.parse(id));
+    res
+      .set('Cache-Control', 'no-store')
+      .type(image.mime)
+      .attachment(image.mime === 'image/png' ? 'pico-idea.png' : 'pico-idea.jpg')
+      .send(image.bytes);
+  }
+
+  @Post('pico-ideas/:id/implemented')
+  markImplemented(@Req() r: AuthedRequest, @Param('id') id: string) {
+    return this.s.ideas.markImplemented(r.actor, idSchema.parse(id));
+  }
+}
+
 export async function createApp(config: Config, existingDb?: Database) {
   const db = existingDb || new Database(config);
   if (!existingDb) await db.init();
   const services = new Services(db, config);
   @Module({
-    controllers: [PublicController, CrmController],
+    controllers: [PublicController, CrmController, IdeasController],
     providers: [{ provide: Services, useValue: services }, AuthGuard],
   })
   class AppModule {}

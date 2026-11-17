@@ -1,13 +1,18 @@
-import { TextareaHTMLAttributes, useLayoutEffect, useRef } from 'react';
+import { RefObject, TextareaHTMLAttributes, useLayoutEffect, useRef } from 'react';
 
 /** Wrap long values without hiding an internal vertical scrollbar. */
 export function GrowingTextarea({
   singleLine = false,
   className = '',
   onChange,
+  textareaRef,
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { singleLine?: boolean }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  singleLine?: boolean;
+  textareaRef?: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  const ref = textareaRef || internalRef;
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;

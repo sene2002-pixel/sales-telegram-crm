@@ -1,3 +1,4 @@
+import { PicoIdeas } from './PicoIdeas';
 import { TeamInvitations } from './TeamInvitations';
 import { useState } from 'react';
 import { Actor, labels, roles } from '../shared/contracts';
@@ -65,6 +66,7 @@ export function UsersScreen({
           </button>
         ))}
       </div>
+      {user?.role === 'admin' && <PicoIdeas />}
       <section className="panel pico-admit-user">
         <h3>Добавить нового пользователя</h3>
         <p className="muted">Пользователь найдёт свой ID в Telegram-боте Pico</p>

@@ -16,6 +16,7 @@ type UndoAction = {
   kind: ActionKind;
   commit: () => Promise<void | CommittedRecord>;
   task?: CrmRecord;
+  silentUntil?: number;
   onCommitted?: () => Promise<void>;
 };
 
@@ -33,8 +34,10 @@ const actionIcons: Record<ActionKind, string> = {
 const Context = createContext<{
   queue: UndoAction[];
   pending: ReadonlySet<string>;
+  expiredSilent: ReadonlySet<string>;
   committedRecord: CommittedRecord | null;
   schedule: (action: UndoAction) => void;
+  cancel: (key: string) => void;
 } | null>(null);
 
 export function useUndoActions() {
@@ -46,37 +49,57 @@ export function useUndoActions() {
 export function useTaskActions() {
   const actions = useUndoActions();
   const queue = actions.queue.flatMap(({ task, kind }) => (task ? [{ task, action: kind }] : []));
+  function schedule(
+    task: CrmRecord,
+    kind: ActionKind,
+    onCommitted?: () => Promise<void>,
+    silentUntil?: number,
+  ) {
+    const { id, version, data } = structuredClone(task);
+    actions.schedule({
+      key: `task:${id}`,
+      label: taskLabels[kind],
+      kind,
+      task,
+      silentUntil,
+      onCommitted,
+      commit: async () => {
+        const record = await api<CrmRecord>(`/records/${id}`, 'PATCH', {
+          version,
+          data: taskSchema.parse({
+            ...taskSchema.strip().parse(data),
+            done: kind !== 'restore',
+            deleted: kind === 'deleted',
+          }),
+        });
+        return { companyId: task.companyId, id, record };
+      },
+    });
+  }
+  function isSilentDonePending(id: string) {
+    return actions.queue.some(
+      (item) => item.key === `task:${id}` && item.silentUntil !== undefined,
+    );
+  }
   return {
     queue,
-    project: <T extends CrmRecord>(tasks: T[]): T[] =>
+    schedule,
+    isSilentDonePending,
+    toggleSilentDone(task: CrmRecord) {
+      const key = `task:${task.id}`;
+      if (isSilentDonePending(task.id)) actions.cancel(key);
+      else if (!task.data.done && !actions.pending.has(key))
+        schedule(task, 'done', undefined, performance.now() + 3000);
+    },
+    project: <T extends CrmRecord>(tasks: T[], hideCompleted = false): T[] =>
       tasks.flatMap((task) => {
         const action = queue.find((pending) => pending.task.id === task.id)?.action;
-        if (action === 'deleted') return [];
+        if (action === 'deleted' || (hideCompleted && actions.expiredSilent.has(`task:${task.id}`)))
+          return [];
         if (action === 'restore')
           return [{ ...task, data: { ...task.data, done: false, deleted: false } }];
         return [task];
       }),
-    schedule(task: CrmRecord, kind: ActionKind, onCommitted?: () => Promise<void>) {
-      const { id, version, data } = structuredClone(task);
-      actions.schedule({
-        key: `task:${id}`,
-        label: taskLabels[kind],
-        kind,
-        task,
-        onCommitted,
-        commit: async () => {
-          const record = await api<CrmRecord>(`/records/${id}`, 'PATCH', {
-            version,
-            data: taskSchema.parse({
-              ...taskSchema.strip().parse(data),
-              done: kind !== 'restore',
-              deleted: kind === 'deleted',
-            }),
-          });
-          return { companyId: task.companyId, id, record };
-        },
-      });
-    },
   };
 }
 
@@ -92,6 +115,7 @@ export function TaskActionsProvider({
 }) {
   const [queue, setQueue] = useState<UndoAction[]>([]);
   const [saving, setSaving] = useState(false);
+  const [expiredSilent, setExpiredSilent] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState('');
   const [committedRecord, setCommittedRecord] = useState<CommittedRecord | null>(null);
   const [dialog, setDialog] = useState<HTMLElement | null>(null);
@@ -101,7 +125,37 @@ export function TaskActionsProvider({
   refresh.current = onChanged;
   const active = queue[0];
   const timing = useRef<{ item: UndoAction; startedAt: number } | null>(null);
-  const showBanner = Boolean((active && !saving) || error);
+  const visibleAction = active && active.silentUntil === undefined && !saving ? active : null;
+  const showBanner = Boolean(visibleAction || error);
+  function cancel(key: string) {
+    if (committing.current?.key === key) return;
+    const deadline = queue.find((item) => item.key === key)?.silentUntil;
+    if (deadline !== undefined && performance.now() >= deadline) return;
+    if (active?.key === key) window.clearTimeout(timerId.current);
+    setQueue((items) => items.filter((item) => item.key !== key));
+  }
+  // Home rows own their visible undo deadlines even when writes are queued behind another action.
+  useEffect(() => {
+    let timer: number | undefined;
+    function update() {
+      const now = performance.now();
+      const expired = new Set<string>();
+      let next = Infinity;
+      for (const item of queue) {
+        if (item.silentUntil === undefined) continue;
+        if (item.silentUntil <= now) expired.add(item.key);
+        else next = Math.min(next, item.silentUntil);
+      }
+      setExpiredSilent((current) =>
+        current.size === expired.size && [...current].every((key) => expired.has(key))
+          ? current
+          : expired,
+      );
+      if (Number.isFinite(next)) timer = window.setTimeout(update, Math.ceil(next - now));
+    }
+    update();
+    return () => window.clearTimeout(timer);
+  }, [queue]);
   useEffect(() => {
     if (!showBanner) return;
     const updateDialog = () => {
@@ -118,31 +172,34 @@ export function TaskActionsProvider({
     let mounted = true;
     timing.current = { item: active, startedAt: performance.now() };
     const isCurrent = () => mounted && session === token;
-    const timer = window.setTimeout(async () => {
-      if (!isCurrent()) return;
-      committing.current = active;
-      setSaving(true);
-      let result: void | CommittedRecord = undefined;
-      try {
-        result = await active.commit();
+    const timer = window.setTimeout(
+      async () => {
         if (!isCurrent()) return;
+        committing.current = active;
+        setSaving(true);
+        let result: void | CommittedRecord = undefined;
         try {
-          await Promise.all([refresh.current(), active.onCommitted?.()]);
-        } catch {
-          if (isCurrent())
-            setError('Изменение сохранено, но список не обновился. Обновите страницу.');
+          result = await active.commit();
+          if (!isCurrent()) return;
+          try {
+            await Promise.all([refresh.current(), active.onCommitted?.()]);
+          } catch {
+            if (isCurrent())
+              setError('Изменение сохранено, но список не обновился. Обновите страницу.');
+          }
+        } catch (cause) {
+          if (isCurrent()) setError('Изменение не сохранено: ' + (cause as Error).message);
+        } finally {
+          if (isCurrent()) {
+            if (result) setCommittedRecord(result);
+            committing.current = null;
+            setSaving(false);
+            setQueue((items) => items.filter((item) => item !== active));
+          }
         }
-      } catch (cause) {
-        if (isCurrent()) setError('Изменение не сохранено: ' + (cause as Error).message);
-      } finally {
-        if (isCurrent()) {
-          if (result) setCommittedRecord(result);
-          committing.current = null;
-          setSaving(false);
-          setQueue((items) => items.filter((item) => item !== active));
-        }
-      }
-    }, 3000);
+      },
+      active.silentUntil === undefined ? 3000 : Math.max(0, active.silentUntil - performance.now()),
+    );
     timerId.current = timer;
     return () => {
       mounted = false;
@@ -154,7 +211,9 @@ export function TaskActionsProvider({
       value={{
         queue,
         pending: new Set(queue.map((item) => item.key)),
+        expiredSilent,
         committedRecord,
+        cancel,
         schedule(action) {
           if (session !== token) return;
           setError('');
@@ -168,34 +227,30 @@ export function TaskActionsProvider({
       {showBanner &&
         createPortal(
           <>
-            {active && !saving && (
-              <div className="pico-undo-toast" key={active.key} role="status">
+            {visibleAction && (
+              <div className="pico-undo-toast" key={visibleAction.key} role="status">
                 <span
                   className="pico-undo-fill"
                   aria-hidden="true"
                   ref={(fill) => {
                     if (fill && !fill.style.animationDelay) {
                       const elapsed =
-                        timing.current?.item === active
+                        timing.current?.item === visibleAction
                           ? performance.now() - timing.current.startedAt
                           : 0;
                       fill.style.animationDelay = `-${Math.max(0, elapsed)}ms`;
                     }
                   }}
                 />
-                <Icon name={actionIcons[active.kind]} size={22} />
-                <span>{active.label}</span>
+                <Icon name={actionIcons[visibleAction.kind]} size={22} />
+                <span>{visibleAction.label}</span>
                 <button
                   type="button"
                   ref={(button) => {
                     if (button && document.activeElement === document.body)
                       button.focus({ preventScroll: true });
                   }}
-                  onClick={() => {
-                    if (committing.current === active) return;
-                    window.clearTimeout(timerId.current);
-                    setQueue((items) => items.filter((item) => item !== active));
-                  }}
+                  onClick={() => cancel(visibleAction.key)}
                 >
                   Отменить
                 </button>

@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { navigate, prepareDemoAuth } from './helpers';
+import { navigate, openHomeTaskSchedule, prepareDemoAuth } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await prepareDemoAuth(page);
@@ -347,7 +347,7 @@ test('Design fidelity: crown opens compact users and admission shows the real Te
   await screenshot(page, 'compact-admin-users');
 });
 
-test('Design fidelity: each filter sheet and postpone keeps its full-width action visible', async ({
+test('Design fidelity: filter actions stay full width and the Home task date save stays visible', async ({
   page,
 }, info) => {
   await login(page);
@@ -406,18 +406,12 @@ test('Design fidelity: each filter sheet and postpone keeps its full-width actio
   await expect(taskDetail.getByRole('button', { name: 'Отложить', exact: true })).toHaveCount(0);
   await taskDetail.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await navigate(page, 'Главная');
-  const homeTask = page
-    .getByRole('region', { name: 'Сегодня', exact: true })
-    .locator('.pico-task-row')
-    .filter({ hasText: 'Перенос ' + company.name });
-  await homeTask.locator('.task-text').click();
-  await homeTask.getByRole('button', { name: 'Отложить', exact: true }).click();
-  const postpone = page.getByRole('dialog', { name: 'Отложить задачу', exact: true });
+  const postpone = await openHomeTaskSchedule(page, 'Перенос ' + company.name);
   const morning = postpone.getByRole('button', { name: /Завтра утром/ });
   await expect(morning).toContainText(/10:00/);
   await morning.click();
   await expect(postpone.getByLabel('Время', { exact: true })).toHaveValue('10:00');
-  await fullWidthAction(page, 'Отложить');
+  await expect(postpone.getByRole('button', { name: 'Сохранить', exact: true })).toBeInViewport();
   await screenshot(page, 'task-postpone-preview');
 });
 
