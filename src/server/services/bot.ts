@@ -29,6 +29,7 @@ import { PicoStars, telegramPreCheckout, telegramStarReceipt } from './pico-star
 const sender = z.object({
   id: z.number().int().positive().safe(),
   first_name: z.string().optional(),
+  is_bot: z.boolean().optional(),
 });
 const updateSchema = z.object({
   update_id: z.number().int(),
@@ -119,6 +120,19 @@ export class BotService {
     const msg = update.message;
     const chat = callback?.message?.chat || msg?.chat;
     const from = callback?.from || msg?.from;
+    // Telegram can send an outgoing refund service message from this bot
+    // in the payer's private chat. Other messages retain the sender/peer check.
+    if (
+      msg?.refunded_payment &&
+      !callback &&
+      chat?.type === 'private' &&
+      chat.id > 0 &&
+      from?.is_bot &&
+      this.config.botToken.startsWith(`${from.id}:`)
+    ) {
+      await this.stars?.recordReceipt(chat.id, msg.refunded_payment, true);
+      return { ok: true };
+    }
     if (!chat || !from || chat.type !== 'private' || chat.id !== from.id) {
       await this.diagnostics?.record('telegram.update_ignored', {
         reason: 'not_private_or_mismatched_sender',

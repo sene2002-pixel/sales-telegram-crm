@@ -62,6 +62,11 @@ export class TelegramAdapter implements Messenger {
     private config: Config,
     private errors?: ErrorLog,
   ) {}
+  private url(path: string, file = false) {
+    const prefix = file ? 'file/' : '';
+    const environment = this.config.telegramApiEnvironment === 'test' ? 'test/' : '';
+    return `https://api.telegram.org/${prefix}bot${this.config.botToken}/${environment}${path}`;
+  }
   async botUsername(): Promise<string> {
     const bot = await this.call('getMe', {});
     requireCondition(
@@ -82,7 +87,7 @@ export class TelegramAdapter implements Messenger {
     ) {
       wirePayload.secret_token = this.config.webhookSecret;
     }
-    const response = await fetch(`https://api.telegram.org/bot${this.config.botToken}/${method}`, {
+    const response = await fetch(this.url(method), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(wirePayload),
@@ -201,14 +206,11 @@ export class TelegramAdapter implements Messenger {
       'Pico-import.xlsx',
     );
     body.append('caption', caption);
-    const response = await fetch(
-      `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
-      {
-        method: 'POST',
-        body,
-        signal: AbortSignal.timeout(30_000),
-      },
-    );
+    const response = await fetch(this.url('sendDocument'), {
+      method: 'POST',
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
     requireCondition(response.ok, 502, 'Не удалось отправить шаблон. Попробуйте ещё раз');
     const result: any = await response.json().catch(() => null);
     requireCondition(result?.ok, 502, 'Telegram отклонил отправку шаблона. Попробуйте ещё раз');
@@ -223,14 +225,11 @@ export class TelegramAdapter implements Messenger {
       new Blob([redactSystemText(content, this.config)], { type: 'text/csv;charset=utf-8' }),
       redactSystemText(filename, this.config),
     );
-    const response = await fetch(
-      `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
-      {
-        method: 'POST',
-        body,
-        signal: AbortSignal.timeout(25_000),
-      },
-    );
+    const response = await fetch(this.url('sendDocument'), {
+      method: 'POST',
+      body,
+      signal: AbortSignal.timeout(25_000),
+    });
     requireCondition(
       response.ok,
       502,
@@ -277,14 +276,11 @@ export class TelegramAdapter implements Messenger {
         .slice(0, 1024)
         .replace(/[\uD800-\uDBFF]$/, ''),
     );
-    const response = await fetch(
-      `https://api.telegram.org/bot${this.config.botToken}/sendDocument`,
-      {
-        method: 'POST',
-        body,
-        signal: AbortSignal.timeout(30_000),
-      },
-    );
+    const response = await fetch(this.url('sendDocument'), {
+      method: 'POST',
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
     requireCondition(response.ok, 502, 'Не удалось отправить PDF в Telegram');
     const result = (await response.json()) as any;
     requireCondition(result.ok, 502, 'Telegram отклонил отправку PDF');
@@ -299,10 +295,9 @@ export class TelegramAdapter implements Messenger {
       413,
       'Слишком большой файл',
     );
-    const response = await fetch(
-      `https://api.telegram.org/file/bot${this.config.botToken}/${file.file_path}`,
-      { signal: AbortSignal.timeout(30_000) },
-    );
+    const response = await fetch(this.url(file.file_path, true), {
+      signal: AbortSignal.timeout(30_000),
+    });
     requireCondition(response.ok && response.body, 502, 'Не удалось скачать файл');
     const chunks: Uint8Array[] = [];
     let size = 0;

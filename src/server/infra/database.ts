@@ -10,7 +10,7 @@ export class Database implements Sql {
   private pool?: Pool;
   private embedded?: PGlite;
   constructor(private config: Config) {}
-  async init() {
+  async init({ migrate = true } = {}) {
     if (this.config.databaseUrl)
       this.pool = new Pool({ connectionString: this.config.databaseUrl, max: 10 });
     else {
@@ -18,7 +18,7 @@ export class Database implements Sql {
       this.embedded = new PGlite(join(this.config.dataDir, 'postgres'));
       await this.embedded.waitReady;
     }
-    await this.migrate();
+    if (migrate) await this.migrate();
   }
   async migrate() {
     await this.transaction(async (tx) => {
@@ -96,6 +96,18 @@ export class Database implements Sql {
         paid_at timestamptz,
         refunded_at timestamptz
       )`);
+      await tx.query(`ALTER TABLE pico_star_invoices
+        ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
+        ADD COLUMN IF NOT EXISTS accepted_terms_url text,
+        ADD COLUMN IF NOT EXISTS accepted_terms_at timestamptz`);
+      // Previously issued links have no consent record. Existing checkout reservations
+      // are kept for redelivery of the same query and for late Telegram receipts.
+      await tx.query(`UPDATE pico_star_invoices SET expires_at=now()
+        WHERE accepted_terms_at IS NULL AND pre_checkout_id IS NULL
+          AND paid_at IS NULL AND expires_at > now()`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS pico_star_invoices_actor ON pico_star_invoices(actor_id)',
+      );
       await tx.query(`CREATE TABLE IF NOT EXISTS error_logs (
         id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),
         event text NOT NULL, request_id uuid, actor_id uuid, status integer,

@@ -16,8 +16,10 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     devAuth: env.DEV_AUTH === 'true',
     sessionSecret: env.SESSION_SECRET || randomBytes(32).toString('hex'),
     botToken: env.BOT_TOKEN || '',
+    telegramApiEnvironment: env.TELEGRAM_API_ENVIRONMENT ?? 'production',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     picoStarsEnabled: env.PICO_STARS_ENABLED === 'true',
+    picoStarsTermsUrl: (env.PICO_STARS_TERMS_URL || '').trim(),
     picoStarsSupportUsername: (env.PICO_STARS_SUPPORT_USERNAME || '').trim().replace(/^@/, ''),
     adminTelegramId: env.BOOTSTRAP_ADMIN_TELEGRAM_ID || '',
     apiKey: env.OPENAI_API_KEY || '',
@@ -36,6 +38,10 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     maxVoiceBytes: Number(env.MAX_VOICE_BYTES || 20_000_000),
     maxVoiceSeconds: Number(env.MAX_VOICE_SECONDS || 600),
   };
+  if (!['production', 'test'].includes(config.telegramApiEnvironment))
+    throw new Error('TELEGRAM_API_ENVIRONMENT must be production or test');
+  if (config.botToken && !/^[A-Za-z0-9_:-]+$/.test(config.botToken))
+    throw new Error('BOT_TOKEN must contain only the token supplied by BotFather');
   if (
     (config.picoStarsSupportUsername &&
       !/^[a-zA-Z][a-zA-Z0-9_]{3,31}$/.test(config.picoStarsSupportUsername)) ||
@@ -45,6 +51,19 @@ export function makeConfig(env: NodeJS.ProcessEnv = process.env) {
     throw new Error(
       'Pico Stars requires a valid PICO_STARS_SUPPORT_USERNAME, BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET (32+ chars)',
     );
+  }
+  const termsUrl = config.picoStarsTermsUrl;
+  if (termsUrl || config.picoStarsEnabled) {
+    const parsed = URL.canParse(termsUrl) ? new URL(termsUrl) : null;
+    if (
+      !parsed ||
+      !/^https:\/\/[^/?#]/i.test(termsUrl) ||
+      /[\\\s]/.test(termsUrl) ||
+      parsed.username ||
+      parsed.password ||
+      termsUrl.length > 2048
+    )
+      throw new Error('PICO_STARS_TERMS_URL must be an absolute HTTPS URL without credentials');
   }
   new Intl.DateTimeFormat('ru', { timeZone: config.timezone }).format();
   for (const [name, value] of [
