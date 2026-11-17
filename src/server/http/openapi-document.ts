@@ -885,7 +885,11 @@ add(
       'Подтверждённые project-sales/договорённость либо явная общая guidance; без внешнего AI и без сохранения предложенного действия.',
   },
 );
-add('delete', '/contacts/{id}', 'deleteContact', 'Мягко удалить контакт', 'Записи', ref('Ok'));
+add('delete', '/contacts/{id}', 'deleteContact', 'Мягко удалить контакт', 'Записи', ref('Ok'), {
+  queries: [
+    query('version', positiveInteger, 'Версия контакта для проверки конкурентного изменения.'),
+  ],
+});
 add('delete', '/files/{id}', 'archiveFile', 'Архивировать файл в CRM', 'Файлы', ref('Ok'), {
   description: 'Мягкое удаление доступной записи; не передаёт право на чужую компанию.',
 });

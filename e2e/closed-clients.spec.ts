@@ -39,17 +39,20 @@ for (const width of [320, 390]) {
     await expect(cards).toHaveCount(1);
     await page.getByRole('button', { name: 'В работе', exact: true }).click();
     await expect(cards).toHaveCount(1);
-    // Archive through the actual card action, including its confirmation.
+    // Archive through the swipe action and let the undo window expire.
     const card = cards.filter({ hasText: current.name });
     const swipe = card.locator(':scope > .cc-swipe');
     await swipe.focus();
     await swipe.press('ArrowLeft');
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
+    const toast = page.locator('.pico-undo-toast');
     await swipe.locator(':scope > .cc-trash-track .cc-trash').click();
-    await page
-      .getByRole('alertdialog')
-      .getByRole('button', { name: 'Перенести в архив', exact: true })
-      .click();
     await expect(cards).toHaveCount(0);
+    await expect(toast).toContainText('Клиент удалён');
+    await page.clock.runFor(3100);
+    await expect(toast).toHaveCount(0);
+    await page.clock.resume();
     await page.getByRole('button', { name: 'Все', exact: true }).click();
     await expect(cards).toHaveCount(0);
     await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
@@ -92,16 +95,38 @@ for (const width of [320, 390]) {
     await page.screenshot({
       path: `/tmp/pico-closed-evidence/restore-${width}-${info.project.name}.png`,
     });
-    await card.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();
-    const detail = page.getByRole('dialog');
-    await detail.getByRole('button', { name: 'Восстановить компанию', exact: true }).click();
-    await detail
-      .getByRole('alertdialog')
-      .getByRole('button', { name: 'Подтвердить', exact: true })
-      .click();
-    await detail.getByRole('button', { name: 'Контакты', exact: true }).click();
-    await expect(detail).toContainText('Сохранённый контакт');
-    await detail.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await page.clock.pauseAt(new Date(Date.now() + 15_000));
+    const restore = card.getByRole('button', { name: 'Восстановить компанию', exact: true });
+    const archived = async () => {
+      const response = await page.request.get(`/api/companies/${current.id}`, { headers });
+      expect(response.ok()).toBeTruthy();
+      return (await response.json()).company.archived;
+    };
+    await restore.click();
+    await expect(cards).toHaveCount(2);
+    await expect(toast).toContainText('Клиент снова в работе');
+    const bannerBox = (await toast.boundingBox())!;
+    const navBox = (await page.locator('.pico-bottom-nav').boundingBox())!;
+    expect(navBox.y - (bannerBox.y + bannerBox.height)).toBeCloseTo(10, 0);
+    const labelBox = (await toast
+      .getByText('Клиент снова в работе', { exact: true })
+      .boundingBox())!;
+    const undo = toast.getByRole('button', { name: 'Отменить', exact: true });
+    const undoBox = (await undo.boundingBox())!;
+    expect(labelBox.x + labelBox.width).toBeLessThan(undoBox.x);
+    expect(undoBox.height).toBeGreaterThanOrEqual(44);
+    if (width === 320) await page.screenshot({ path: info.outputPath('client-restore-320.png') });
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    expect(await archived()).toBe(true);
+    await undo.click();
+    await page.clock.runFor(3100);
+    await expect(cards).toHaveCount(3);
+    expect(await archived()).toBe(true);
+    await card.locator('.pico-client-row').click();
+    await restore.click();
+    await page.clock.runFor(3100);
+    await expect.poll(archived).toBe(false);
+    await page.clock.resume();
     await expect(cards).toHaveCount(2);
     await page.getByRole('button', { name: 'В работе', exact: true }).click();
     await expect(cards).toHaveCount(1);

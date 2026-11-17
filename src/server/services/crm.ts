@@ -1082,7 +1082,7 @@ export class CrmService {
       return { ok: true };
     });
   }
-  async deleteContact(actor: Actor, id: string) {
+  async deleteContact(actor: Actor, id: string, version?: number) {
     return this.db.transaction(async (tx) => {
       const [row] = await tx.query(
         "SELECT * FROM records WHERE id=$1 AND kind='contact' AND NOT deleted",
@@ -1090,15 +1090,21 @@ export class CrmService {
       );
       requireCondition(row, 404, 'Контакт не найден');
       await this.company(actor, row.company_id, tx, true);
-      const deleted = await tx.query(
-        'UPDATE records SET deleted=true,version=version+1 WHERE id=$1 AND NOT deleted RETURNING id',
+      const [current] = await tx.query(
+        "SELECT * FROM records WHERE id=$1 AND kind='contact' AND NOT deleted FOR UPDATE",
         [id],
       );
-      requireCondition(deleted.length, 404, 'Контакт не найден');
-      await audit(tx, actor.id, 'contact.deleted', id, row.company_id, {
-        recordVersion: row.version + 1,
-        recordBefore: { data: row.data, contactSource: row.contact_source, deleted: false },
-        recordAfter: { data: row.data, contactSource: row.contact_source, deleted: true },
+      requireCondition(current, 404, 'Контакт не найден');
+      requireCondition(
+        version === undefined || current.version === version,
+        409,
+        'Запись изменена. Обновите страницу',
+      );
+      await tx.query('UPDATE records SET deleted=true,version=version+1 WHERE id=$1', [id]);
+      await audit(tx, actor.id, 'contact.deleted', id, current.company_id, {
+        recordVersion: current.version + 1,
+        recordBefore: { data: current.data, contactSource: current.contact_source, deleted: false },
+        recordAfter: { data: current.data, contactSource: current.contact_source, deleted: true },
       });
       return { ok: true };
     });

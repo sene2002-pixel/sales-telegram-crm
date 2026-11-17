@@ -3191,7 +3191,6 @@ html[data-pico-portrait-required='true'] .pico-portrait-guard {
 .company-record-title,
 .company-contact-values,
 .company-contact-values a,
-.company-archive-confirmation,
 .company-detail .records p {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -5116,13 +5115,12 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
   z-index: 11000;
   left: 44px;
   right: 44px;
-  bottom: calc(var(--pico-bottom-offset, 0px) + var(--pico-safe-bottom, 0px) + 82px);
+  bottom: calc(var(--pico-bottom-offset, 0px) + var(--pico-nav-height, 72px) + 10px);
   display: flex;
   align-items: center;
   gap: 6px;
   height: 40px;
   padding: 0 8px;
-  overflow: hidden;
   border-radius: 20px;
   border: 1px solid #c9dcfa;
   background: #eaf2fe;
@@ -5147,12 +5145,19 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
   background: #1f7aea;
   color: #fff;
 }
+.pico-undo-toast > span:not(.pico-undo-fill) {
+  min-width: 0;
+  line-height: 1.1;
+}
 .pico-undo-toast > button {
+  flex: none;
   margin-left: auto;
   min-height: 44px;
   padding: 0 4px;
   background: transparent;
+  min-width: 44px;
   border: 0;
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 800;
   color: #1f7aea;
@@ -5160,6 +5165,8 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
 .pico-undo-fill {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
   background: #d6e6fc;
   transform-origin: left;
   animation: pico-undo-countdown 3s linear forwards;
@@ -5167,6 +5174,11 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
 @keyframes pico-undo-countdown {
   to {
     transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pico-undo-fill {
+    animation: none;
   }
 }
 .pico-task-action-error {

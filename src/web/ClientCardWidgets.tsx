@@ -119,7 +119,7 @@ export function SwipeAction({
   label,
   onDelete,
   onEdit,
-  confirmation,
+  deleteLabel,
   confirmDelete = true,
   disabled = false,
 }: {
@@ -128,13 +128,7 @@ export function SwipeAction({
   onDelete?: () => Promise<void>;
   onEdit?: () => void;
   confirmDelete?: boolean;
-  confirmation?: {
-    title: string;
-    message: string;
-    action: string;
-    pending: string;
-    triggerLabel: string;
-  };
+  deleteLabel?: string;
   disabled?: boolean;
 }) {
   const fromModal = (target: EventTarget | null) =>
@@ -387,7 +381,7 @@ export function SwipeAction({
                 <button
                   type="button"
                   className="cc-trash"
-                  aria-label={confirmation?.triggerLabel || `Удалить ${label}`}
+                  aria-label={deleteLabel || `Удалить ${label}`}
                   tabIndex={revealed ? 0 : -1}
                   disabled={disabled || busy}
                   onClick={() => {
@@ -408,7 +402,7 @@ export function SwipeAction({
       </div>
       {confirm && (
         <Modal
-          title={confirmation?.title || 'Подтверждение удаления'}
+          title="Подтверждение удаления"
           dialogRole="alertdialog"
           initialFocusRef={cancelRef}
           closeDisabled={busy}
@@ -416,21 +410,15 @@ export function SwipeAction({
             if (!inFlight.current) setConfirm(false);
           }}
         >
-          <p className="cc-confirm-message">{confirmation?.message || `Удалить ${label}?`}</p>
+          <p className="cc-confirm-message">{`Удалить ${label}?`}</p>
           {error && (
             <p className="error" role="alert">
               {error}
             </p>
           )}
           <div className="cc-confirm-actions">
-            <button
-              className={confirmation ? 'primary' : 'danger'}
-              disabled={busy}
-              onClick={() => void performDelete()}
-            >
-              {busy
-                ? confirmation?.pending || 'Удаляем…'
-                : confirmation?.action || 'Подтвердить удаление'}
+            <button className="danger" disabled={busy} onClick={() => void performDelete()}>
+              {busy ? 'Удаляем…' : 'Подтвердить удаление'}
             </button>
             <button
               ref={cancelRef}

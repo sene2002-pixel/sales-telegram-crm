@@ -15,11 +15,13 @@ export function HoldingMembers({
   company,
   members,
   onReveal,
+  allocationDisabled = false,
   onChanged,
 }: {
   company: Company;
   members: Company[];
   onReveal?: (id: string) => void;
+  allocationDisabled?: boolean;
   onChanged: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<Target[] | null>(null);
@@ -104,7 +106,7 @@ export function HoldingMembers({
           <button
             type="button"
             className="text-button"
-            disabled={members.length > 100}
+            disabled={allocationDisabled || members.length > 100}
             onClick={begin}
           >
             Распределить временный потенциал
@@ -119,6 +121,7 @@ export function HoldingMembers({
           className="holding-allocation"
           onSubmit={async (event) => {
             event.preventDefault();
+            if (allocationDisabled) return;
             setError('');
             setBusy(true);
             try {
@@ -215,7 +218,7 @@ export function HoldingMembers({
             </button>
           )}
           <div className="cc-editor-actions">
-            <button disabled={busy || conflict}>
+            <button disabled={busy || conflict || allocationDisabled}>
               {busy ? 'Сохраняем…' : 'Подтвердить распределение'}
             </button>
             <button type="button" disabled={busy} onClick={() => setDraft(null)}>

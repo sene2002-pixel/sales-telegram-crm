@@ -643,7 +643,7 @@ test('UI audit: commercial report validates dates and preserves selected manager
   await expect(from).toHaveCount(0);
 });
 
-test('UI audit: legacy project and task edits persist; contact deletion cancel and confirm affect only the selected record', async ({
+test('UI audit: legacy project and task edits persist; undo and committed contact deletion affect only the selected record', async ({
   page,
 }) => {
   await isolatedActor(page, 'manager');
@@ -681,16 +681,26 @@ test('UI audit: legacy project and task edits persist; contact deletion cancel a
   await detail.getByRole('button', { name: 'Добавить задачу', exact: true }).click();
   await expect(detail.locator('.records')).toContainText('Изменённая старая задача');
   await detail.getByRole('button', { name: 'Контакты', exact: true }).click();
-  await detail.getByRole('button', { name: 'Удалить контакт', exact: true }).click();
-  await detail.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  const toast = detail.locator('.pico-undo-toast');
+  await detail.getByRole('button', { name: 'Удалить контакт', exact: true }).press('Enter');
+  await expect(detail.locator('.records')).not.toContainText('Удаляемый контакт');
+  const undo = toast.getByRole('button', { name: 'Отменить', exact: true });
+  await expect(undo).toBeFocused();
+  await undo.press('Enter');
+  await expect(detail.locator('.records')).toContainText('Удаляемый контакт');
+  await page.clock.runFor(3100);
   expect(
     (await api(page, `/companies/${company.id}`, undefined, 'GET')).records.some(
       (r: any) => r.id === contact.id,
     ),
   ).toBe(true);
   await detail.getByRole('button', { name: 'Удалить контакт', exact: true }).click();
-  await detail.getByRole('button', { name: 'Подтвердить удаление', exact: true }).click();
   await expect(detail.locator('.records')).not.toContainText('Удаляемый контакт');
+  await page.clock.runFor(3100);
+  await expect(toast).toHaveCount(0);
+  await page.clock.resume();
   await page.reload();
   const saved = (await api(page, `/companies/${company.id}`, undefined, 'GET')).records;
   expect(saved.some((r: any) => r.id === contact.id)).toBe(false);

@@ -220,3 +220,49 @@ test('task deletion checks authentication, ownership and version and preserves s
     .send({ version: task.version })
     .expect(404);
 });
+
+test('optional contact deletion version preserves concurrent updates and legacy requests', async () => {
+  const company = await s.crm.create(manager, { name: 'Компания удаляемого контакта' });
+  const contact = await s.crm.createRecord(manager, company.id, 'contact', { name: 'До правки' });
+  const edited = await s.crm.updateRecord(manager, contact.id, {
+    version: contact.version,
+    data: { name: 'После правки' },
+  });
+  const server = app.getHttpServer();
+  const endpoint = `/api/contacts/${contact.id}`;
+  await request(server)
+    .delete(`${endpoint}?version=1.5`)
+    .set('Authorization', `Bearer ${token}`)
+    .expect(400);
+  await request(server)
+    .delete(`${endpoint}?version=${edited.version}`)
+    .set('Authorization', `Bearer ${s.auth.issue(other)}`)
+    .expect(404);
+  await request(server)
+    .delete(`${endpoint}?version=${contact.version}`)
+    .set('Authorization', `Bearer ${token}`)
+    .expect(409);
+  const current = (await s.crm.detail(manager, company.id)).records.find(
+    (r) => r.id === contact.id,
+  );
+  assert.equal(current?.data.name, 'После правки');
+  await request(server)
+    .delete(`${endpoint}?version=${edited.version}`)
+    .set('Authorization', `Bearer ${token}`)
+    .expect(200);
+  const saved = await s.crm.detail(manager, company.id);
+  assert.equal(
+    saved.records.some((r) => r.id === contact.id),
+    false,
+  );
+  const deletion = saved.audit.find((a) => a.action === 'contact.deleted');
+  assert.equal(deletion.details.recordVersion, edited.version + 1);
+  assert.equal(deletion.details.recordBefore.data.name, 'После правки');
+  const legacy = await s.crm.createRecord(manager, company.id, 'contact', {
+    name: 'Старый клиент',
+  });
+  await request(server)
+    .delete(`/api/contacts/${legacy.id}`)
+    .set('Authorization', `Bearer ${token}`)
+    .expect(200);
+});

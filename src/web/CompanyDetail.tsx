@@ -1,6 +1,6 @@
 import { companyDisplayName } from '../shared/company-display-name';
 import { companyContactChanges } from '../shared/company-edit-contacts';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Actor,
   Company,
@@ -8,13 +8,20 @@ import {
   CrmRecord,
   labels,
   RecordKind,
-  taskSchema,
 } from '../shared/contracts';
 import { api, ApiError, download, money } from './api';
 import { CompanyForm, Field, Modal, RecordForm } from './forms';
 import { LetterForm } from './LetterForm';
 import { CompanySales } from './SalesCard';
 import { FileUpload } from './FileUpload';
+import { useTaskActions } from './TaskActions';
+import {
+  applyCommittedRecord,
+  companyTransitionPending,
+  contactDeleteKey,
+  pendingEquipment,
+  useClientUndo,
+} from './client-undo';
 const names: Record<RecordKind, string> = {
   task: 'Задачи',
   contact: 'Контакты',
@@ -84,22 +91,49 @@ export function CompanyDetail({
     [owner, setOwner] = useState(company.ownerId);
   const [category, setCategory] = useState('docs'),
     [projectId, setProjectId] = useState('');
-  const [deleteContactId, setDeleteContactId] = useState<string | null>(null);
-  const [confirmArchive, setConfirmArchive] = useState(false);
   const [editorCompany, setEditorCompany] = useState<Company | null>(null);
   const [editorContacts, setEditorContacts] = useState<CrmRecord[]>([]);
   const refreshSequence = useRef(0);
+  const mounted = useRef(true);
+  const clientsUndo = useClientUndo();
+  const latestCommit = useRef(clientsUndo.committedRecord);
+  const taskActions = useTaskActions();
+  const pendingTask = (id: string) => taskActions.queue.find(({ task }) => task.id === id);
   async function refresh() {
     const sequence = ++refreshSequence.current;
-    const d = await api<Detail>(`/companies/${company.id}`);
+    const d = applyCommittedRecord(
+      await api<Detail>(`/companies/${company.id}`),
+      latestCommit.current,
+    );
     if (sequence !== refreshSequence.current) return;
     setDetail(d);
     setOwner(d.company.ownerId);
     return d;
   }
   useEffect(() => {
-    refresh().catch((e) => setError(e.message));
+    mounted.current = true;
+    refresh().catch((e) => {
+      if (mounted.current) setError(e.message);
+    });
+    return () => {
+      mounted.current = false;
+      ++refreshSequence.current;
+    };
   }, [company.id]);
+  const currentDetail = detail && applyCommittedRecord(detail, clientsUndo.committedRecord);
+  useLayoutEffect(() => {
+    const committed = clientsUndo.committedRecord;
+    if (latestCommit.current === committed) return;
+    latestCommit.current = committed;
+    if (committed?.companyId !== company.id) return;
+    setDetail((current) => current && applyCommittedRecord(current, committed));
+    void refresh().catch((cause) => {
+      if (mounted.current) setError((cause as Error).message);
+    });
+  }, [clientsUndo.committedRecord, company.id]);
+  async function refreshUndoDetail() {
+    if (mounted.current) await refresh();
+  }
   async function run(fn: () => Promise<any>) {
     setBusy(true);
     setError('');
@@ -113,14 +147,23 @@ export function CompanyDetail({
       setBusy(false);
     }
   }
-  if (!detail)
+  if (!currentDetail)
     return (
       <Modal title={companyDisplayName(company.name, company.country)} onClose={onClose}>
         <p>{error || 'Загрузка…'}</p>
       </Modal>
     );
-  const c = detail.company,
-    projects = detail.records.filter((r) => r.kind === 'project');
+  const c = currentDetail.company;
+  const visibleContacts = currentDetail.records.filter(
+    (record) => record.kind === 'contact' && !clientsUndo.pending.has(contactDeleteKey(record.id)),
+  );
+  const projects = currentDetail.records.filter((r) => r.kind === 'project');
+  const records =
+    tab === 'contact'
+      ? visibleContacts
+      : tab === 'task'
+        ? taskActions.project(currentDetail.records.filter((r) => r.kind === 'task'))
+        : currentDetail.records.filter((r) => r.kind === tab);
   return (
     <Modal title={companyDisplayName(c.name, c.country)} onClose={onClose}>
       <div className="company-detail">
@@ -173,7 +216,7 @@ export function CompanyDetail({
             </div>
           )}
           {c.notes && <p className="preserve">{c.notes}</p>}
-          <CompanySales records={detail.records} />
+          <CompanySales records={currentDetail.records} />
         </details>
         <details className="company-detail-actions" open={initialTab === 'actions' || undefined}>
           <summary>Действия с клиентом</summary>
@@ -181,7 +224,7 @@ export function CompanyDetail({
             <LetterForm
               key={c.id}
               companyId={c.id}
-              contacts={detail.records.filter((r) => r.kind === 'contact')}
+              contacts={visibleContacts}
               onCreated={async () => {
                 await refresh();
                 setTab('file');
@@ -217,41 +260,19 @@ export function CompanyDetail({
                 users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))) && (
             <button
               className={c.archived ? undefined : 'danger'}
-              disabled={busy}
-              onClick={() => setConfirmArchive(true)}
+              disabled={
+                busy ||
+                edit ||
+                companyTransitionPending(c, clientsUndo.pending) ||
+                Boolean(pendingEquipment(c, clientsUndo.pending))
+              }
+              onClick={() => {
+                clientsUndo.setArchived(c);
+                onClose();
+              }}
             >
               {c.archived ? 'Восстановить компанию' : 'Удалить компанию'}
             </button>
-          )}
-          {confirmArchive && (
-            <section
-              className="panel company-archive-confirmation"
-              role="alertdialog"
-              aria-label={c.archived ? 'Восстановление компании' : 'Удаление компании'}
-            >
-              <p className="company-long-text">
-                {c.archived
-                  ? `Восстановить «${companyDisplayName(c.name, c.country)}»?`
-                  : `Перенести «${companyDisplayName(c.name, c.country)}» в архив? Контакты, задачи и файлы сохранятся. Восстановить сможет только суперадмин.`}
-              </p>
-              <button
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    await api(`/companies/${c.id}/archive`, 'POST', {
-                      archived: !c.archived,
-                      version: c.version,
-                    });
-                    setConfirmArchive(false);
-                  })
-                }
-              >
-                Подтвердить
-              </button>
-              <button disabled={busy} onClick={() => setConfirmArchive(false)}>
-                Отмена
-              </button>
-            </section>
           )}
           {edit && (
             <CompanyForm
@@ -344,7 +365,7 @@ export function CompanyDetail({
               initial={form.initial}
               projects={projects}
               companies={companies}
-              contacts={detail.records.filter((r) => r.kind === 'contact')}
+              contacts={visibleContacts}
               onSave={async (data, pid) => {
                 const saved = form.initial
                   ? await api<CrmRecord>(`/records/${form.initial.id}`, 'PATCH', {
@@ -435,127 +456,104 @@ export function CompanyDetail({
                   )}
                 </article>
               ))
-            : detail.records
-                .filter((r) => r.kind === tab)
-                .map((r) => (
-                  <article key={r.id}>
-                    <div className="section-head">
-                      <strong className={'company-record-title ' + (r.data.done ? 'done' : '')}>
-                        {r.data.name || r.data.text}
-                      </strong>
-                      {tab === 'task' && (
-                        <button
-                          disabled={busy}
-                          onClick={() =>
-                            run(() =>
-                              api(`/records/${r.id}`, 'PATCH', {
-                                version: r.version,
-                                data: taskSchema.parse({
-                                  text: r.data.text,
-                                  due: r.data.due,
-                                  done: !r.data.done,
-                                  type: r.data.type,
-                                  time: r.data.time,
-                                  contactId: r.data.contactId,
-                                }),
-                              }),
-                            )
-                          }
-                        >
-                          {r.data.done ? 'Вернуть' : 'Выполнить'}
-                        </button>
-                      )}
-                    </div>
-                    {tab === 'contact' && (
-                      <p className="company-contact-values">
-                        <span>{r.data.role}</span> <span>{r.data.phone}</span>{' '}
-                        <span>{r.data.email}</span>
-                      </p>
-                    )}
-                    {tab === 'project' && (
-                      <p>
-                        {money(r.data.amount)} · {labels[r.data.stage]}
-                        <br />
-                        {r.data.notes}
-                      </p>
-                    )}
-                    <small>
-                      {r.data.due
-                        ? `Срок: ${r.data.due} · `
-                        : r.data.occurredOn
-                          ? `${r.data.occurredOn} · `
-                          : ''}
-                      {r.authorName}
-                      {r.projectId
-                        ? ' · ' + projects.find((p) => p.id === r.projectId)?.data.name
-                        : ''}
-                    </small>
-                    {['contact', 'project', 'task'].includes(tab) && (
+            : records.map((r) => (
+                <article key={r.id}>
+                  <div className="section-head">
+                    <strong
+                      className={
+                        'company-record-title ' +
+                        (r.data.done || (tab === 'task' && pendingTask(r.id)?.action === 'done')
+                          ? 'done'
+                          : '')
+                      }
+                    >
+                      {r.data.name || r.data.text}
+                    </strong>
+                    {tab === 'task' && (
                       <button
-                        className="text-button"
-                        onClick={() => setForm({ kind: tab as any, initial: r })}
+                        disabled={busy || Boolean(pendingTask(r.id))}
+                        onClick={() =>
+                          taskActions.schedule(
+                            r,
+                            r.data.done ? 'restore' : 'done',
+                            refreshUndoDetail,
+                          )
+                        }
                       >
-                        Изменить
+                        {r.data.done ? 'Вернуть' : 'Выполнить'}
                       </button>
                     )}
-                    {tab === 'file' && (
-                      <div className="file-details">
-                        <small>
-                          {labels[r.data.category]} · {Math.ceil(r.data.size / 1024)} КБ
-                        </small>
-                        <div className="file-actions">
-                          <button
-                            disabled={busy}
-                            onClick={() => run(() => download(`/files/${r.id}`, r.data.name))}
-                          >
-                            Скачать
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => run(() => api(`/files/${r.id}`, 'DELETE'))}
-                          >
-                            В архив
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {tab === 'contact' &&
-                      (deleteContactId === r.id ? (
-                        <div className="actions">
-                          <span className="company-long-text">
-                            Удалить контакт «{r.data.name}»?
-                          </span>
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              run(async () => {
-                                await api(`/contacts/${r.id}`, 'DELETE');
-                                setDeleteContactId(null);
-                                if (form?.initial?.id === r.id) setForm(null);
-                              })
-                            }
-                          >
-                            Подтвердить удаление
-                          </button>
-                          <button disabled={busy} onClick={() => setDeleteContactId(null)}>
-                            Отмена
-                          </button>
-                        </div>
-                      ) : (
+                  </div>
+                  {tab === 'contact' && (
+                    <p className="company-contact-values">
+                      <span>{r.data.role}</span> <span>{r.data.phone}</span>{' '}
+                      <span>{r.data.email}</span>
+                    </p>
+                  )}
+                  {tab === 'project' && (
+                    <p>
+                      {money(r.data.amount)} · {labels[r.data.stage]}
+                      <br />
+                      {r.data.notes}
+                    </p>
+                  )}
+                  <small>
+                    {r.data.due
+                      ? `Срок: ${r.data.due} · `
+                      : r.data.occurredOn
+                        ? `${r.data.occurredOn} · `
+                        : ''}
+                    {r.authorName}
+                    {r.projectId
+                      ? ' · ' + projects.find((p) => p.id === r.projectId)?.data.name
+                      : ''}
+                  </small>
+                  {['contact', 'project', 'task'].includes(tab) && (
+                    <button
+                      className="text-button"
+                      disabled={tab === 'task' && Boolean(pendingTask(r.id))}
+                      onClick={() => setForm({ kind: tab as any, initial: r })}
+                    >
+                      Изменить
+                    </button>
+                  )}
+                  {tab === 'file' && (
+                    <div className="file-details">
+                      <small>
+                        {labels[r.data.category]} · {Math.ceil(r.data.size / 1024)} КБ
+                      </small>
+                      <div className="file-actions">
                         <button
-                          className="text-button"
                           disabled={busy}
-                          onClick={() => setDeleteContactId(r.id)}
+                          onClick={() => run(() => download(`/files/${r.id}`, r.data.name))}
                         >
-                          Удалить контакт
+                          Скачать
                         </button>
-                      ))}
-                  </article>
-                ))}
+                        <button
+                          disabled={busy}
+                          onClick={() => run(() => api(`/files/${r.id}`, 'DELETE'))}
+                        >
+                          В архив
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {tab === 'contact' && (
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={() => {
+                        clientsUndo.deleteContact(r, refreshUndoDetail);
+                        if (form?.initial?.id === r.id) setForm(null);
+                      }}
+                    >
+                      Удалить контакт
+                    </button>
+                  )}
+                </article>
+              ))}
         </div>
-        {tab !== 'audit' && !detail.records.some((r) => r.kind === tab) && (
-          <p className="empty">Записей пока нет.</p>
-        )}
+        {tab !== 'audit' && !records.length && <p className="empty">Записей пока нет.</p>}
       </div>
     </Modal>
   );

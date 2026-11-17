@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { navigate, prepareDemoAuth } from './helpers';
 
-test('client accordion edits inline, retains failed draft, and archives equipment with confirmation', async ({
+test('client accordion edits inline, retains failed draft, and removes equipment after the undo window', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -155,15 +155,15 @@ test('client accordion edits inline, retains failed draft, and archives equipmen
   await equipmentCell.dispatchEvent('touchend', {
     changedTouches: [{ identifier: 0, clientX: 100, clientY: 300 }],
   });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await removeEquipment.click();
-  await expect(page.getByRole('alertdialog')).toBeVisible();
-  expect(company.potential).toBe(1500000);
-  await page
-    .getByRole('alertdialog')
-    .getByRole('button', { name: 'Подтвердить удаление', exact: true })
-    .click();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.locator('.pico-undo-toast')).toContainText('Оборудование удалено');
   await expect(card.getByText('Оборудование пока не добавлено', { exact: true })).toBeVisible();
-  expect(company.potential).toBe(0);
+  expect(company.potential).toBe(1500000);
+  await page.clock.runFor(3100);
+  await expect.poll(() => company.potential).toBe(0);
   await expect(card.getByRole('alert')).toHaveCount(0);
   expect(patches.at(-1).version).toBe(4);
   await expect(page.getByRole('dialog')).toHaveCount(0);
