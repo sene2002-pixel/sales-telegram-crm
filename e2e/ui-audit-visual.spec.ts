@@ -123,7 +123,12 @@ async function capture(page: Page, state: string) {
       .filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
       .map((el) => {
         const box = el.getBoundingClientRect();
+        const carousel = el.closest('.pico-home-actions-track');
         const scrollParent = el.closest('.table-wrap,.tabs,.pico-picker-list');
+        const track =
+          carousel && ['auto', 'scroll'].includes(getComputedStyle(carousel).overflowX)
+            ? carousel.getBoundingClientRect()
+            : null;
         return {
           tag: el.tagName,
           label: (
@@ -138,6 +143,7 @@ async function capture(page: Page, state: string) {
           left: box.left,
           right: box.right,
           viewport: innerWidth,
+          carouselClip: track ? { left: track.left, right: track.right } : null,
           horizontalScrollAllowed:
             !!scrollParent && scrollParent.scrollWidth > scrollParent.clientWidth,
         };
@@ -152,8 +158,17 @@ async function capture(page: Page, state: string) {
     JSON.stringify({ state, requestedWidth, elements: inventory }, null, 2),
   );
   for (const item of inventory.filter((item) => !item.horizontalScrollAllowed)) {
-    expect(item.left, `${state}: ${item.tag} ${item.label} left`).toBeGreaterThanOrEqual(-1);
-    expect(item.right, `${state}: ${item.tag} ${item.label} right`).toBeLessThanOrEqual(
+    const clip = item.carouselClip;
+    if (clip) {
+      expect(clip.left, `${state}: carousel left`).toBeGreaterThanOrEqual(-1);
+      expect(clip.right, `${state}: carousel right`).toBeLessThanOrEqual(item.viewport + 1);
+    }
+    const left = clip ? Math.max(item.left, clip.left) : item.left;
+    const right = clip ? Math.min(item.right, clip.right) : item.right;
+    // The Home carousel tests verify that horizontally scrolled cards can become fully visible.
+    if (clip && left >= right) continue;
+    expect(left, `${state}: ${item.tag} ${item.label} left`).toBeGreaterThanOrEqual(-1);
+    expect(right, `${state}: ${item.tag} ${item.label} right`).toBeLessThanOrEqual(
       item.viewport + 1,
     );
   }

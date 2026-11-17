@@ -193,6 +193,8 @@ for (const width of [320, 390, 1440]) {
       data: { ...patches[2].data, done: false, deleted: false },
     });
     await navigate(page, 'Главная');
+    const restoredRow = agenda.locator('.pico-agenda-row').filter({ hasText: 'Проверить call ' });
+    await expect(restoredRow.locator('.pico-agenda-open')).toBeEnabled();
     const meeting = agenda.locator('.pico-agenda-row').filter({ hasText: 'Проверить meeting ' });
     const checkbox = meeting.getByRole('checkbox');
     const priorPatches = patches.length;
@@ -203,6 +205,10 @@ for (const width of [320, 390, 1440]) {
     await page.clock.runFor(2);
     await expect(meeting).toHaveCount(0);
     await expect(page.locator('.pico-undo-toast')).toHaveCount(0);
-    expect(patches).toHaveLength(priorPatches + 1);
+    await expect.poll(() => patches.length).toBe(priorPatches + 1);
+    expect(patches[priorPatches]).toMatchObject({
+      version: 1,
+      data: { type: 'meeting', done: true, deleted: false },
+    });
   });
 }

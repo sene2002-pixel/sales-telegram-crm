@@ -775,9 +775,16 @@ test('UI audit: task detail and Home task deletion can be undone and persist sof
     )
     .toBe(true);
   await navigate(page, 'Главная');
-  const home = page.locator('.pico-task-row').filter({ hasText: 'Удаление с главной' });
-  await home.locator('button.task-text').click();
-  await home.getByRole('button', { name: 'Удалить', exact: true }).click();
+  const home = page.locator('.pico-agenda-row').filter({ hasText: 'Удаление с главной' });
+  await home.locator('button.pico-agenda-open').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Удалить', exact: true }).click();
+  await expect(home).toHaveCount(0);
+  await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+  await expect(home).toBeVisible();
+  await page.clock.runFor(3100);
+  expect(writes).toBe(1);
+  await home.locator('button.pico-agenda-open').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(home).toHaveCount(0);
   expect(writes).toBe(1);
   await page.clock.runFor(3001);
@@ -797,7 +804,7 @@ test('UI audit: task detail and Home task deletion can be undone and persist sof
   const deleted = records.filter((record: any) => [first.id, second.id].includes(record.id));
   expect(deleted).toHaveLength(2);
   expect(deleted.every((record: any) => record.data.deleted && record.data.done)).toBe(true);
-  await expect(page.locator('.pico-task-row')).toHaveCount(0);
+  await expect(page.locator('.pico-agenda-row')).toHaveCount(0);
   await navigate(page, 'Задачи');
   await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
   await expect(page.locator('.pico-task-row')).toHaveCount(2);
