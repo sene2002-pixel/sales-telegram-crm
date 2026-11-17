@@ -605,9 +605,33 @@ add(
   object({ id: uuid, url: { type: 'string', format: 'uri' } }),
   {
     body: jsonBody(jsonSchema(picoStarInvoiceInput)),
-    errors: [400, 401, 403, 429, 500, 502, 503],
+    errors: [400, 401, 403, 409, 429, 500, 502, 503],
     description:
       'Доступно при настроенных платежах. Ссылка открывается в Telegram Mini App, счёт привязан к текущему сотруднику.',
+  },
+);
+add(
+  'get',
+  '/me/pico-stars/invoices/active',
+  'activePicoStarInvoice',
+  'Найти незавершённый счёт поддержки',
+  'Telegram',
+  object({ id: nullable(uuid) }),
+  {
+    errors: [401, 403, 429, 500],
+    description: 'Возвращает только собственный незавершённый счёт.',
+  },
+);
+add(
+  'post',
+  '/me/pico-stars/invoices/{id}/cancel',
+  'cancelPicoStarInvoice',
+  'Отменить счёт до начала оплаты',
+  'Telegram',
+  object({ cancelled: { type: 'boolean' } }),
+  {
+    errors: [400, 401, 403, 429, 500],
+    description: 'Счёт не отменяется, если Telegram начал pre-checkout.',
   },
 );
 add(

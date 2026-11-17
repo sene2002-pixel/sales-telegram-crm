@@ -77,13 +77,13 @@ test('supervisor shares one invitation, copies the full message and keeps the dr
   await expect(message).toBeFocused();
   expect(created).toBe(0);
 
-  await share.getByRole('button', { name: 'Скопировать ссылку' }).click();
-  await expect(share.getByRole('button', { name: 'Ссылка скопирована' })).toBeVisible();
+  await share.getByRole('button', { name: 'Скопировать сообщение' }).click();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
   expect(await page.evaluate(() => (window as ShareTestWindow).clipboardTexts)).toEqual([
     `${note}\n\n${invite}`,
   ]);
   await expect(share).not.toContainText(invite);
-  await expect(share.getByRole('button', { name: 'Скопировать ссылку' })).toBeVisible();
+  await expect(share.getByRole('button', { name: 'Скопировать сообщение' })).toBeVisible();
 
   await share.getByRole('button', { name: 'Закрыть' }).click();
   await openShare(page);
@@ -100,8 +100,8 @@ test('supervisor shares one invitation, copies the full message and keeps the dr
   expect(created).toBe(1);
 
   accepted = true;
-  await share.getByRole('button', { name: 'Скопировать ссылку' }).click();
-  await expect(share.getByRole('button', { name: 'Ссылка скопирована' })).toBeVisible();
+  await share.getByRole('button', { name: 'Скопировать сообщение' }).click();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
   expect(await page.evaluate(() => (window as ShareTestWindow).clipboardTexts)).toEqual([
     `${note}\n\n${invite}`,
     `${note}\n\n${nextInvite}`,
@@ -109,9 +109,9 @@ test('supervisor shares one invitation, copies the full message and keeps the dr
   expect(created).toBe(2);
 
   noMatchingMetadata = true;
-  await expect(share.getByRole('button', { name: 'Скопировать ссылку' })).toBeVisible();
-  await share.getByRole('button', { name: 'Скопировать ссылку' }).click();
-  await expect(share.getByRole('button', { name: 'Ссылка скопирована' })).toBeVisible();
+  await expect(share.getByRole('button', { name: 'Скопировать сообщение' })).toBeVisible();
+  await share.getByRole('button', { name: 'Скопировать сообщение' }).click();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
   expect(await page.evaluate(() => (window as ShareTestWindow).clipboardTexts.at(-1))).toBe(
     `${note}\n\n${finalInvite}`,
   );
@@ -141,11 +141,11 @@ test('manager shares the public bot link without an invitation and can retry an 
   await login(page, 'Менеджер');
   const share = await openShare(page);
   await expect(share.getByText('Коллега получит ссылку на бота.', { exact: false })).toBeVisible();
-  const copy = share.getByRole('button', { name: 'Скопировать ссылку' });
+  const copy = share.getByRole('button', { name: 'Скопировать сообщение' });
   await copy.click();
   await expect(share.getByRole('alert')).toHaveText('Бот не настроен');
   await copy.click();
-  await expect(share.getByRole('button', { name: 'Ссылка скопирована' })).toBeVisible();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
   expect(await page.evaluate(() => (window as ShareTestWindow).clipboardTexts)).toEqual([
     `Я веду здесь задачи и клиентов. Возможно, вам тоже будет удобно\n\n${bot}`,
   ]);
@@ -170,7 +170,7 @@ test('manager shares the public bot link without an invitation and can retry an 
   });
   await expect(copy).toBeVisible();
   await copy.click();
-  await expect(share.getByRole('button', { name: 'Ссылка скопирована' })).toBeFocused();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeFocused();
   expect(await page.evaluate(() => (window as ShareTestWindow).clipboardTexts.length)).toBe(2);
   expect(attempts).toBe(2);
 });
@@ -195,12 +195,12 @@ test('administrator selects a team before issuing a Home invitation', async ({ p
   });
   await login(page, 'Администратор');
   const share = await openShare(page);
-  const copy = share.getByRole('button', { name: 'Скопировать ссылку' });
+  const copy = share.getByRole('button', { name: 'Скопировать сообщение' });
   await expect(copy).toBeDisabled();
   await expect(share.getByRole('button', { name: 'Отправить коллеге' })).toBeDisabled();
   await share.getByLabel('Команда руководителя').selectOption(supervisorId);
   await copy.click();
-  await expect(share.getByRole('button', { name: 'Ссылка скопирована' })).toBeVisible();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
 });
 
 test('Home utility cards preserve their carousel dimensions and reachable last action at 390px', async ({

@@ -135,7 +135,8 @@ test('invoices require an authenticated Telegram actor and a whole number of Sta
   badInvoiceLink = true;
   await api('post').send({ amount: 1 }).expect(502);
   badInvoiceLink = false;
-  await api('post').send({ amount: 10_000 }).expect(201);
+  const valid = await api('post').send({ amount: 10_000 }).expect(201);
+  await api('post', '/' + valid.body.id + '/cancel').expect(201, { cancelled: true });
 });
 
 test('invoice is created with XTR, no provider, and only its owner can read the pending status', async () => {
@@ -167,7 +168,11 @@ test('webhook rejects wrong payer, amount, currency, stale invoice, and parallel
     assert.equal(answers.at(-1)?.ok, false);
     assert.ok(answers.at(-1)?.error_message);
   }
-  const expired = (await api('post').send({ amount: 100 }).expect(201)).body.id;
+  const expired = randomUUID();
+  await running.db.query(
+    'INSERT INTO pico_star_invoices (id, actor_id, telegram_user_id, amount) VALUES ($1,$2,$3,100)',
+    [expired, payer.id, payer.telegramId],
+  );
   await running.db.query(
     "UPDATE pico_star_invoices SET expires_at=now() - interval '1 minute' WHERE id=$1",
     [expired],
@@ -195,7 +200,11 @@ test('only a verified receipt with the matching payer and amount marks a reserva
   await webhook(receipt(id, {}, payerId + 1)).expect(201);
   await api('get', '/' + id).expect(200, { amount: 100, status: 'pending' });
 
-  const notApproved = (await api('post').send({ amount: 100 }).expect(201)).body.id;
+  const notApproved = randomUUID();
+  await running.db.query(
+    'INSERT INTO pico_star_invoices (id, actor_id, telegram_user_id, amount) VALUES ($1,$2,$3,100)',
+    [notApproved, payer.id, payer.telegramId],
+  );
   await webhook(receipt(notApproved)).expect(201);
   await api('get', '/' + notApproved).expect(200, { amount: 100, status: 'pending' });
   await webhook(preCheckout(notApproved, { id: 'duplicate-charge-attempt' })).expect(201);
@@ -225,7 +234,10 @@ test('only a verified receipt with the matching payer and amount marks a reserva
 });
 
 test('Stars limits invoice requests per account before calling Telegram', async () => {
-  for (let i = 0; i < 6; i++) await api('post', '', other).send({ amount: 1 }).expect(201);
+  for (let i = 0; i < 6; i++) {
+    const created = await api('post', '', other).send({ amount: 1 }).expect(201);
+    await api('post', '/' + created.body.id + '/cancel', other).expect(201, { cancelled: true });
+  }
   invoiceInput = undefined;
   await api('post', '', other).send({ amount: 1 }).expect(429);
   assert.equal(invoiceInput, undefined);
@@ -247,4 +259,65 @@ test('/paysupport works in the private bot chat without CRM access', async () =>
   });
   await webhook({ message: { ...message, chat: { id: -sender, type: 'group' } } }).expect(201);
   assert.equal(telegramMessages.length, 1);
+});
+
+test('an uncertain Telegram answer keeps the reservation and rejects a second checkout', async () => {
+  const invoiceId = randomUUID();
+  await running.db.query(
+    'INSERT INTO pico_star_invoices (id, actor_id, telegram_user_id, amount) VALUES ($1,$2,$3,$4)',
+    [invoiceId, payer.id, payer.telegramId, 100],
+  );
+  const originalCall = running.services.telegram.call;
+  running.services.telegram.call = async (method, payload, timeoutMs) => {
+    if (method === 'answerPreCheckoutQuery') throw new Error('simulated connection timeout');
+    return originalCall(method, payload, timeoutMs);
+  };
+  try {
+    await assert.rejects(
+      running.services.stars.preCheckout(preCheckout(invoiceId).pre_checkout_query),
+      /simulated connection timeout/,
+    );
+  } finally {
+    running.services.telegram.call = originalCall;
+  }
+  await webhook(preCheckout(invoiceId, { id: 'different-checkout' })).expect(201);
+  assert.equal(answers.at(-1)?.ok, false);
+  await webhook(preCheckout(invoiceId)).expect(201);
+  assert.equal(answers.at(-1)?.ok, true);
+  await webhook(receipt(invoiceId, { telegram_payment_charge_id: 'delayed-charge' })).expect(201);
+  await api('get', '/' + invoiceId).expect(200, { amount: 100, status: 'paid' });
+});
+
+test('only one active invoice per payer is created across devices; cancellation is atomic', async () => {
+  const telegramId = String(payerId + 100);
+  await running.db.query("INSERT INTO users(id,telegram_id,name,role) VALUES($1,$2,$3,'manager')", [
+    randomUUID(),
+    telegramId,
+    'Другой плательщик',
+  ]);
+  const actor = await running.services.auth.byTelegram(telegramId);
+  const responses = await Promise.all([
+    api('post', '', actor).send({ amount: 100 }),
+    api('post', '', actor).send({ amount: 100 }),
+  ]);
+  assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+  const activeId = responses.find((response) => response.status === 201)!.body.id;
+  await api('get', '/active', actor).expect(200, { id: activeId });
+  await api('get', '/active', other).expect(200, { id: null });
+  await api('post', '/' + activeId + '/cancel', other).expect(201, { cancelled: false });
+  await api('post', '/' + activeId + '/cancel', actor).expect(201, { cancelled: true });
+  await api('get', '/active', actor).expect(200, { id: null });
+  await webhook(preCheckout(activeId, { from: { id: Number(telegramId) } })).expect(201);
+  assert.equal(answers.at(-1)?.ok, false);
+  const second = await api('post', '', actor).send({ amount: 100 }).expect(201);
+  await webhook(preCheckout(second.body.id, { from: { id: Number(telegramId) } })).expect(201);
+  assert.equal(answers.at(-1)?.ok, true);
+  await api('post', '/' + second.body.id + '/cancel', actor).expect(201, { cancelled: false });
+  await running.db.query(
+    "UPDATE pico_star_invoices SET expires_at=now() - interval '2 days' WHERE id=$1",
+    [second.body.id],
+  );
+  await api('get', '/active', actor).expect(200, { id: second.body.id });
+  await api('get', '/' + second.body.id, actor).expect(200, { amount: 100, status: 'pending' });
+  await api('post', '', actor).send({ amount: 100 }).expect(409);
 });

@@ -293,6 +293,15 @@ class CrmController {
   ) {
     return this.s.stars.create(r.actor, body);
   }
+  @Get('me/pico-stars/invoices/active') activeStarInvoice(@Req() r: AuthedRequest) {
+    return this.s.stars.active(r.actor);
+  }
+  @Post('me/pico-stars/invoices/:id/cancel') cancelStarInvoice(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.s.stars.cancel(r.actor, id);
+  }
   @Get('me/pico-stars/invoices/:id') starInvoiceStatus(
     @Req() r: AuthedRequest,
     @Param('id') id: string,

@@ -9,7 +9,7 @@ import {
 } from '../../shared/pico-stars';
 import { Config } from '../config';
 import { requireCondition } from '../domain/errors';
-import { Sql } from '../infra/database';
+import { Database } from '../infra/database';
 import { RateLimits } from '../infra/rate-limit';
 import { TelegramAdapter } from '../infra/telegram';
 
@@ -41,7 +41,7 @@ export class PicoStars {
   private readonly invoiceRequests = new RateLimits();
 
   constructor(
-    private db: Sql,
+    private db: Database,
     private telegram: Pick<TelegramAdapter, 'call' | 'send'>,
     private config: Config,
   ) {}
@@ -57,28 +57,67 @@ export class PicoStars {
     const wait = this.invoiceRequests.consume(actor.id, 6);
     requireCondition(!wait, 429, `Слишком много счетов. Повторите через ${wait} сек.`);
     const id = randomUUID();
-    const url: unknown = await this.telegram.call(
-      'createInvoiceLink',
-      {
-        title: 'Поддержка Pico',
-        description: 'Звёзды пойдут на развитие Pico и новые функции.',
-        payload: invoicePrefix + id,
-        currency: 'XTR',
-        provider_token: '',
-        prices: [{ label: 'Поддержка Pico', amount }],
-      },
-      8_000,
+    await this.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      const pending = await tx.query(
+        `SELECT id FROM pico_star_invoices WHERE actor_id=$1 AND paid_at IS NULL
+         AND (pre_checkout_id IS NOT NULL OR expires_at > now()) LIMIT 1`,
+        [actor.id],
+      );
+      requireCondition(
+        !pending.length,
+        409,
+        'У вас уже есть счёт с неподтверждённой оплатой. Проверьте его статус.',
+      );
+      await tx.query(
+        'INSERT INTO pico_star_invoices (id, actor_id, telegram_user_id, amount) VALUES ($1,$2,$3,$4)',
+        [id, actor.id, actor.telegramId, amount],
+      );
+    });
+    try {
+      const url: unknown = await this.telegram.call(
+        'createInvoiceLink',
+        {
+          title: 'Поддержка Pico',
+          description: 'Звёзды пойдут на развитие Pico и новые функции.',
+          payload: invoicePrefix + id,
+          currency: 'XTR',
+          provider_token: '',
+          prices: [{ label: 'Поддержка Pico', amount }],
+        },
+        8_000,
+      );
+      requireCondition(
+        typeof url === 'string' && /^https:\/\/t\.me\/(?:\$|invoice\/)[A-Za-z0-9_-]+$/.test(url),
+        502,
+        'Telegram не вернул ссылку на оплату.',
+      );
+      return { id, url };
+    } catch (cause) {
+      // No link was returned to the client. Never clear a checkout reservation.
+      await this.cancel(actor, id);
+      throw cause;
+    }
+  }
+
+  async active(actor: Actor): Promise<{ id: string | null }> {
+    const [invoice] = await this.db.query<{ id: string }>(
+      `SELECT id FROM pico_star_invoices WHERE actor_id=$1 AND telegram_user_id=$2
+       AND paid_at IS NULL AND (pre_checkout_id IS NOT NULL OR expires_at > now())
+       ORDER BY created_at DESC LIMIT 1`,
+      [actor.id, actor.telegramId],
     );
-    requireCondition(
-      typeof url === 'string' && /^https:\/\/t\.me\/(?:\$|invoice\/)[A-Za-z0-9_-]+$/.test(url),
-      502,
-      'Telegram не вернул ссылку на оплату.',
+    return { id: invoice?.id ?? null };
+  }
+
+  async cancel(actor: Actor, input: string): Promise<{ cancelled: boolean }> {
+    const id = idSchema.parse(input);
+    const rows = await this.db.query(
+      `UPDATE pico_star_invoices SET expires_at=now() WHERE id=$1 AND actor_id=$2
+       AND telegram_user_id=$3 AND pre_checkout_id IS NULL AND paid_at IS NULL RETURNING id`,
+      [id, actor.id, actor.telegramId],
     );
-    await this.db.query(
-      'INSERT INTO pico_star_invoices (id, actor_id, telegram_user_id, amount) VALUES ($1,$2,$3,$4)',
-      [id, actor.id, actor.telegramId, amount],
-    );
-    return { id, url };
+    return { cancelled: rows.length > 0 };
   }
 
   async status(actor: Actor, input: string): Promise<PicoStarInvoiceStatus> {
@@ -87,8 +126,7 @@ export class PicoStars {
       `SELECT amount, CASE
         WHEN refunded_at IS NOT NULL THEN 'refunded'
         WHEN paid_at IS NOT NULL THEN 'paid'
-        WHEN expires_at + CASE WHEN pre_checkout_id IS NULL THEN interval '0 hours'
-                               ELSE interval '24 hours' END <= now() THEN 'expired'
+        WHEN pre_checkout_id IS NULL AND expires_at <= now() THEN 'expired'
         ELSE 'pending' END AS status
        FROM pico_star_invoices WHERE id=$1 AND actor_id=$2 AND telegram_user_id=$3`,
       [id, actor.id, actor.telegramId],

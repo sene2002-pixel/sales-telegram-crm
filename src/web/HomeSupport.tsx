@@ -35,20 +35,57 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
   const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState(false);
   const [opening, setOpening] = useState(false);
-  const [pendingId, setPendingId] = useState(() => sessionStorage.getItem(pendingKey));
+  const [resolving, setResolving] = useState(true);
+  const [recoveryAttempt, setRecoveryAttempt] = useState(0);
+  const [pendingId, setPendingId] = useState(() => {
+    try {
+      return localStorage.getItem(pendingKey) ?? sessionStorage.getItem(pendingKey);
+    } catch {
+      return null;
+    }
+  });
   const [checking, setChecking] = useState(Boolean(pendingId));
+  const [cancelling, setCancelling] = useState(false);
   const [retry, setRetry] = useState(0);
   const [paid, setPaid] = useState<number | null>(null);
   const [error, setError] = useState('');
   const activeInvoice = useRef(false);
   const input = useRef<HTMLInputElement>(null);
   const customButton = useRef<HTMLButtonElement>(null);
+  const successButton = useRef<HTMLButtonElement>(null);
   const hasEdited = useRef(false);
   const customHintId = useId();
   const amount = custom ?? preset;
   const validDraft =
     draft.length > 0 && Number(draft) >= picoStarsMinimum && Number(draft) <= picoStarsMaximum;
-  const selectionLocked = opening || Boolean(pendingId);
+  const selectionLocked = opening || resolving || Boolean(pendingId);
+
+  function clearStored(id: string) {
+    try {
+      if (localStorage.getItem(pendingKey) === id) localStorage.removeItem(pendingKey);
+      if (sessionStorage.getItem(pendingKey) === id) sessionStorage.removeItem(pendingKey);
+    } catch {
+      // Payment status is authoritative even if browser storage is unavailable.
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolving(true);
+    api<{ id: string | null }>(`${invoicePath}/active`)
+      .then((active) => {
+        if (cancelled) return;
+        if (active.id) setPendingId(active.id);
+        setResolving(false);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setError('Не удалось проверить предыдущий счёт. Проверьте соединение и повторите.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [actorId, recoveryAttempt]);
 
   useEffect(() => {
     if (editing) input.current?.focus({ preventScroll: true });
@@ -56,17 +93,22 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
   }, [editing]);
 
   useEffect(() => {
-    if (!pendingId) return;
+    if (paid !== null) successButton.current?.focus({ preventScroll: true });
+  }, [paid]);
+
+  useEffect(() => {
+    if (!pendingId || opening) return;
+    const invoiceId = pendingId;
     let cancelled = false;
     let timer: number | undefined;
     let attempts = 0;
     setChecking(true);
     async function check() {
       try {
-        const result = await api<PicoStarInvoiceStatus>(`${invoicePath}/${pendingId}`);
+        const result = await api<PicoStarInvoiceStatus>(`${invoicePath}/${invoiceId}`);
         if (cancelled) return;
         if (result.status !== 'pending') {
-          sessionStorage.removeItem(pendingKey);
+          clearStored(invoiceId);
           setPendingId(null);
           setChecking(false);
           if (result.status === 'paid') setPaid(result.amount);
@@ -77,7 +119,7 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
       } catch (cause) {
         if (cancelled) return;
         if (cause instanceof ApiError && cause.status === 404) {
-          sessionStorage.removeItem(pendingKey);
+          clearStored(invoiceId);
           setPendingId(null);
           setChecking(false);
           setError('Счёт не найден. Проверьте историю платежей в Telegram.');
@@ -93,7 +135,30 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [pendingId, pendingKey, retry]);
+  }, [pendingId, pendingKey, retry, opening]);
+
+  async function cancelInvoice(id: string, fromFailure = false) {
+    setCancelling(true);
+    try {
+      const { cancelled } = await api<{ cancelled: boolean }>(
+        `${invoicePath}/${id}/cancel`,
+        'POST',
+      );
+      if (!cancelled) {
+        setError('Оплата уже началась. Проверьте её статус или обратитесь в /paysupport.');
+        setRetry((value) => value + 1);
+        return;
+      }
+      clearStored(id);
+      setPendingId((current) => (current === id ? null : current));
+      setChecking(false);
+      setError(fromFailure ? 'Telegram не смог провести оплату. Попробуйте ещё раз.' : '');
+    } catch {
+      setError('Не удалось проверить отмену. Проверьте статус счёта.');
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   function close() {
     if (activeInvoice.current) return;
@@ -102,7 +167,7 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
   }
 
   async function pay() {
-    if (activeInvoice.current || pendingId) return;
+    if (activeInvoice.current || pendingId || resolving) return;
     const telegram = window.Telegram?.WebApp as InvoiceWebApp | undefined;
     setError('');
     if (!telegram?.initData) {
@@ -117,24 +182,33 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
     setOpening(true);
     try {
       const invoice = await api<PicoStarInvoice>(invoicePath, 'POST', { amount });
+      // Persist before opening Telegram: the WebView may be destroyed without a callback.
+      // If persistence fails, do not open an invoice that cannot be recovered.
+      setPendingId(invoice.id);
+      localStorage.setItem(pendingKey, invoice.id);
       telegram.openInvoice(invoice.url, (status) => {
         activeInvoice.current = false;
         setOpening(false);
         if (status === 'paid' || status === 'pending') {
-          sessionStorage.setItem(pendingKey, invoice.id);
-          setPendingId(invoice.id);
           setChecking(true);
-        } else if (status === 'failed') {
-          setError('Telegram не смог провести оплату. Попробуйте ещё раз.');
+          setRetry((value) => value + 1);
+        } else {
+          // Cancellation is safe only if the server has not reserved pre-checkout.
+          void cancelInvoice(invoice.id, status === 'failed');
         }
       });
     } catch (cause) {
       activeInvoice.current = false;
       setOpening(false);
+      if (cause instanceof ApiError && cause.status === 409) {
+        setRecoveryAttempt((value) => value + 1);
+        setError('Найден предыдущий счёт. Проверяем его статус.');
+        return;
+      }
       setError(
         cause instanceof ApiError && (cause.status === 429 || cause.status === 503)
           ? cause.message
-          : 'Не удалось открыть счёт. Попробуйте ещё раз.',
+          : 'Не удалось открыть счёт. Если окно оплаты появилось, проверьте статус перед повторной оплатой.',
       );
     }
   }
@@ -243,7 +317,7 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
                           <Icon name="star" size={24} />
                           <span className="pico-support-quantity">
                             {value}
-                            {value === defaultAmount && <small>Чаще выбирают</small>}
+                            {value === defaultAmount && <small>Рекомендуем</small>}
                           </span>
                           {selected && <Icon name="check" size={16} />}
                         </button>
@@ -271,23 +345,39 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
                     {error}
                   </p>
                 )}
-                {pendingId ? (
+                {resolving && !pendingId ? (
+                  <button
+                    type="button"
+                    className="pico-support-pay"
+                    onClick={() => setRecoveryAttempt((value) => value + 1)}
+                  >
+                    Проверить предыдущий счёт
+                  </button>
+                ) : pendingId ? (
                   <>
                     <p className="pico-support-status" role="status">
                       {checking
                         ? 'Проверяем оплату в Telegram…'
-                        : 'Оплата ещё обрабатывается. Если звёзды списались, напишите боту /paysupport.'}
+                        : 'Статус оплаты не подтверждён. Проверьте историю платежей в Telegram. Если оплата не завершается, напишите боту /paysupport — даже если звёзды не списались.'}
                     </p>
                     <button
                       type="button"
                       className="pico-support-pay"
-                      disabled={checking}
+                      disabled={checking || cancelling}
                       onClick={() => {
                         setChecking(true);
                         setRetry((value) => value + 1);
                       }}
                     >
                       Проверить оплату
+                    </button>
+                    <button
+                      type="button"
+                      className="pico-support-cancel"
+                      disabled={cancelling}
+                      onClick={() => void cancelInvoice(pendingId)}
+                    >
+                      {cancelling ? 'Проверяем отмену…' : 'Отменить счёт'}
                     </button>
                   </>
                 ) : (
@@ -300,10 +390,15 @@ export function HomeSupport({ actorId, onClose }: { actorId: string; onClose: ()
                     {opening ? 'Открываем счёт…' : `Поддержать · ${integerFormat.format(amount)}`}
                   </button>
                 )}
-                <p className="pico-support-hint">Оплата в Telegram, без карты</p>
+                <p className="pico-support-hint">Оплата звёздами в Telegram</p>
               </>
             ) : (
-              <button type="button" className="pico-support-pay" onClick={onClose}>
+              <button
+                ref={successButton}
+                type="button"
+                className="pico-support-pay"
+                onClick={onClose}
+              >
                 На главную
               </button>
             )}
