@@ -227,7 +227,8 @@ for (const role of ['Менеджер', 'Руководитель', 'Админ�
       await navigate(page, label!);
       await expect(page.getByRole('heading', { name: heading!, exact: true })).toBeVisible();
       if (label === 'Команда') {
-        await expect(page.locator('.table-wrap tbody tr').first()).toBeVisible();
+        const stats = page.getByRole('table', { name: 'Показатели команды' });
+        await expect(stats.getByRole('rowheader').first()).toBeVisible();
         const employees = page.getByRole('button', { name: 'Все сотрудники', exact: true });
         await employees.click();
         await expect(
@@ -260,7 +261,7 @@ for (const role of ['Менеджер', 'Руководитель', 'Админ�
             body: rect(document.body),
             elements: Array.from(
               document.querySelectorAll(
-                '.workspace, .pico-bottom-nav, .table-wrap, .panel, .employee-row',
+                '.workspace, .pico-bottom-nav, .team-stats, .panel, .employee-row',
               ),
             ).map(rect),
             bottomPoint: document
