@@ -789,6 +789,19 @@ type HomeTaskDraft = {
   assigneeName: string;
   textRef: RefObject<HTMLTextAreaElement | null>;
 };
+const taskFormDate = new Intl.DateTimeFormat('ru-RU', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'UTC',
+});
+
+function homeTaskDateLabel(due: string | null) {
+  if (!due) return 'Не указана';
+  const label = taskFormDate.format(new Date(due)).toLocaleLowerCase('ru-RU').replace(', ', ' ');
+  return due === today() ? `Сегодня, ${label}` : label;
+}
+
 function TaskFields({
   data,
   onChange,
@@ -809,7 +822,8 @@ function TaskFields({
   homeTask?: HomeTaskDraft;
 }) {
   const [projectOpen, setProjectOpen] = useState(false),
-    [contactOpen, setContactOpen] = useState(false);
+    [contactOpen, setContactOpen] = useState(false),
+    [typeOpen, setTypeOpen] = useState(false);
   const textInput = (
     <GrowingTextarea
       className="pico-task-textarea"
@@ -821,7 +835,7 @@ function TaskFields({
       value={data.text}
       placeholder={
         homeTask
-          ? 'Например, подготовить КП'
+          ? 'Что нужно сделать?'
           : 'Что нужно сделать? Например: «Позвонить в Газпром по КП на ячейки»'
       }
       onChange={(e) => onChange({ ...data, text: e.target.value })}
@@ -829,7 +843,7 @@ function TaskFields({
   );
   const typePicker = (
     <div className="pico-chip-field">
-      <div className="pico-field-heading">Тип задачи</div>
+      {!homeTask && <div className="pico-field-heading">Тип задачи</div>}
       <div className="pico-chips">
         {taskTypes.map((type) => (
           <button
@@ -837,7 +851,10 @@ function TaskFields({
             key={type}
             aria-pressed={data.type === type}
             className={data.type === type ? 'active' : ''}
-            onClick={() => onChange({ ...data, type })}
+            onClick={() => {
+              onChange({ ...data, type });
+              setTypeOpen(false);
+            }}
           >
             <Icon name={type} size={13} />
             {homeTask && type === 'reminder' ? 'Задача' : taskTypeLabels[type]}
@@ -848,9 +865,14 @@ function TaskFields({
   );
   return (
     <>
-      {homeTask ? <Field label="Что нужно сделать?">{textInput}</Field> : textInput}
+      {textInput}
       <div className="pico-picker-box">
         <PickerRow label="Дата" icon="calendar">
+          {homeTask && (
+            <span className="pico-picker-value" aria-hidden="true">
+              {homeTaskDateLabel(data.due)}
+            </span>
+          )}
           <input
             aria-label="Срок"
             type="date"
@@ -859,6 +881,11 @@ function TaskFields({
           />
         </PickerRow>
         <PickerRow label="Время" icon="clock">
+          {homeTask && (
+            <span className="pico-picker-value" aria-hidden="true">
+              {data.time || 'Не указано'}
+            </span>
+          )}
           <input
             aria-label="Время"
             type="time"
@@ -866,7 +893,16 @@ function TaskFields({
             onChange={(e) => onChange({ ...data, time: e.target.value || null })}
           />
         </PickerRow>
-        {homeTask && typePicker}
+        {homeTask && (
+          <PickerRow
+            label="Тип"
+            icon="tasks"
+            value={data.type === 'reminder' ? 'Задача' : taskTypeLabels[data.type]}
+            expanded={typeOpen}
+            onClick={() => setTypeOpen(!typeOpen)}
+          />
+        )}
+        {homeTask && typeOpen && typePicker}
         {clientRow}
         <PickerRow
           label="Проект"
@@ -902,38 +938,42 @@ function TaskFields({
             ))}
           </div>
         )}
-        <PickerRow
-          label="Контакт"
-          icon="contact"
-          value={contacts.find((c) => c.id === data.contactId)?.data.name}
-          onClick={() => setContactOpen(!contactOpen)}
-        />
-        {contactOpen && (
-          <div className="pico-inline-picker">
-            <button
-              type="button"
-              onClick={() => {
-                onChange({ ...data, contactId: null });
-                setContactOpen(false);
-              }}
-            >
-              Не выбран
-            </button>
-            {contacts.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                aria-pressed={c.id === data.contactId}
-                onClick={() => {
-                  onChange({ ...data, contactId: c.id });
-                  setContactOpen(false);
-                }}
-              >
-                {c.data.name}
-                <small>{c.data.role}</small>
-              </button>
-            ))}
-          </div>
+        {!homeTask && (
+          <>
+            <PickerRow
+              label="Контакт"
+              icon="contact"
+              value={contacts.find((c) => c.id === data.contactId)?.data.name}
+              onClick={() => setContactOpen(!contactOpen)}
+            />
+            {contactOpen && (
+              <div className="pico-inline-picker">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange({ ...data, contactId: null });
+                    setContactOpen(false);
+                  }}
+                >
+                  Не выбран
+                </button>
+                {contacts.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={c.id === data.contactId}
+                    onClick={() => {
+                      onChange({ ...data, contactId: c.id });
+                      setContactOpen(false);
+                    }}
+                  >
+                    {c.data.name}
+                    <small>{c.data.role}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
         {homeTask && (
           <PickerRow label="Ответственный" icon="contact">
@@ -977,11 +1017,12 @@ export function TaskComposer({
     [error, setError] = useState(''),
     [contactError, setContactError] = useState(''),
     [busy, setBusy] = useState(false);
+  const isHomeTask = !!homeTask;
   useEffect(() => {
     let current = true;
     setContacts([]);
     setContactError('');
-    if (companyId)
+    if (companyId && !isHomeTask)
       api<{ records: CrmRecord[] }>(`/companies/${companyId}`)
         .then((d) => {
           if (current) setContacts(d.records.filter((r) => r.kind === 'contact'));
@@ -992,7 +1033,7 @@ export function TaskComposer({
     return () => {
       current = false;
     };
-  }, [companyId]);
+  }, [companyId, isHomeTask]);
   const clientRow = (
     <>
       <PickerRow

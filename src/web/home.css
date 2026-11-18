@@ -402,14 +402,100 @@ html.pico-home-active,
   opacity: 1;
   transition: none;
 }
+.modal.client-sheet.pico-agenda-create-sheet {
+  padding: 24px calc(16px + var(--pico-safe-right, 0px)) max(28px, var(--pico-safe-bottom, 0px))
+    calc(16px + var(--pico-safe-left, 0px));
+  border: 0;
+  border-radius: 28px 28px 0 0;
+}
+.modal.client-sheet.pico-agenda-create-sheet > .section-head {
+  margin-bottom: 10px;
+}
+.pico-agenda-create-sheet .section-head .icon {
+  margin-right: -10px;
+  border: 0;
+  background: transparent;
+}
+.pico-agenda-create-sheet .pico-task-composer {
+  gap: 12px;
+  margin: 0;
+}
+.pico-agenda-create-sheet .pico-task-composer .pico-task-textarea {
+  min-height: 52px;
+  padding: 14px 16px;
+  border: 1px solid #cdd5e3;
+  border-radius: 12px;
+  background: white;
+  font-size: 16px;
+  line-height: 22px;
+}
+.pico-agenda-create-sheet .pico-task-textarea::placeholder {
+  color: #5f6880;
+  opacity: 1;
+}
+.pico-agenda-create-sheet .pico-task-textarea:focus {
+  border-color: #1668d8;
+  outline: 1px solid #1668d8;
+  outline-offset: -1px;
+}
+.pico-agenda-create-sheet .pico-task-composer .pico-picker-row {
+  position: relative;
+  min-height: 45px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+.pico-agenda-create-sheet .pico-picker-row-label {
+  color: #5f6880;
+  font-weight: 500;
+}
+.pico-agenda-create-sheet .pico-picker-row :is(.pico-picker-row-label, button) > svg {
+  display: none;
+}
+.pico-agenda-create-sheet .pico-picker-row > button {
+  min-height: 28px;
+  font-size: inherit;
+  color: inherit;
+}
+.pico-agenda-create-sheet .pico-picker-value {
+  text-align: right;
+  font-weight: 700;
+}
+.pico-agenda-create-sheet .pico-picker-row > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.pico-agenda-create-sheet .pico-picker-row > input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  cursor: pointer;
+}
+.pico-agenda-create-sheet .pico-picker-row:has(> input:focus-visible) {
+  outline: 2px solid #1668d8;
+  outline-offset: -2px;
+}
 .pico-agenda-create-sheet .pico-chip-field {
-  padding: 8px 12px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--line);
 }
-.pico-agenda-create-sheet .pico-picker-row > .pico-picker-value {
-  margin-left: auto;
-  text-align: right;
-  font-size: 13px;
+.modal.client-sheet.pico-agenda-create-sheet .pico-task-composer > .primary {
+  min-height: 48px;
+  margin-top: 8px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.modal.client-sheet.pico-agenda-create-sheet .pico-task-composer > .primary:disabled {
+  border: 1px solid #cdd5e3;
+  background: #edf2f8;
+  color: #5f6880;
+  opacity: 1;
+  cursor: default;
 }
 .pico-agenda-task-sheet .pico-task-sheet-actions > .pico-task-sheet-delete {
   border-color: #d9534f;

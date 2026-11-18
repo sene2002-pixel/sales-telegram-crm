@@ -114,12 +114,14 @@ export function PickerRow({
   value,
   children,
   onClick,
+  expanded,
 }: {
   label: string;
   icon: string;
   value?: ReactNode;
   children?: ReactNode;
   onClick?: () => void;
+  expanded?: boolean;
 }) {
   return (
     <div className="pico-picker-row">
@@ -128,7 +130,7 @@ export function PickerRow({
         {label}
       </span>
       {onClick ? (
-        <button type="button" onClick={onClick}>
+        <button type="button" onClick={onClick} aria-expanded={expanded}>
           <span className="pico-picker-value">{value || 'Не выбран'}</span>
           <Icon name="chevron-down" size={14} />
         </button>

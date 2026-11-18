@@ -72,6 +72,7 @@ export function RecordCreate({
     <Modal
       title={kind === 'task' ? 'Новая задача' : 'Новый проект'}
       sheet={!!homeTask}
+      showHandle={!homeTask}
       className={homeTask ? 'pico-agenda-create-sheet' : undefined}
       initialFocusRef={homeTask ? taskTextRef : undefined}
       closeDisabled={saving}
