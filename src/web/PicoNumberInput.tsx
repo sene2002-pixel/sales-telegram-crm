@@ -212,12 +212,13 @@ export const PicoNumberInput = forwardRef<
     }, [open]);
     function key(value: string) {
       if (saving.current) return;
+      const field = input.current;
+      if (field) {
+        field.focus({ preventScroll: true });
+        field.setSelectionRange(field.value.length, field.value.length);
+      }
       setError('');
       setDraft((current) => appendPicoNumberKey(current, value));
-      requestAnimationFrame(() => {
-        input.current?.focus({ preventScroll: true });
-        input.current?.setSelectionRange(input.current.value.length, input.current.value.length);
-      });
     }
     return (
       <>
