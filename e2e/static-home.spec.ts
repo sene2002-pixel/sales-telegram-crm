@@ -67,13 +67,33 @@ for (const size of [
       await panel.getByRole('button', { name: new RegExp('^' + label) }).click();
       const sheet = page.getByRole('dialog', { name: 'Новая задача', exact: true });
       await expect(sheet.getByRole('textbox', { name: 'Что нужно сделать?' })).toBeFocused();
-      await expect(sheet.getByRole('button', { name: type, exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      const typeButton = sheet.getByRole('button', { name: type, exact: true });
+      await expect(typeButton).toHaveAttribute('aria-expanded', 'false');
       await expect(sheet.getByLabel('Срок')).toHaveValue(await browserToday(page));
       await expect(sheet.getByLabel('Время', { exact: true })).toHaveValue('');
       await expect(sheet.getByRole('button', { name: 'Создать задачу' })).toBeDisabled();
+      if (label === 'Добавить задачу') {
+        const fields = sheet.locator('.pico-picker-box');
+        await expect(fields.locator('.pico-picker-row-label')).toHaveText([
+          'Дата',
+          'Время',
+          'Тип',
+          'Клиент',
+          'Проект',
+          'Ответственный',
+        ]);
+        await expect(fields).toContainText(/Сегодня, /);
+        await expect(fields).toContainText('Не указано');
+        await expect(sheet.getByPlaceholder('Что нужно сделать?')).toHaveCSS('min-height', '52px');
+        await expect(fields.locator('.pico-picker-row').first()).toHaveCSS('min-height', '45px');
+        await page.screenshot({ path: info.outputPath(`home-create-empty-${size.width}.png`) });
+        await typeButton.click();
+        await sheet.getByRole('button', { name: 'Звонок', exact: true }).click();
+        await expect(sheet.getByRole('button', { name: 'Звонок', exact: true })).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        );
+      }
       await sheet.getByRole('button', { name: 'Закрыть' }).click();
     }
 
@@ -235,13 +255,13 @@ test('Home task details save changes on close, and creation sends the selected c
       data: {
         text: 'Подготовить КП',
         due: date,
-        time: null,
+        time: '17:15',
         contactId: null,
         type: 'reminder',
         done: false,
       },
     });
-    tasks.push({ ...task('Подготовить КП', date, null, 'reminder'), data: body.data });
+    tasks.push({ ...task('Подготовить КП', date, '17:15', 'reminder'), data: body.data });
     await r.fulfill({ status: 201, json: tasks.at(-1) });
   });
   await login(page);
@@ -263,6 +283,14 @@ test('Home task details save changes on close, and creation sends the selected c
   await agenda(page).getByRole('button', { name: 'Добавить задачу' }).click();
   const create = page.getByRole('dialog', { name: 'Новая задача', exact: true });
   await create.getByRole('textbox', { name: 'Что нужно сделать?' }).fill('Подготовить КП');
+  const due = create.getByLabel('Срок', { exact: true });
+  await due.fill('2027-01-01');
+  await expect(due.locator('..')).toContainText('пт 1 января');
+  await due.fill(date);
+  await create.getByLabel('Время', { exact: true }).fill('17:15');
+  await expect(
+    create.locator('.pico-picker-value').getByText('17:15', { exact: true }),
+  ).toBeVisible();
   await pickInline(page, create, 'Клиент', 'Компания для задачи');
   await page.screenshot({ path: info.outputPath('home-create.png') });
   await create.getByRole('button', { name: 'Создать задачу' }).click();
