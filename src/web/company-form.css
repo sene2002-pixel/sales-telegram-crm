@@ -347,7 +347,7 @@
   background: #f3f6fb;
 }
 .company-form-footer {
-  padding: 16px 0 max(28px, env(safe-area-inset-bottom));
+  padding: 16px 0 max(28px, var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)));
   border-color: #eef2f8;
 }
 .company-form-footer > .primary {
@@ -432,7 +432,8 @@
     > .client-sheet-body
       > :is(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
   ) {
-  padding: 8px 16px 0;
+  padding: 8px calc(16px + var(--pico-safe-right, env(safe-area-inset-right, 0px))) 0
+    calc(16px + var(--pico-safe-left, env(safe-area-inset-left, 0px)));
 }
 .modal.client-sheet:has(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
   > .client-sheet-handle {

@@ -688,7 +688,7 @@
 }
 .cc-contact-form.cc-inline-editor {
   background: white;
-  padding: 0 0 max(28px, env(safe-area-inset-bottom));
+  padding: 0 0 max(28px, var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)));
   gap: 12px;
 }
 .cc-contact-form label {
@@ -972,7 +972,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-bottom: max(28px, env(safe-area-inset-bottom));
+  padding-bottom: max(28px, var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
 .cc-equipment-sheet fieldset {
   margin: 0;

@@ -14,7 +14,7 @@ test('New manager can read the empty client card and start adding a client', asy
         WebApp: {
           initData: 'synthetic-empty-client-session',
           platform: 'ios',
-          safeAreaInset: { top: 47, bottom: 34 },
+          safeAreaInset: { top: 47, bottom: 34, left: 12, right: 18 },
           contentSafeAreaInset: { top: 48 },
         },
       };
@@ -111,7 +111,15 @@ test('New manager can read the empty client card and start adding a client', asy
   await expect(empty).toBeVisible();
   await expect(guide).toBeVisible();
   await add.click();
-  await expect(
-    page.getByRole('dialog', { name: 'Новый клиент' }).getByLabel('Название', { exact: true }),
-  ).toBeVisible();
+  const sheet = page.getByRole('dialog', { name: 'Новый клиент' });
+  await expect(sheet.getByLabel('Название', { exact: true })).toBeVisible();
+  if (mobile) {
+    const viewport = page.viewportSize()!;
+    for (const name of ['Сохранить клиента', 'Закрыть']) {
+      const button = (await sheet.getByRole('button', { name, exact: true }).boundingBox())!;
+      expect(button.x).toBeGreaterThanOrEqual(12);
+      expect(button.x + button.width).toBeLessThanOrEqual(viewport.width - 18);
+      expect(button.y + button.height).toBeLessThanOrEqual(viewport.height - 34);
+    }
+  }
 });

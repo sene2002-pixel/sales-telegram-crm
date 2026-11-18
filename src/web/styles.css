@@ -5124,7 +5124,7 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-bottom: max(28px, env(safe-area-inset-bottom));
+  padding-bottom: max(28px, var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
 .pico-client-filter-top {
   display: grid;
