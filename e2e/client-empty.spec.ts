@@ -14,7 +14,7 @@ test('New manager can read the empty client card and start adding a client', asy
         WebApp: {
           initData: 'synthetic-empty-client-session',
           platform: 'ios',
-          safeAreaInset: { top: 47, bottom: 34, left: 12, right: 18 },
+          safeAreaInset: { top: 47, bottom: 34 },
           contentSafeAreaInset: { top: 48 },
         },
       };
@@ -93,6 +93,9 @@ test('New manager can read the empty client card and start adding a client', asy
   await page.screenshot({ path: info.outputPath('clients-empty-390.png') });
 
   if (mobile) {
+    await page.evaluate(() => {
+      Object.assign(window.Telegram!.WebApp!.safeAreaInset!, { left: 12, right: 18 });
+    });
     await page.setViewportSize({ width: 320, height: 568 });
     const last = guide.getByText('Итоги встреч и договорённости', { exact: true });
     await last.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
