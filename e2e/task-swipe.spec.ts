@@ -59,6 +59,10 @@ for (const width of [320, 390, 1440]) {
   }, info) => {
     test.skip(width === 1440 && info.project.name === 'mobile', 'Portrait-only mobile app');
     const { swipe, title } = await setup(page, width);
+    await expect(page.getByRole('button', { name: 'Закрытые', exact: true })).toHaveCSS(
+      'color',
+      'rgb(107, 115, 137)',
+    );
     const edit = swipe.getByRole('button', {
       name: `Редактировать задачу «${title}»`,
       exact: true,

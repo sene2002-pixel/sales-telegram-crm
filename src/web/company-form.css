@@ -66,6 +66,7 @@
   min-height: 30px;
   border-radius: 10px;
   font-size: 12px;
+  line-height: normal;
   padding: 5px 8px;
   overflow-wrap: anywhere;
 }
@@ -383,7 +384,7 @@
 .company-form.pico-compact-form textarea.pico-growing-textarea {
   min-height: 40px;
   line-height: 20px;
-  padding-block: 9px;
+  padding-block: 10px 8px;
 }
 .company-form.pico-compact-form textarea.company-comment {
   height: 64px;

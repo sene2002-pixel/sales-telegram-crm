@@ -51,7 +51,7 @@ export function InlineValue({
         >
           <span>{options?.find((o) => o.value === value)?.label || value || 'Не указано'}</span>
           {unit && <small>{unit}</small>}
-          {options && <Icon name="chevron-down" size={16} />}
+          {options && <Icon name="chevron-down-small" size={16} />}
         </button>
       </div>
     );

@@ -1455,6 +1455,14 @@ html {
 .pico-client-list-search input:focus-visible {
   outline: none;
   box-shadow: none;
+  caret-color: #1f7aea;
+}
+.pico-client-list-search input:focus:placeholder-shown {
+  padding-inline-start: 0;
+}
+.pico-client-list-search input:focus::placeholder {
+  color: #8a92a8;
+  text-indent: 5px;
 }
 .pico-add-row {
   width: 100%;
@@ -3736,7 +3744,7 @@ select.pico-filter-sort {
   border-radius: 13px;
 }
 /* Projects.dc.html: list controls and the compact factory card. */
-.workspace .pico-project-tabs > button:not(.active):not(.pico-filter-chip) {
+.workspace :is(.pico-project-tabs, .pico-task-tabs) > button:not(.active):not(.pico-filter-chip) {
   color: #6b7389;
 }
 .workspace .pico-project-tabs > .active {
@@ -4390,11 +4398,22 @@ select.pico-filter-sort {
     right: 0;
     z-index: 7;
   }
+  .telegram-native-header[data-section='companies']
+    .workspace:not(.pico-empty-clients)
+    .pico-more-button {
+    top: 2px;
+    right: -9px;
+  }
   .telegram-native-header .pico-scoped-content > .section-head:has(> h1) {
     padding-right: 44px;
   }
-  .telegram-native-header:is([data-section='projects'], [data-section='tasks'])
-    .pico-scoped-content
+  .telegram-native-header:is(
+      [data-section='companies'],
+      [data-section='projects'],
+      [data-section='tasks']
+    )
+    .workspace:not(.pico-empty-clients)
+    > .pico-scoped-content
     > .section-head:first-child {
     margin-top: 4px;
   }
@@ -5288,6 +5307,7 @@ body:has(.pico-client-filters) .pico-bottom-nav {
 /* Each task moves as one cell; revealed actions sit directly on the page surface. */
 .pico-compact-list.pico-task-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   border: 0;
   border-radius: 0;

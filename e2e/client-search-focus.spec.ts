@@ -34,6 +34,10 @@ for (const width of [320, 1440]) {
     await expect(field).toHaveAttribute('placeholder', 'Поиск клиента, компании или контакта');
     await field.click();
     await expect(field).toBeFocused();
+    await expect(field).toHaveCSS('caret-color', 'rgb(31, 122, 234)');
+    expect(await field.evaluate((el) => getComputedStyle(el, '::placeholder').color)).toBe(
+      'rgb(138, 146, 168)',
+    );
     await expect(field).toHaveCSS('outline-style', 'none');
     await expect(field).toHaveCSS('box-shadow', 'none');
     await expect(shell).toHaveCSS('background-color', 'rgb(255, 255, 255)');

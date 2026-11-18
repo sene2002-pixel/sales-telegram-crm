@@ -124,7 +124,10 @@ async function setup(page: Page, width = 390) {
   return { api, tag, companies, cards, search, open };
 }
 async function show(sheet: Locator, count: number) {
-  const button = sheet.getByRole('button', { name: `Показать ${count} клиентов`, exact: true });
+  const button = sheet.getByRole('button', {
+    name: `Показать ${count} ${count === 1 ? 'клиента' : 'клиентов'}`,
+    exact: true,
+  });
   await expect(button).toBeEnabled();
   return button;
 }

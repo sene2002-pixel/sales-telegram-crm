@@ -599,7 +599,7 @@ export function CompanyForm({
                 {savedPotential === null ? 'Не указан' : `${millionValue(total)} млн ₽`}
               </strong>
             )}
-            <Icon name="chevron-down" size={18} />
+            <Icon name="chevron-down-small" size={18} />
           </summary>
           <div className="company-equipment">
             <div className="company-equipment-head">
@@ -642,7 +642,7 @@ export function CompanyForm({
         <details className="company-form-accordion">
           <summary>
             <span>Дополнительные поля</span>
-            <Icon name="chevron-down" size={18} />
+            <Icon name="chevron-down-small" size={18} />
           </summary>
           <div className="company-extra">
             <Field label="Сайт">

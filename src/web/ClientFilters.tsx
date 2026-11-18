@@ -3,6 +3,7 @@ import { divisionLabels, labels, primaryDivisions, primarySegments } from '../sh
 import { ClientSort, clientSortLabels } from '../shared/client-filters';
 import { Modal } from './forms';
 import { Icon } from './Icons';
+import { countedWord } from './api';
 export function ClientFilters({
   city,
   cities,
@@ -237,7 +238,7 @@ export function ClientFilters({
             aria-live="polite"
             onClick={onClose}
           >
-            Показать {count} клиентов
+            Показать {count} {countedWord(count, 'клиента', 'клиентов', 'клиентов')}
           </button>
         </div>
       </div>

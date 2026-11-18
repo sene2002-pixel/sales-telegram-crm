@@ -386,7 +386,7 @@ test('Design fidelity: filter actions stay full width and the Home task date sav
       const reset = (await filters
         .getByRole('button', { name: 'Сбросить', exact: true })
         .boundingBox())!;
-      const show = filters.getByRole('button', { name: /^Показать \d+ клиентов$/ });
+      const show = filters.getByRole('button', { name: /^Показать \d+ клиент(?:а|ов)$/ });
       const showBox = (await show.boundingBox())!;
       expect(reset.width).toBe(112);
       expect(reset.height).toBe(48);

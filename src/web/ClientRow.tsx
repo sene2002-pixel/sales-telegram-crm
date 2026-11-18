@@ -19,7 +19,7 @@ import {
 } from '../shared/contracts';
 import { ClientScore, displayedClientPotential } from '../shared/analytics';
 import { loadClientScores, invalidateClientScores } from './client-scores';
-import { api, ApiError, download, money, compactMoney, fullMoney } from './api';
+import { api, ApiError, download, money, compactMoney, countedWord, fullMoney } from './api';
 import { millionValue } from './FormWidgets';
 import { HoldingMembers } from './HoldingMembers';
 import { FileUpload } from './FileUpload';
@@ -385,7 +385,7 @@ export function ClientRow({
             <small>Потенциал</small>
             <strong title={fullMoney(potential)}>{compactMoney(potential)}</strong>
           </span>
-          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} />
+          <Icon name="chevron-down-small" size={18} />
         </button>
         {open && !companyPending && (
           <div className="cc-body">
@@ -420,7 +420,11 @@ export function ClientRow({
                       ? 'Уровень недоступен'
                       : 'Загрузка уровня…'}
                 </strong>
-                <span>{score ? `${score.score} баллов из 8` : ''}</span>
+                <span>
+                  {score
+                    ? `${score.score} ${countedWord(score.score, 'балл', 'балла', 'баллов')} из 8`
+                    : ''}
+                </span>
               </div>
               <div className="cc-segments">
                 {levels.map(([key, label, tone], i) => (
@@ -443,7 +447,7 @@ export function ClientRow({
                     <span>
                       {potential === null ? 'Не указан' : `${millionValue(potential)} млн ₽`}
                     </span>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body cc-potential-equipment">
                     {isHolding ? (
@@ -529,7 +533,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Контакты <span>{contacts.length}</span>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {contacts.map((r) => (
@@ -600,7 +604,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Файлы <span>{files.length}</span>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {files.map((f) => (
@@ -656,7 +660,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Заметки
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     <InlineValue
@@ -670,7 +674,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Данные
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body cc-data">
                     {[

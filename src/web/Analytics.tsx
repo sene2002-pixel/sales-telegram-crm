@@ -9,7 +9,7 @@ import {
 } from '../shared/contracts';
 import { AnalyticsSummary, ClientAnalytics, MetricComparison } from '../shared/analytics';
 import { companyDisplayName } from '../shared/company-display-name';
-import { api, ApiError, compactMoney, fullMoney, today } from './api';
+import { api, ApiError, compactMoney, countedWord, fullMoney, today } from './api';
 import { Field, Modal } from './forms';
 import { Icon } from './Icons';
 import { CommercialReport } from './CommercialReport';
@@ -63,17 +63,6 @@ function Comparison({ value }: { value: MetricComparison }) {
           : `${value.percent === 0 ? '' : value.tone === 'positive' ? '↑ +' : value.tone === 'negative' ? '↓ ' : ''}${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value.tone === 'negative' ? Math.abs(value.percent ?? 0) : (value.percent ?? 0))}%`}
     </small>
   );
-}
-function countedWord(count: number, one: string, few: string, many: string) {
-  const lastHundred = Math.abs(count) % 100;
-  const last = lastHundred % 10;
-  return lastHundred >= 11 && lastHundred <= 14
-    ? many
-    : last === 1
-      ? one
-      : last >= 2 && last <= 4
-        ? few
-        : many;
 }
 function Metric({
   icon,

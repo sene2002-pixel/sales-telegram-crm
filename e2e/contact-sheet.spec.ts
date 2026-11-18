@@ -62,6 +62,7 @@ for (const width of [320, 390, 1440]) {
     for (const label of ['ФИО', 'Должность', 'Телефон', 'E-mail']) {
       const field = sheet.getByRole('textbox', { name: `Контакт · ${label}`, exact: true });
       await expect(field).toHaveCSS('background-color', 'rgb(243, 246, 251)');
+      await expect(field).toHaveCSS('color', 'rgb(26, 33, 81)');
       expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(40);
       const caption = field.locator('..');
       await expect(caption).toHaveCSS('font-size', '14px');
