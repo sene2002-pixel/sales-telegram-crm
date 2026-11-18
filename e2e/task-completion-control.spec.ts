@@ -172,7 +172,9 @@ for (const width of [320, 390, 1440]) {
     await page.clock.runFor(3500);
     expect(patches).toHaveLength(2);
 
+    await navigate(page, 'Главная');
     await action(page, 'Обновить');
+    await navigate(page, 'Задачи');
     await expect(call).toContainText('16:00');
     await complete.click();
     await expect(dialog).toHaveCount(0);
