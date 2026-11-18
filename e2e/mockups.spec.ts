@@ -327,7 +327,7 @@ test('Mockups: inline contact sheets save, retain edits on failure and refresh a
   await form.getByRole('button', { name: 'Сохранить контакт', exact: true }).click();
   await expect(form).toHaveCount(0);
   const contact = contacts.locator('.cc-contact').filter({ hasText: 'Пётр QA' });
-  await expect(contact).toContainText('+79991234567');
+  await expect(contact).toContainText('+7 999 123-45-67');
   const contactSwipe = contacts
     .locator('.cc-swipe')
     .filter({ has: page.locator('.cc-contact', { hasText: 'Пётр QA' }) });
@@ -352,7 +352,7 @@ test('Mockups: inline contact sheets save, retain edits on failure and refresh a
   await page.unroute('**/api/records/*');
   await edit.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(edit).toHaveCount(0);
-  await expect(contact).toContainText('+79997654321');
+  await expect(contact).toContainText('+7 999 765-43-21');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const saved = await api(page, `/companies/${company.id}`, undefined, 'GET');
   expect(saved.records.find((r: any) => r.kind === 'contact').data).toMatchObject({
@@ -363,7 +363,7 @@ test('Mockups: inline contact sheets save, retain edits on failure and refresh a
   await nav(page, 'Клиенты');
   await row.locator('.pico-client-row').click();
   await contacts.locator(':scope > summary').click();
-  await expect(contact).toContainText('+79997654321');
+  await expect(contact).toContainText('+7 999 765-43-21');
   await fits(page);
   await page.screenshot({ path: info.outputPath('inline-contact.png'), fullPage: true });
 });
