@@ -175,7 +175,9 @@ test('manager shares the public bot link without an invitation and can retry an 
   expect(attempts).toBe(2);
 });
 
-test('administrator selects a team before issuing a Home invitation', async ({ page }) => {
+test('administrator can share an invitation to their own or a supervisor’s team', async ({
+  page,
+}) => {
   const supervisorId = 'b8618836-aeb7-4b8e-8f0e-74a09ef8ab1d';
   await page.route('**/api/users', async (route) => {
     const response = await route.fetch();
@@ -187,8 +189,9 @@ test('administrator selects a team before issuing a Home invitation', async ({ p
       ],
     });
   });
+  const requested: string[] = [];
   await page.route('**/api/team-invitations', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ supervisorId });
+    requested.push(route.request().postDataJSON().supervisorId);
     await route.fulfill({
       json: { id: '1', url: invite, expiresAt: new Date(Date.now() + 60_000).toISOString() },
     });
@@ -196,11 +199,16 @@ test('administrator selects a team before issuing a Home invitation', async ({ p
   await login(page, 'Администратор');
   const share = await openShare(page);
   const copy = share.getByRole('button', { name: 'Скопировать сообщение' });
-  await expect(copy).toBeDisabled();
-  await expect(share.getByRole('button', { name: 'Отправить коллеге' })).toBeDisabled();
-  await share.getByLabel('Команда руководителя').selectOption(supervisorId);
+  const team = share.getByLabel('Команда руководителя');
+  await expect(team.locator('option:checked')).toHaveText('Моя команда');
+  const own = await team.inputValue();
+  expect(own).not.toBe(supervisorId);
   await copy.click();
   await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
+  await team.selectOption(supervisorId);
+  await copy.click();
+  await expect(share.getByRole('button', { name: 'Сообщение скопировано' })).toBeVisible();
+  expect(requested).toEqual([own, supervisorId]);
 });
 
 test('Home utility cards preserve their carousel dimensions and reachable last action at 390px', async ({

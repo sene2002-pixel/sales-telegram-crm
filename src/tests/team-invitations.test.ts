@@ -29,7 +29,20 @@ test('team invitations preserve scoped roles, hash tokens, atomically redeem and
     const leader = (await auth.dev('supervisor', '127.0.0.1')).user;
     const manager = (await auth.dev('manager', '127.0.0.1')).user;
     await assert.rejects(svc.create(manager, {}, 'PicoSalesBot'), /Приглашать/);
-    await assert.rejects(svc.create(admin, {}, 'PicoSalesBot'), /руководителя/);
+    const adminInvite = await svc.create(admin, {}, 'PicoSalesBot');
+    const adminToken = new URL(adminInvite.url).searchParams.get('start')!.slice(7);
+    await svc.redeem(adminToken, '991099', 'Сотрудник администратора');
+    const [joined] = await db.query(
+      "SELECT role, supervisor_id FROM users WHERE telegram_id='991099'",
+    );
+    assert.deepEqual(joined, { role: 'manager', supervisor_id: admin.id });
+    const edited = await auth.saveUser(admin, {
+      name: 'Новое имя',
+      telegramId: '991099',
+      active: true,
+      role: 'manager',
+    });
+    assert.equal(edited.supervisorId, admin.id);
     await assert.rejects(svc.create(leader, { supervisorId: admin.id }, 'PicoSalesBot'), /свою/);
     const invitation = await svc.create(leader, {}, 'PicoSalesBot');
     const token = new URL(invitation.url).searchParams.get('start')!.slice(7);

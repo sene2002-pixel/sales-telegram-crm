@@ -320,9 +320,12 @@ export class Database implements Sql {
         id bigserial PRIMARY KEY, report_id uuid NOT NULL REFERENCES request_history(report_id) ON DELETE CASCADE,
         action_id uuid, event text NOT NULL, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now()
       )`);
-      // Only the migrator may change migration history under the optional split-role profile.
+      // The runtime app records audit events and reads history. Maintenance uses a separate login.
       const roles = await tx.query("SELECT 1 FROM pg_roles WHERE rolname='crm_runtime'");
-      if (roles.length) await tx.query('REVOKE ALL ON schema_migrations FROM crm_runtime');
+      if (roles.length) {
+        await tx.query('REVOKE ALL ON schema_migrations FROM crm_runtime');
+        await tx.query('REVOKE UPDATE, DELETE, TRUNCATE ON audit FROM crm_runtime');
+      }
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

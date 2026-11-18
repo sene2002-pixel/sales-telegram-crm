@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { Actor, Role, roles } from '../../shared/contracts';
+import { Actor, Role, roles, isLeader } from '../../shared/contracts';
 import { Config } from '../config';
 import { Database, Sql } from '../infra/database';
 import { requireCondition } from '../domain/errors';
@@ -57,8 +57,14 @@ export function verifyTelegram(
     name: [parsed.data.first_name, parsed.data.last_name].filter(Boolean).join(' ').slice(0, 200),
   };
 }
-export function isLeader(actor: Actor) {
-  return actor.role === 'admin' || actor.role === 'supervisor';
+export { isLeader };
+
+export async function activeTeamOwner(tx: Sql, id: string) {
+  const [owner] = await tx.query<Actor>(
+    `SELECT ${userProjection} FROM users WHERE id=$1 AND active=true FOR SHARE`,
+    [id],
+  );
+  return owner && isLeader(owner);
 }
 export const userProjection =
   'id, telegram_id AS "telegramId", name, role, active, supervisor_id AS "supervisorId"';
@@ -262,17 +268,14 @@ export class AuthService {
             : null
           : input.supervisorId;
       if (supervisorId) {
-        const [supervisor] = await tx.query(
-          "SELECT id FROM users WHERE id=$1 AND role='supervisor' AND active=true",
-          [supervisorId],
-        );
+        const supervisor = await activeTeamOwner(tx, supervisorId);
         requireCondition(
           supervisor && supervisorId !== id && input.role === 'manager',
           400,
           'Руководителя можно назначить менеджеру. Выберите активного руководителя',
         );
       }
-      if (existing?.role === 'supervisor' && (input.role !== 'supervisor' || !input.active))
+      if (existing && isLeader(existing) && (!isLeader(input) || !input.active))
         await tx.query('UPDATE users SET supervisor_id=NULL WHERE supervisor_id=$1', [id]);
       await tx.query(
         `INSERT INTO users(id,telegram_id,name,role,active,supervisor_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(telegram_id) DO UPDATE SET name=$3,role=$4,active=$5,supervisor_id=$6`,

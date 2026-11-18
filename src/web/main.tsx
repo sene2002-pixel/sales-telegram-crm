@@ -33,10 +33,12 @@ import {
   AnalyticsScreen,
   AnalyticsSettingsDialog,
   RecordCreate,
+  Empty,
   ScreenGuide,
 } from './Screens';
 import './styles.css';
 import './home.css';
+import './client-empty.css';
 import { HomeExtras } from './HomeExtras';
 import { HomeIdea } from './HomeIdea';
 import picoAvatar from '../../public/brand/pico-avatar.png';
@@ -631,6 +633,17 @@ function App() {
     ...(user.role === 'admin' ? [['users', 'Пользователи']] : []),
   ];
   const scopeScreen = !['profile', 'users', 'team'].includes(tab);
+  const showClientGuide =
+    tab === 'companies' &&
+    !scopeBusy &&
+    !scopeFailed &&
+    !companies.length &&
+    !employeeId &&
+    !query &&
+    !city &&
+    !clientSegments.length &&
+    !clientDivisions.length &&
+    clientStatus === 'all';
   const firstName = user.name.trim().split(/\s+/)[0];
   const homeGreeting = `Привет, ${firstName}!`;
   const renderedScopeGeneration = scopeGeneration.current;
@@ -700,7 +713,9 @@ function App() {
           </div>
         </div>
       </aside>
-      <main className={`workspace ${tab === 'home' ? 'pico-home-workspace' : ''}`}>
+      <main
+        className={`workspace ${tab === 'home' ? 'pico-home-workspace' : showClientGuide ? 'pico-empty-clients' : ''}`}
+      >
         <header>
           <div className="header-leading">
             <div className="mobile-brand" aria-label="Pico CRM">
@@ -1018,21 +1033,19 @@ function App() {
                             />
                           ))}
                       </div>
-                      {!visible.length && (
+                      {!visible.length && !showClientGuide && (
                         <div className="empty">
                           <h3>
-                            {companies.length
-                              ? 'Нет компаний по выбранным фильтрам'
-                              : employeeId
-                                ? 'У сотрудника пока нет клиентов'
-                                : 'Начните с первого клиента'}
+                            {!companies.length && employeeId
+                              ? 'У сотрудника пока нет клиентов'
+                              : 'Нет компаний по выбранным фильтрам'}
                           </h3>
                           {employeeId ? (
                             <button className="text-button" onClick={() => void changeEmployee('')}>
                               Показать всех сотрудников
                             </button>
                           ) : (
-                            <p>Добавьте компанию вручную или отправьте голосовой отчёт боту.</p>
+                            <p>Измените запрос или выбранные фильтры.</p>
                           )}
                         </div>
                       )}
@@ -1041,16 +1054,28 @@ function App() {
                 }}
               </WithPendingActions>
             )}
-            {tab === 'companies' && !companies.length && !employeeId && (
-              <ScreenGuide
-                title="Что будет в карточке клиента"
-                items={[
-                  ['contact', 'Контакты', 'ЛПР и все, кто влияет на выбор'],
-                  ['potential', 'Потенциал', 'Потребность в оборудовании за год'],
-                  ['file', 'Файлы', 'Письма и КП, которые подготовил Pico'],
-                  ['notes', 'Заметки', 'Договорённости и следующий шаг'],
-                ]}
-              />
+            {showClientGuide && (
+              <>
+                <Empty
+                  icon="clients"
+                  title="Клиентов пока нет"
+                  text={
+                    <>
+                      Добавьте первого клиента: щитовика, <br />
+                      монтажника или конечного заказчика
+                    </>
+                  }
+                />
+                <ScreenGuide
+                  title="Что будет в карточке клиента"
+                  items={[
+                    ['building', 'Бизнес клиента', 'Чем занимается и с кем работает'],
+                    ['call', 'Контакты', 'Кто принимает решение и как связаться'],
+                    ['analytics', 'Потенциал', 'Суммы по оборудованию'],
+                    ['file', 'Заметки', 'Итоги встреч и договорённости'],
+                  ]}
+                />
+              </>
             )}
             {tab === 'reports' && (
               <Reports

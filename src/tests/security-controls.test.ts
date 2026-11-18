@@ -14,6 +14,39 @@ import { AiBudget, AiBudgetLimit } from '../server/infra/ai-budget';
 import { SharedRateLimits } from '../server/infra/rate-limit';
 import { DomainError } from '../server/domain/errors';
 
+test('split runtime role retains audit read and append privileges after migration', async (t) => {
+  // Role names are cluster-wide. Use a private embedded database even in PostgreSQL CI.
+  const dir = await mkdtemp(join(tmpdir(), 'pico-audit-grants-'));
+  const db = new Database(makeConfig({ DATA_DIR: dir, DATABASE_URL: '' }));
+  t.after(async () => {
+    await db.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  await db.init({ migrate: false });
+  await db.query('CREATE ROLE crm_runtime NOLOGIN');
+  await db.query(
+    'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO crm_runtime',
+  );
+  const privileges = () =>
+    db.query<{ privilege: string; allowed: boolean }>(
+      `SELECT privilege, has_table_privilege('crm_runtime','audit',privilege) AS allowed
+       FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) AS privilege`,
+    );
+  const expected = [
+    { privilege: 'SELECT', allowed: true },
+    { privilege: 'INSERT', allowed: true },
+    { privilege: 'UPDATE', allowed: false },
+    { privilege: 'DELETE', allowed: false },
+    { privilege: 'TRUNCATE', allowed: false },
+  ];
+  await db.migrate();
+  assert.deepEqual(await privileges(), expected);
+  // An existing database may already have broad grants. Reapplying the migration repairs them.
+  await db.query('GRANT UPDATE, DELETE, TRUNCATE ON audit TO crm_runtime');
+  await db.migrate();
+  assert.deepEqual(await privileges(), expected);
+});
+
 test('current user controls and shared AI admission use committed database state', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'pico-security-controls-'));
   let nativeUrl = process.env.TEST_DATABASE_URL || '';

@@ -281,7 +281,7 @@ export function ScreenGuide({
     </section>
   );
 }
-function Empty({ icon, title, text }: { icon: string; title: string; text: string }) {
+export function Empty({ icon, title, text }: { icon: string; title: string; text: ReactNode }) {
   return (
     <div className={'pico-empty' + (icon === 'task-empty-calendar' ? ' pico-task-empty' : '')}>
       <span className="pico-empty-icon">

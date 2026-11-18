@@ -251,7 +251,7 @@ test('search confirms business identity against full requisites and caches both 
         if (url.pathname.endsWith('/search')) {
           assert.equal(url.searchParams.get('requisites'), 'Пример Москва');
           assert.equal(url.searchParams.get('limit'), '5');
-          return json([{ inn }, { inn }]);
+          return json([[{ inn }, { inn }]]);
         }
         return json([record]);
       }) as typeof fetch,
@@ -272,6 +272,8 @@ test('incomplete, ambiguous, different-city and unverified candidate lists do no
   const other = '7736050003';
   const cases = [
     { search: Array(5).fill({ inn }), details: () => [record] },
+    { search: [Array(5).fill({ inn })], details: () => [record] },
+    { search: [[{ inn }], [{ inn: other }]], details: () => [record] },
     { search: [{ inn: 'bad' }], details: () => [record] },
     { search: [{ inn }], details: () => [{ ...record, address_legal: 'г. Казань' }] },
     {

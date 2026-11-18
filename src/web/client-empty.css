@@ -1,0 +1,123 @@
+.pico-empty-clients .pico-scoped-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 850px;
+}
+
+.pico-empty-clients .section-head h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 800;
+}
+
+.pico-empty-clients .pico-client-list:empty {
+  display: none;
+}
+
+.pico-empty-clients
+  .pico-scoped-content
+  > :is(.pico-search, .tabs, .pico-add-row, .pico-empty, .pico-guide) {
+  margin: 0;
+}
+
+.pico-empty-clients .pico-search {
+  height: 40px;
+  min-height: 40px;
+}
+
+.pico-empty-clients .pico-search input {
+  height: 38px;
+  padding-block: 0;
+}
+
+.pico-empty-clients .pico-filter-chip-row > button {
+  height: 36px;
+  min-height: 36px;
+  border-radius: 18px;
+}
+
+.pico-empty-clients .pico-scoped-content > .pico-add-row {
+  min-height: 48px;
+  padding-block: 0;
+}
+
+.pico-empty-clients .pico-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.pico-empty-clients .pico-empty-icon,
+.pico-empty-clients .pico-row-icon {
+  background: #e4effd;
+  color: #1668d8;
+}
+
+.pico-empty-clients .pico-empty-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+
+.pico-empty-clients .pico-empty h3,
+.pico-empty-clients .pico-guide > h3 {
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 21px;
+}
+
+.pico-empty-clients .pico-empty h3 {
+  margin: 6px 0 3px;
+}
+
+.pico-empty-clients .pico-guide > h3 {
+  margin: 0 0 8px;
+}
+
+.pico-empty-clients .pico-guide-row {
+  min-height: 56px;
+  padding: 6px 12px;
+  border-bottom-color: #eef2f8;
+}
+
+.pico-empty-clients .pico-guide-row .pico-row-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.pico-empty-clients .pico-guide-row strong {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.pico-empty-clients .pico-empty p,
+.pico-empty-clients .pico-guide-row small {
+  color: #5f6880;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.pico-empty-clients .pico-guide-row small {
+  margin-top: 1px;
+}
+
+@media (max-width: 760px) {
+  .workspace.pico-empty-clients {
+    display: flex;
+    flex-direction: column;
+    min-height: var(--pico-view-height, 100dvh);
+    padding-bottom: calc(var(--pico-nav-height) + 24px);
+  }
+
+  .pico-empty-clients .pico-scoped-content,
+  .pico-empty-clients .pico-empty {
+    flex: 1 0 auto;
+  }
+}

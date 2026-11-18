@@ -4,7 +4,7 @@ import { Actor } from '../../shared/contracts';
 import { Database, Sql } from '../infra/database';
 import { audit } from '../infra/audit';
 import { requireCondition } from '../domain/errors';
-import { userProjection } from './auth';
+import { activeTeamOwner, isLeader, userProjection } from './auth';
 const projection =
   'id, created_at AS "createdAt", expires_at AS "expiresAt", supervisor_id AS "supervisorId", revoked_at AS "revokedAt", used_at AS "usedAt"';
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -16,7 +16,7 @@ export class TeamInvitations {
       [actor.id],
     );
     requireCondition(
-      current?.active && ['admin', 'supervisor'].includes(current.role),
+      current?.active && isLeader(current),
       403,
       'Приглашать сотрудников могут администратор и руководитель',
     );
@@ -46,13 +46,12 @@ export class TeamInvitations {
         403,
         'Можно приглашать только в свою команду',
       );
-      const supervisorId = current.role === 'supervisor' ? current.id : input.supervisorId;
-      requireCondition(supervisorId, 400, 'Выберите руководителя команды');
-      const [supervisor] = await tx.query(
-        "SELECT id FROM users WHERE id=$1 AND role='supervisor' AND active=true FOR SHARE",
-        [supervisorId],
+      const supervisorId = input.supervisorId ?? current.id;
+      requireCondition(
+        await activeTeamOwner(tx, supervisorId),
+        400,
+        'Выберите активного руководителя',
       );
-      requireCondition(supervisor, 400, 'Выберите активного руководителя');
       const [count] = await tx.query(
         'SELECT count(*)::int AS total FROM team_invitations WHERE created_by=$1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at>now()',
         [current.id],
@@ -129,11 +128,11 @@ export class TeamInvitations {
         400,
         'Приглашение больше не действует',
       );
-      const [supervisor] = await tx.query(
-        "SELECT id FROM users WHERE id=$1 AND role='supervisor' AND active=true FOR SHARE",
-        [invite.supervisor_id],
+      requireCondition(
+        await activeTeamOwner(tx, invite.supervisor_id),
+        400,
+        'Приглашение больше не действует',
       );
-      requireCondition(supervisor, 400, 'Приглашение больше не действует');
       requireCondition(
         !existing,
         409,

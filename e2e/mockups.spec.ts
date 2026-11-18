@@ -103,9 +103,7 @@ test('Mockups: empty screens explain the next step without fabricated metrics', 
   await expect(agenda.locator('.pico-agenda-row')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('empty-home.png'), fullPage: true });
   await nav(page, 'Клиенты');
-  await expect(
-    page.getByRole('heading', { name: 'Начните с первого клиента', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Клиентов пока нет', exact: true })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Что будет в карточке клиента', exact: true }),
   ).toBeVisible();

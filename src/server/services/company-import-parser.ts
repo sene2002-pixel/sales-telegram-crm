@@ -1179,18 +1179,19 @@ function parseSingleCompanyTable(
       `Строка ${index + 1}: нет названия компании`,
     );
     const originalName = originalRows[index]?.[nameColumn]?.trim() || data.name;
-    const clippedForm = originalName.match(/^(.*?)\s+(?:ОО|ПА|ОА|ЗА)$/u);
-    const openQuote = originalName.match(/(?:^|\s)(?:(?:ООО|АО|ПАО|ОАО|ЗАО)\s+)?[«"]([^«»"]+)$/u);
-    const openParenthesis = originalName.match(/^([^()]+)\s*\([^()]*$/u);
+    const withoutEllipsis = originalName.replace(/(?:…|\.{3})[»”"]?$/u, '').trimEnd();
+    const clippedForm = withoutEllipsis.match(/^(.*?)\s+(?:ОО|ПА|ОА|ЗА)$/u);
+    const openQuote = withoutEllipsis.match(
+      /(?:^|\s)(?:(?:ООО|АО|ПАО|ОАО|ЗАО)\s+)?[«"]([^«»"]+)$/u,
+    );
+    const openParenthesis = withoutEllipsis.match(/^([^()]+)\s*\([^()]*$/u);
     const prefix =
       clippedForm?.[1] ||
       openQuote?.[1] ||
       openParenthesis?.[1] ||
-      (/(?:…|\.{3})$/u.test(originalName)
-        ? originalName.replace(/(?:…|\.{3})$/u, '')
-        : (namesByWidth.get(originalName.length)?.size || 0) >= 4
-          ? originalName
-          : '');
+      (withoutEllipsis !== originalName || (namesByWidth.get(originalName.length)?.size || 0) >= 4
+        ? withoutEllipsis
+        : '');
 
     const holding = classifyHoldingMention(originalName);
     const eligibleHolding =

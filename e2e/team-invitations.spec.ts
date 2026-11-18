@@ -82,7 +82,10 @@ for (const role of ['supervisor', 'admin'] as const) {
     const panel = page.getByRole('region', { name: 'Приглашения в команду' });
     await expect(panel.getByText('Приглашений пока нет')).toBeVisible();
     if (role === 'admin') {
-      await expect(panel.getByRole('button', { name: 'Создать приглашение' })).toBeDisabled();
+      await expect(panel.getByLabel('Команда руководителя').locator('option:checked')).toHaveText(
+        'Моя команда',
+      );
+      await expect(panel.getByRole('button', { name: 'Создать приглашение' })).toBeEnabled();
       await panel.getByLabel('Команда руководителя').selectOption(target);
     }
     await panel.getByRole('button', { name: 'Создать приглашение' }).click();

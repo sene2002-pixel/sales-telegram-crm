@@ -204,9 +204,12 @@ export class SabyRegistry implements Registry {
       }),
       signal,
     );
-    if (!Array.isArray(result) || result.length >= 5) return null;
+    if (!Array.isArray(result)) return null;
+    // The Saby demo wraps the search page in an outer array; the published example is flat.
+    const page = result.length === 1 && Array.isArray(result[0]) ? result[0] : result;
+    if (page.length >= 5) return null;
     const inns = new Set<string>();
-    for (const item of result) {
+    for (const item of page) {
       if (typeof item?.inn !== 'string' || !validInn(item.inn)) return null;
       inns.add(item.inn);
     }
