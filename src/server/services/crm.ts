@@ -7,6 +7,7 @@ import {
   Company,
   companySchema,
   companyEditSchema,
+  companyCreateSchema,
   contactSchema,
   holdingAllocationSchema,
   CompanyData,
@@ -171,12 +172,55 @@ export class CrmService {
     );
   }
   async createWithContacts(actor: Actor, raw: unknown): Promise<Company> {
-    const schema = companySchema.extend({
-      initialContacts: z.array(contactSchema).max(20).default([]),
-    });
-    const { initialContacts, ...data } = schema.parse(raw);
+    const { initialContacts, initialMembers, ...data } = companyCreateSchema.parse(raw);
+    requireCondition(
+      !initialMembers.length || (data.segment === 'holding' && !data.archived),
+      400,
+      'Компании можно добавить только к действующему холдингу',
+    );
     return this.db.transaction(async (tx) => {
       const company = await this.create(actor, data, actor.id, tx);
+      if (initialMembers.length)
+        requireCondition(
+          company.segment === 'holding',
+          409,
+          'Выберите холдинг вместо юридического лица',
+        );
+      for (const member of initialMembers) {
+        if (!('id' in member)) {
+          await this.create(
+            actor,
+            { ...member, segment: 'end_client', holdingId: company.id },
+            company.ownerId,
+            tx,
+          );
+          continue;
+        }
+        const previous = await this.company(actor, member.id, tx, true);
+        requireCondition(
+          previous.ownerId === company.ownerId &&
+            previous.segment === 'end_client' &&
+            !previous.archived,
+          409,
+          'Выберите действующего заказчика того же ответственного',
+        );
+        requireCondition(
+          previous.version === member.version && !previous.holdingId,
+          409,
+          'Карточка заказчика изменилась. Обновите список компаний',
+        );
+        const after = companySchema.strip().parse({ ...previous, holdingId: company.id });
+        await tx.query(
+          'UPDATE companies SET data=$1,version=version+1,updated_at=now() WHERE id=$2',
+          [JSON.stringify(after), previous.id],
+        );
+        await audit(tx, actor.id, 'company.updated', previous.id, previous.id, {
+          before: previous,
+          after,
+          beforeVersion: previous.version,
+          afterVersion: previous.version + 1,
+        });
+      }
       for (const contact of initialContacts)
         await this.createRecord(actor, company.id, 'contact', contact, null, tx, {
           contactSource: 'user',

@@ -158,6 +158,21 @@ export const contactSchema = z
     email: z.union([z.literal(''), z.email()]).default(''),
   })
   .strict();
+const initialHoldingMemberSchema = z.union([
+  z.object({ id: idSchema, version: z.number().int().positive() }).strict(),
+  z
+    .object({
+      name,
+      inn: z.string().trim().refine(validInn, 'Укажите корректный ИНН компании'),
+      city: companySchema.shape.city,
+    })
+    .strict(),
+]);
+export type InitialHoldingMember = z.infer<typeof initialHoldingMemberSchema>;
+export const companyCreateSchema = companySchema.extend({
+  initialContacts: z.array(contactSchema).max(20).default([]),
+  initialMembers: z.array(initialHoldingMemberSchema).max(100).default([]),
+});
 export const companyEditSchema = z
   .object({
     version: z.number().int().positive(),

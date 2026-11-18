@@ -183,30 +183,25 @@ function App() {
     [selectedTab, setSelectedTab] = useState('contact'),
     [createdClientId, setCreatedClientId] = useState(''),
     [clientRevealVersion, setClientRevealVersion] = useState(0);
-  const [creationHoldings, setCreationHoldings] = useState<Company[]>([]);
-  const [holdingsError, setHoldingsError] = useState('');
+  const [creationCompanies, setCreationCompanies] = useState<Company[]>([]);
+  const [creationListError, setCreationListError] = useState('');
+  const [creationListRevision, setCreationListRevision] = useState(0);
   useEffect(() => {
-    setCreationHoldings([]);
-    setHoldingsError('');
+    setCreationCompanies([]);
+    setCreationListError('');
     if (!create || !user) return;
     let active = true;
     api<Company[]>('/companies')
       .then((items) => {
-        if (active)
-          setCreationHoldings(
-            items.filter((c) => c.ownerId === user.id && c.segment === 'holding' && !c.archived),
-          );
+        if (active) setCreationCompanies(items.filter((c) => c.ownerId === user.id && !c.archived));
       })
       .catch(() => {
-        if (active)
-          setHoldingsError(
-            'Не удалось загрузить холдинги. Закройте и откройте форму, чтобы повторить загрузку.',
-          );
+        if (active) setCreationListError('Не удалось загрузить список компаний.');
       });
     return () => {
       active = false;
     };
-  }, [create, user?.id, user?.role]);
+  }, [create, user?.id, user?.role, creationListRevision]);
   const [employeeId, setEmployeeId] = useState(''),
     [employeeOptions, setEmployeeOptions] = useState<EmployeeFilterOption[]>([]),
     [employeeError, setEmployeeError] = useState(''),
@@ -1179,17 +1174,32 @@ function App() {
               Новые клиенты создаются на ваше имя. Фильтр не меняет ответственного.
             </p>
           )}
-          {holdingsError && (
+          {creationListError && (
             <p role="alert" className="error">
-              {holdingsError}
+              {creationListError}{' '}
+              <button type="button" onClick={() => setCreationListRevision((value) => value + 1)}>
+                Повторить загрузку
+              </button>
             </p>
           )}
           <CompanyForm
             onCloseGuard={registerClientCloseGuard}
-            holdings={creationHoldings}
+            holdings={creationCompanies.filter((company) => company.segment === 'holding')}
+            memberChoices={creationCompanies.filter(
+              (company) => company.segment === 'end_client' && !company.holdingId,
+            )}
             onSave={async (data) => {
               const saveGeneration = scopeGeneration.current;
-              const c = await api<Company>('/companies', 'POST', data);
+              const c = await api<Company>('/companies', 'POST', data).catch((cause: unknown) => {
+                if (
+                  data.initialMembers?.length &&
+                  cause instanceof ApiError &&
+                  [404, 409].includes(cause.status)
+                ) {
+                  setCreationListRevision((value) => value + 1);
+                }
+                throw cause;
+              });
               if (
                 employeeScope.current.actorId !== user.id ||
                 saveGeneration !== scopeGeneration.current

@@ -1,3 +1,4 @@
+import { HoldingMemberChoice, NewHoldingMembers, NewMemberCompany } from './NewHoldingMembers';
 import { PicoNumberInput } from './PicoNumberInput';
 import './company-form.css';
 import { GrowingTextarea } from './GrowingTextarea';
@@ -6,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { useState, useEffect, useRef, FormEvent, ReactNode, RefObject } from 'react';
 import {
   CompanyData,
+  InitialHoldingMember,
   companySchema,
   contactSchema,
   segments,
@@ -301,12 +303,19 @@ export function CompanyForm({
   onSave,
   onCloseGuard,
   holdings = [],
+  memberChoices = [],
 }: {
   initial?: CompanyData;
   initialContacts?: InitialCompanyContact[];
   onCloseGuard?: (guard: CompanyFormCloseGuard) => void;
   holdings?: Company[];
-  onSave: (data: CompanyData & { initialContacts?: InitialCompanyContact[] }) => Promise<void>;
+  memberChoices?: Company[];
+  onSave: (
+    data: CompanyData & {
+      initialContacts?: InitialCompanyContact[];
+      initialMembers?: InitialHoldingMember[];
+    },
+  ) => Promise<void>;
 }) {
   const [data, setData] = useState<CompanyData>(
     initial
@@ -318,9 +327,16 @@ export function CompanyForm({
   );
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const creatingHolding = !initial && data.segment === 'holding';
+  const [members, setMembers] = useState<HoldingMemberChoice[]>([]);
+  const [memberDraft, setMemberDraft] = useState<NewMemberCompany | null>(null);
+  const memberDraftHasInput = !!(memberDraft?.inn || memberDraft?.name || memberDraft?.city);
   const baseline = useRef(JSON.stringify({ data, contacts }));
   const closeState = useRef<CompanyFormCloseState>({ dirty: false, busy: false });
-  closeState.current.dirty = JSON.stringify({ data, contacts }) !== baseline.current;
+  closeState.current.dirty =
+    JSON.stringify({ data, contacts }) !== baseline.current ||
+    members.length > 0 ||
+    memberDraftHasInput;
   useEffect(() => {
     onCloseGuard?.(() => closeState.current);
     return () => onCloseGuard?.(null);
@@ -364,7 +380,11 @@ export function CompanyForm({
         if (closeState.current.busy) return;
         setError('');
         setFieldErrors({});
-        const parsed = companySchema.safeParse({ ...data, potential: savedPotential });
+        const parsed = companySchema.safeParse({
+          ...data,
+          inn: creatingHolding ? '' : data.inn,
+          potential: savedPotential,
+        });
         const parsedContacts = contacts.map((contact) =>
           [contact.name, contact.role, contact.phone, contact.email].some((value) => value.trim())
             ? contactSchema.safeParse({
@@ -415,11 +435,25 @@ export function CompanyForm({
           return;
         }
         if (!parsed.success) return;
+        if (creatingHolding && memberDraftHasInput) {
+          setError('Добавьте компанию в список или отмените её добавление.');
+          formRef.current
+            ?.querySelector('.new-holding-picker')
+            ?.scrollIntoView({ block: 'nearest' });
+          return;
+        }
         closeState.current.busy = true;
         setBusy(true);
         try {
           await onSave({
             ...parsed.data,
+            ...(creatingHolding && members.length
+              ? {
+                  initialMembers: members.map(({ id, version, inn, name, city }) =>
+                    id !== undefined ? { id, version } : { name, inn, city },
+                  ),
+                }
+              : {}),
             initialContacts: parsedContacts.flatMap((result, index) => {
               if (!result) return [];
               if (!result.success) throw new Error('Проверьте контакты');
@@ -441,17 +475,36 @@ export function CompanyForm({
       }}
     >
       <div className="company-form-body">
-        {data.segment !== 'holding' && (
+        {(creatingHolding || data.segment !== 'holding') && (
           <Field label="ИНН">
             <input
               inputMode="numeric"
               aria-label="ИНН"
-              value={data.inn}
+              value={creatingHolding ? memberDraft?.inn || '' : data.inn}
               placeholder="10 или 12 цифр"
               aria-invalid={!!fieldErrors.inn}
-              aria-describedby={fieldErrors.inn ? 'company-error-inn' : undefined}
-              onChange={(e) => update('inn', e.target.value)}
+              aria-describedby={
+                fieldErrors.inn
+                  ? 'company-error-inn'
+                  : creatingHolding
+                    ? 'holding-inn-hint'
+                    : undefined
+              }
+              disabled={creatingHolding && members.length >= 100}
+              onChange={(e) =>
+                creatingHolding
+                  ? setMemberDraft((current) => ({
+                      name: '',
+                      city: '',
+                      ...current,
+                      inn: e.target.value,
+                    }))
+                  : update('inn', e.target.value)
+              }
             />
+            {creatingHolding && (
+              <small id="holding-inn-hint">ИНН компании для добавления в холдинг</small>
+            )}
             {inputError('inn')}
           </Field>
         )}
@@ -477,15 +530,41 @@ export function CompanyForm({
           label="Категория клиента"
           options={categoryOptions}
           value={data.segment}
-          onChange={(value) =>
+          onChange={(value) => {
+            setError('');
+            if (
+              !initial &&
+              data.segment !== 'holding' &&
+              value === 'holding' &&
+              data.inn &&
+              !memberDraft &&
+              !members.some((member) => member.inn === data.inn)
+            ) {
+              setMemberDraft({ name: '', city: '', inn: data.inn });
+            }
             setData((current) => ({
               ...current,
               segment: value as CompanyData['segment'],
-              inn: value === 'holding' ? '' : current.inn,
+              inn: initial && value === 'holding' ? '' : current.inn,
               holdingId: value === 'end_client' ? current.holdingId : null,
-            }))
-          }
+            }));
+          }}
         />
+        {creatingHolding && (
+          <NewHoldingMembers
+            choices={memberChoices}
+            members={members}
+            onChange={(next) => {
+              setMembers(next);
+              setError('');
+            }}
+            draft={memberDraft}
+            onDraftChange={(next) => {
+              setMemberDraft(next);
+              setError('');
+            }}
+          />
+        )}
         {data.segment === 'end_client' && (holdings.length > 0 || !!data.holdingId) && (
           <Field label="Холдинг">
             <select
@@ -720,17 +799,21 @@ function TaskFields({
   const [projectOpen, setProjectOpen] = useState(false),
     [contactOpen, setContactOpen] = useState(false);
   const textInput = (
-      <GrowingTextarea
-        className="pico-task-textarea"
-        aria-label={homeTask ? 'Что нужно сделать?' : 'Задача'}
-        textareaRef={homeTask?.textRef}
-        required
-        maxLength={200}
-        rows={3}
-        value={data.text}
-        placeholder={homeTask ? 'Например, подготовить КП' : 'Что нужно сделать? Например: «Позвонить в Газпром по КП на ячейки»'}
-        onChange={(e) => onChange({ ...data, text: e.target.value })}
-      />
+    <GrowingTextarea
+      className="pico-task-textarea"
+      aria-label={homeTask ? 'Что нужно сделать?' : 'Задача'}
+      textareaRef={homeTask?.textRef}
+      required
+      maxLength={200}
+      rows={3}
+      value={data.text}
+      placeholder={
+        homeTask
+          ? 'Например, подготовить КП'
+          : 'Что нужно сделать? Например: «Позвонить в Газпром по КП на ячейки»'
+      }
+      onChange={(e) => onChange({ ...data, text: e.target.value })}
+    />
   );
   const typePicker = (
     <div className="pico-chip-field">
@@ -866,7 +949,14 @@ export function TaskComposer({
   const [data, setData] = useState<TaskData>(() =>
       initial
         ? recordSchemas.task.parse(initial.data)
-        : { text: '', due: today(), time: null, type: homeTask?.initialType || 'meeting', done: false, contactId: null },
+        : {
+            text: '',
+            due: today(),
+            time: null,
+            type: homeTask?.initialType || 'meeting',
+            done: false,
+            contactId: null,
+          },
     ),
     [companyId, setCompanyId] = useState(initial?.companyId || ''),
     [projectId, setProjectId] = useState(initial?.projectId || ''),
