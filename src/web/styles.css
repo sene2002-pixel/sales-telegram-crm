@@ -3383,22 +3383,33 @@ select.pico-filter-sort {
 .pico-client-list-search + .pico-filter-chip-row > button.active {
   border: 0;
 }
-.pico-client-list-search + .pico-filter-chip-row > button:not(.active):not(.pico-filter-chip) {
+.pico-client-list-search + .pico-filter-chip-row > button:not(.active) {
   color: #6b7389;
 }
 .pico-search + .pico-filter-chip-row > button.active {
   font-weight: 700;
 }
-.workspace .pico-filter-chip-row > .pico-filter-chip {
+.workspace .pico-filter-chip-row > button.pico-filter-chip,
+.workspace .pico-client-list-heading > button.pico-filter-chip {
+  flex: none;
   width: 60px;
   height: 30px;
   padding: 0;
   margin-left: auto;
   display: grid;
   place-items: center;
+  border-radius: 15px;
   color: var(--primary);
   background: #fff;
   border: 1px solid var(--line);
+}
+.pico-client-list-heading > h1 {
+  margin: 0;
+}
+@media (min-width: 761px) {
+  .workspace:not(.pico-empty-clients) .pico-client-list-heading {
+    margin-bottom: 25px;
+  }
 }
 .pico-client-filter-trigger {
   position: relative;
@@ -3594,10 +3605,6 @@ select.pico-filter-sort {
 @media (max-width: 360px) {
   .workspace .pico-filter-chip-row > button {
     padding: 0 10px;
-  }
-  .workspace .pico-filter-chip-row > .pico-filter-chip {
-    width: 60px;
-    padding: 0;
   }
 }
 @media (max-width: 760px) {
@@ -4292,6 +4299,21 @@ select.pico-filter-sort {
 .pico-analytics-commercial > .panel > .error {
   margin: 14px;
 }
+.pico-analytics-commercial > .panel > .form-grid > .field {
+  min-width: 0;
+}
+.pico-analytics-commercial > .panel > .form-grid input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  max-width: 100%;
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .pico-analytics-commercial > .panel > .form-grid input[type='date'] {
+    text-align: center;
+  }
+}
 .pico-analytics-commercial > .panel > .pico-commercial-report-submit {
   margin: 0 auto 14px;
   max-width: calc(100% - 28px);
@@ -4308,9 +4330,6 @@ select.pico-filter-sort {
   }
   .telegram-native-header .pico-analytics-final {
     padding-top: 4px;
-  }
-  .telegram-native-header .pico-analytics-heading {
-    padding-right: 44px;
   }
 }
 @media (max-width: 760px) {
@@ -4392,20 +4411,26 @@ select.pico-filter-sort {
   .telegram-native-header .workspace > header .header-leading {
     display: none;
   }
-  .telegram-native-header .pico-more-button {
+  .app-shell {
+    --pico-settings-offset: 0px;
+  }
+  .app-shell[data-role='admin'] {
+    --pico-settings-offset: 40px;
+  }
+  .workspace > header > .pico-more-button {
     position: absolute;
     top: 0;
-    right: 0;
+    right: var(--pico-settings-offset);
     z-index: 7;
   }
-  .telegram-native-header[data-section='companies']
-    .workspace:not(.pico-empty-clients)
-    .pico-more-button {
-    top: 2px;
-    right: -9px;
+  .telegram-native-header
+    .workspace:has(> header > .pico-more-button)
+    .pico-scoped-content
+    > .section-head:has(> h1) {
+    padding-right: calc(44px + var(--pico-settings-offset));
   }
-  .telegram-native-header .pico-scoped-content > .section-head:has(> h1) {
-    padding-right: 44px;
+  .telegram-native-header .pico-client-list-heading {
+    gap: 8px;
   }
   .telegram-native-header:is(
       [data-section='companies'],

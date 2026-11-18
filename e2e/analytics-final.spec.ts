@@ -167,7 +167,6 @@ test('Analytics settings are versioned, reload on conflict and never expose admi
     return route.fulfill({ json: current });
   });
   await login(page);
-  await navigate(page, 'Аналитика');
   await page.getByRole('button', { name: 'Дополнительное меню' }).click();
   await page.getByRole('button', { name: 'Настройки аналитики', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Настройки аналитики', exact: true });
@@ -250,14 +249,9 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
       .getByRole('heading', { name: 'Аналитика', exact: true })
       .boundingBox())!;
     const period = (await page.getByRole('button', { name: 'Период аналитики' }).boundingBox())!;
-    if (width < 761) {
-      const gear = (await page
-        .getByRole('button', { name: 'Дополнительное меню', exact: true })
-        .boundingBox())!;
-      expect(period.x + period.width).toBeLessThanOrEqual(gear.x);
-      if (Math.abs(heading.y - period.y) < 20)
-        expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
-    }
+    await expect(page.getByRole('button', { name: 'Дополнительное меню' })).toHaveCount(0);
+    expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
+    expect(period.x + period.width).toBeLessThanOrEqual(width - 16);
     const funnel = (await page.locator('.pico-client-funnel-content > svg').boundingBox())!;
     expect(funnel.width).toBe(width === 320 ? 138 : 150);
     expect(funnel.height).toBeCloseTo((funnel.width * 146) / 150, 1);
@@ -368,12 +362,35 @@ test('Analytics preserves compact white rows, equal empty/populated indentation 
   await trigger.click();
   const button = page.getByRole('button', { name: 'Сформировать коммерческий отчёт', exact: true });
   await button.scrollIntoViewIfNeeded();
-  const parent = (await page
-    .getByRole('region', { name: 'Коммерческий отчёт', exact: true })
-    .boundingBox())!;
-  const box = (await button.boundingBox())!;
-  expect(Math.abs(box.x + box.width / 2 - parent.x - parent.width / 2)).toBeLessThanOrEqual(1);
-  expect(box.width).toBeLessThanOrEqual(parent.width - 28);
+  const report = page.getByRole('region', { name: 'Коммерческий отчёт', exact: true });
+  const from = report.getByLabel('Период с', { exact: true });
+  const to = report.getByLabel('Период по', { exact: true });
+  await from.fill('2026-10-20');
+  await to.fill('2026-11-18');
+  await expect(from).toHaveValue('2026-10-20');
+  await expect(to).toHaveValue('2026-11-18');
+  await expect(button).toBeEnabled();
+
+  await to.blur();
+
+  const widths = info.project.name === 'mobile' ? [320, 390] : [page.viewportSize()!.width];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 844 });
+    const parent = (await report.boundingBox())!;
+    const box = (await button.boundingBox())!;
+    expect(box.x + box.width / 2).toBeCloseTo(parent.x + parent.width / 2, 0);
+    expect(box.width).toBeLessThanOrEqual(parent.width - 28);
+
+    for (const date of [from, to]) {
+      const field = (await date.locator('..').boundingBox())!;
+      const input = (await date.boundingBox())!;
+      expect(input.x).toBeCloseTo(field.x, 0);
+      expect(input.x + input.width).toBeCloseTo(field.x + field.width, 0);
+      expect(input.x).toBeGreaterThanOrEqual(parent.x + 14);
+      expect(input.x + input.width).toBeLessThanOrEqual(parent.x + parent.width - 14);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  }
   await page.screenshot({
     path: info.outputPath('analytics-reviewed-rows-and-submit.png'),
     animations: 'disabled',

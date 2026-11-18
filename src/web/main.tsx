@@ -634,6 +634,7 @@ function App() {
     ...(user.role !== 'manager' ? [['team', 'Команда']] : []),
     ...(user.role === 'admin' ? [['users', 'Пользователи']] : []),
   ];
+  const showSettingsMenu = !['projects', 'tasks', 'analytics'].includes(tab);
   const scopeScreen = !['profile', 'users', 'team'].includes(tab);
   const showClientGuide =
     tab === 'companies' &&
@@ -674,6 +675,7 @@ function App() {
   const application = (
     <div
       data-section={tab}
+      data-role={user.role}
       className={`app-shell${window.Telegram?.WebApp?.initData ? ' telegram-native-header' : ''}`}
     >
       <aside>
@@ -689,6 +691,7 @@ function App() {
               className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
               onClick={() => {
                 setTab(key!);
+                setMore(false);
                 setError('');
               }}
             >
@@ -729,16 +732,18 @@ function App() {
               Права и помощь
             </button>
           </div>
-          <button
-            ref={moreButtonRef}
-            className="pico-more-button"
-            aria-label="Дополнительное меню"
-            aria-expanded={more}
-            onClick={() => setMore(!more)}
-          >
-            <Icon name="settings" size={26} />
-          </button>
-          {more && (
+          {showSettingsMenu && (
+            <button
+              ref={moreButtonRef}
+              className="pico-more-button"
+              aria-label="Дополнительное меню"
+              aria-expanded={more}
+              onClick={() => setMore(!more)}
+            >
+              <Icon name="settings" size={26} />
+            </button>
+          )}
+          {showSettingsMenu && more && (
             <div ref={moreMenuRef} className="pico-more-menu">
               <button
                 onClick={() => {
@@ -924,8 +929,25 @@ function App() {
                   );
                   return (
                     <>
-                      <div className="section-head">
+                      <div className="section-head pico-client-list-heading">
                         <h1>Клиенты</h1>
+                        <button
+                          ref={clientFiltersButton}
+                          className="pico-filter-chip pico-client-filter-trigger"
+                          aria-describedby={
+                            selectedFilters.length ? 'client-filter-count' : undefined
+                          }
+                          aria-label="Фильтры клиентов"
+                          onClick={() => setFiltersOpen(true)}
+                        >
+                          <Icon name="filter" size={16} />
+                          {selectedFilters.length > 0 && (
+                            <span id="client-filter-count">
+                              <span className="pico-visually-hidden">Выбрано фильтров </span>
+                              {selectedFilters.length}
+                            </span>
+                          )}
+                        </button>
                       </div>
                       <div className="pico-search pico-list-search pico-client-list-search">
                         <Icon name="list-search" size={18} />
@@ -962,23 +984,6 @@ function App() {
                             {label}
                           </button>
                         ))}
-                        <button
-                          ref={clientFiltersButton}
-                          className="pico-filter-chip pico-client-filter-trigger"
-                          aria-describedby={
-                            selectedFilters.length ? 'client-filter-count' : undefined
-                          }
-                          aria-label="Фильтры клиентов"
-                          onClick={() => setFiltersOpen(true)}
-                        >
-                          <Icon name="filter" size={16} />
-                          {selectedFilters.length > 0 && (
-                            <span id="client-filter-count">
-                              <span className="pico-visually-hidden">Выбрано фильтров </span>
-                              {selectedFilters.length}
-                            </span>
-                          )}
-                        </button>
                       </div>
                       {selectedFilters.length > 0 && (
                         <div
@@ -1224,6 +1229,7 @@ function App() {
             className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
             onClick={() => {
               setTab(key!);
+              setMore(false);
               setError('');
             }}
           >

@@ -29,3 +29,7 @@ Full402-case browser run:381 passed,12 intentional skips,9 failures. Six failure
 Final corrected/previously failing scenario retest:14 passed, including both renamed equipment cases and entry-timeout cases. Final combined new-filter/equipment/task-sheet/native-header/viewport regression after SDK fixture change:67 passed,3 intentional skips (1.7m). Independent review of legacy-test changes confirmed API/ACL/version assertions retained, not weakened; SDK stub does not alter production/auth API behavior. All observed full-run failures have been corrected and separately passed; the entire402-test command was not repeated after corrections. Format/diff checks passed.
 
 Implementation accepted within browser/API scope; no production deployment/push/merge. Asana remains In Progress: native browser automation reported the Mac locked when attempting Done; status was not changed. Branch contains the two preceding checked features.
+
+## Положение кнопки
+
+Кнопка «Фильтры клиентов» находится справа напротив заголовка «Клиенты» на пустом и заполненном экране. В мобильном Telegram справа от кнопки остаётся место для шестерёнки. Под поиском расположены три переключателя статуса.
