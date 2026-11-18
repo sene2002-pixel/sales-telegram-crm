@@ -4,7 +4,7 @@ import { Config } from '../config';
 import { Database } from '../infra/database';
 import { requireCondition } from '../domain/errors';
 import { DashboardService } from './dashboard';
-import { isLeader } from './auth';
+import { activeActor, isLeader } from './auth';
 import { TelegramAdapter } from '../infra/telegram';
 
 export class ExportService {
@@ -28,6 +28,11 @@ export class ExportService {
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 5 * 60_000);
     await this.db.transaction(async (tx) => {
+      requireCondition(
+        isLeader(await activeActor(tx, actor.id)),
+        403,
+        'Отчёт доступен руководителю',
+      );
       await tx.query('SELECT pg_advisory_xact_lock(7142503)');
       await tx.query('DELETE FROM csv_downloads WHERE expires_at <= now()');
       const rows = await tx.query('SELECT token_hash FROM csv_downloads WHERE owner_id=$1', [
@@ -63,7 +68,9 @@ export class ExportService {
       'Отправка доступна после входа через Telegram',
     );
     const snapshot = await this.snapshot(actor, from, to);
-    await this.telegram.sendDocument(actor.telegramId, snapshot.content, snapshot.filename);
+    const current = await activeActor(this.db, actor.id);
+    requireCondition(isLeader(current), 403, 'Отчёт доступен руководителю');
+    await this.telegram.sendDocument(current.telegramId, snapshot.content, snapshot.filename);
     return { sent: true };
   }
   private hash(token: string) {

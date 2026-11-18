@@ -5,6 +5,8 @@ Stop the app (not PostgreSQL) before backup/restore to keep attachments consiste
 """
 import argparse
 import io
+import os
+import tempfile
 from pathlib import Path
 import subprocess
 import tarfile
@@ -24,21 +26,29 @@ def require_stopped():
 
 def backup(output):
     require_stopped()
-    destination = Path(output).resolve()
-    if destination.exists():
+    destination = Path(output).absolute()
+    if os.path.lexists(destination):
         raise SystemExit("Output already exists; choose a new backup filename")
     destination.parent.mkdir(parents=True, exist_ok=True)
     dump = compose("exec", "-T", "postgres", "pg_dump", "-U", "crm", "-d", "crm",
                    "--clean", "--if-exists", "--no-owner", capture_output=True).stdout
-    with tarfile.open(destination, "x:gz") as archive:
-        metadata = tarfile.TarInfo("database.sql")
-        metadata.size = len(dump)
-        metadata.mode = 0o600
-        archive.addfile(metadata, io.BytesIO(dump))
-        files = ROOT / "data" / "files"
-        if files.exists():
-            archive.add(files, arcname="files", recursive=True)
-    destination.chmod(0o600)
+    # The temporary file is on the same filesystem, private from its first byte.
+    # link() publishes the completed archive without replacing a concurrent writer.
+    with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".crm-backup-") as target:
+        with tarfile.open(fileobj=target, mode="w:gz") as archive:
+            metadata = tarfile.TarInfo("database.sql")
+            metadata.size = len(dump)
+            metadata.mode = 0o600
+            archive.addfile(metadata, io.BytesIO(dump))
+            files = ROOT / "data" / "files"
+            if files.exists():
+                archive.add(files, arcname="files", recursive=True)
+        target.flush()
+        os.fsync(target.fileno())
+        try:
+            os.link(target.name, destination)
+        except FileExistsError:
+            raise SystemExit("Output already exists; choose a new backup filename") from None
     print(f"Backup created: {destination}")
 
 

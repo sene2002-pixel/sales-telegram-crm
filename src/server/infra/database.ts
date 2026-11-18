@@ -12,7 +12,14 @@ export class Database implements Sql {
   constructor(private config: Config) {}
   async init({ migrate = true } = {}) {
     if (this.config.databaseUrl)
-      this.pool = new Pool({ connectionString: this.config.databaseUrl, max: 10 });
+      this.pool = new Pool({
+        connectionString: this.config.databaseUrl,
+        max: 10,
+        connectionTimeoutMillis: 5000,
+        statement_timeout: 30000,
+        lock_timeout: 10000,
+        idle_in_transaction_session_timeout: 60000,
+      });
     else {
       await mkdir(this.config.dataDir, { recursive: true });
       this.embedded = new PGlite(join(this.config.dataDir, 'postgres'));
@@ -35,6 +42,21 @@ export class Database implements Sql {
           await tx.query(statement);
         await tx.query('INSERT INTO schema_migrations(version) VALUES(1)');
       }
+      await tx.query(`CREATE TABLE IF NOT EXISTS ai_budget_requests (
+        id uuid PRIMARY KEY, actor_id uuid NOT NULL REFERENCES users(id),
+        started_at timestamptz NOT NULL DEFAULT now(), lease_until timestamptz
+      )`);
+      await tx.query(
+        'CREATE INDEX IF NOT EXISTS ai_budget_started ON ai_budget_requests(started_at)',
+      );
+      await tx.query(`CREATE TABLE IF NOT EXISTS api_limit_windows (
+        key text PRIMARY KEY, count integer NOT NULL, until_at timestamptz NOT NULL)`);
+      await tx.query('CREATE INDEX IF NOT EXISTS api_limit_until ON api_limit_windows(until_at)');
+      await tx.query(`CREATE TABLE IF NOT EXISTS ai_usage_daily (
+        day date NOT NULL, actor_id uuid NOT NULL REFERENCES users(id), model text NOT NULL, operation text NOT NULL,
+        calls bigint NOT NULL, input_tokens bigint NOT NULL, cached_tokens bigint NOT NULL, output_tokens bigint NOT NULL,
+        audio_seconds bigint NOT NULL, search_calls bigint NOT NULL, incomplete bigint NOT NULL,
+        PRIMARY KEY(day,actor_id,model,operation))`);
       // User-authorized migration: parallel cards may share an INN across owners.
       // Preserve the old nonempty-INN/archive semantics. Build replacement first;
       // both DDL operations are transactional under the migration advisory lock.
@@ -42,6 +64,13 @@ export class Database implements Sql {
         ON companies (owner_id, (data->>'inn')) WHERE data->>'inn' <> ''`);
       await tx.query('DROP INDEX IF EXISTS companies_inn');
       await tx.query('INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING');
+      await tx.query(`CREATE TABLE IF NOT EXISTS import_column_requests (
+        source_key text PRIMARY KEY, author_id uuid NOT NULL REFERENCES users(id), signature text NOT NULL,
+        choices jsonb, created_at timestamptz NOT NULL DEFAULT now()
+      )`);
+      await tx.query(`CREATE TABLE IF NOT EXISTS import_photo_requests (
+        source_key text PRIMARY KEY, author_id uuid NOT NULL REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now()
+      )`);
       await tx.query(`CREATE TABLE IF NOT EXISTS company_imports (
         id uuid PRIMARY KEY, author_id uuid NOT NULL REFERENCES users(id), source_key text UNIQUE NOT NULL,
         source_label text NOT NULL, draft jsonb NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','saved','cancelled')),
@@ -254,6 +283,11 @@ export class Database implements Sql {
         );
         await tx.query('INSERT INTO schema_migrations(version) VALUES(3)');
       }
+      await tx.query(`CREATE TABLE IF NOT EXISTS file_storage_reservations (
+        key uuid PRIMARY KEY, author_id uuid NOT NULL REFERENCES users(id),
+        company_id uuid NOT NULL REFERENCES companies(id), bytes bigint NOT NULL CHECK (bytes >= 0),
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`);
       await tx.query(`CREATE TABLE IF NOT EXISTS request_history (
         report_id uuid PRIMARY KEY REFERENCES reports(id) ON DELETE CASCADE,
         user_id uuid NOT NULL REFERENCES users(id), source_key text NOT NULL,
@@ -286,6 +320,9 @@ export class Database implements Sql {
         id bigserial PRIMARY KEY, report_id uuid NOT NULL REFERENCES request_history(report_id) ON DELETE CASCADE,
         action_id uuid, event text NOT NULL, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now()
       )`);
+      // Only the migrator may change migration history under the optional split-role profile.
+      const roles = await tx.query("SELECT 1 FROM pg_roles WHERE rolname='crm_runtime'");
+      if (roles.length) await tx.query('REVOKE ALL ON schema_migrations FROM crm_runtime');
     });
   }
   async query<T = any>(sql: string, args: any[] = []): Promise<T[]> {

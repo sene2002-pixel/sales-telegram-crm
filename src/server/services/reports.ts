@@ -1,3 +1,5 @@
+import { AiBudgetLimit } from '../infra/ai-budget';
+import type { Config } from '../config';
 import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { resolveEmployeeFilter } from './employee-filter';
 import { companyDisplayName } from '../../shared/company-display-name';
@@ -15,7 +17,7 @@ import {
 import { Database, Sql } from '../infra/database';
 import { CrmService } from './crm';
 import { requireCondition } from '../domain/errors';
-import { isLeader } from './auth';
+import { activeActor, isLeader, readAsActor } from './auth';
 import { audit } from '../infra/audit';
 import { ProcessingStatus } from '../infra/processing-status';
 import { TaskMessages } from './task-messages';
@@ -49,9 +51,35 @@ export class ReportService {
     private crm: CrmService,
     private diagnostics?: DiagnosticLog,
     private retentionDays = 30,
+    private budget?: Config['aiBudget'],
   ) {
     this.processing = new ProcessingStatus(db);
     this.messages = new TaskMessages(db);
+  }
+  async checkQueue(tx: Sql, actorId: string, reportSourceKey?: string) {
+    if (!this.budget?.enabled) return;
+    await tx.query('SELECT pg_advisory_xact_lock(7142572)');
+    if (
+      reportSourceKey &&
+      (
+        await tx.query('SELECT id FROM reports WHERE source_key=$1 AND author_id=$2', [
+          reportSourceKey,
+          actorId,
+        ])
+      ).length
+    )
+      return;
+    const [queue] = await tx.query(
+      `SELECT count(*)::int AS total, count(*) FILTER(WHERE author_id=$1)::int AS own
+      FROM (
+        SELECT author_id FROM reports WHERE status IN ('queued','processing')
+        UNION ALL
+        SELECT user_id FROM letter_jobs WHERE status IN ('queued','processing')
+      ) paid_jobs`,
+      [actorId],
+    );
+    if (queue.total >= this.budget.systemQueue || queue.own >= this.budget.userQueue)
+      throw new AiBudgetLimit(30);
   }
   async enqueue(
     actor: Actor,
@@ -74,11 +102,12 @@ export class ReportService {
       'Нужен текст или голосовое сообщение',
     );
     return this.db.transaction(async (tx) => {
+      actor = await activeActor(tx, actor.id, input.purpose === 'dialogue');
+      await this.checkQueue(tx, actor.id, input.sourceKey);
       // Serialize arrival with dialogue callbacks; bind clarification before transcription/AI.
       let editActionId: string | null = null;
       let recipientJob: any = null;
       if (input.purpose === 'dialogue') {
-        await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
         const [editing] = await tx.query(
           "SELECT id FROM dialogue_actions WHERE user_id=$1 AND status='needs_info' AND snapshot->>'editing'='true' ORDER BY sequence LIMIT 1",
           [actor.id],
@@ -190,27 +219,26 @@ export class ReportService {
     ]);
   }
   async list(actor: Actor, employeeId?: unknown) {
-    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
-    return (
-      await this.db.query(
+    const rows = await readAsActor(this.db, actor, async (tx, current) => {
+      const employee = await resolveEmployeeFilter(tx, current, employeeId);
+      return tx.query(
         `SELECT r.*,u.name AS author_name FROM reports r JOIN users u ON u.id=r.author_id WHERE ($1::boolean OR r.author_id=$2) AND r.purpose='report' AND ($3::uuid IS NULL OR r.author_id=$3) ORDER BY r.created_at DESC LIMIT 200`,
-        [isLeader(actor), actor.id, employee],
-      )
-    ).map(mapReport);
+        [isLeader(current), current.id, employee],
+      );
+    });
+    return rows.map(mapReport);
   }
   async get(actor: Actor, id: string, tx: Sql = this.db, lock = false) {
-    const [r] = await tx.query(`SELECT * FROM reports WHERE id=$1 ${lock ? 'FOR UPDATE' : ''}`, [
-      idSchema.parse(id),
-    ]);
-    requireCondition(
-      r && r.purpose === 'report' && (isLeader(actor) || r.author_id === actor.id),
-      404,
-      'Отчёт не найден',
+    const [r] = await tx.query(
+      `SELECT r.* FROM reports r JOIN users a ON a.id=$2 AND a.active AND (a.role IN ('admin','supervisor') OR r.author_id=a.id) WHERE r.id=$1 AND r.purpose='report' ${lock ? 'FOR UPDATE OF r' : ''}`,
+      [idSchema.parse(id), actor.id],
     );
+    requireCondition(r, 404, 'Отчёт не найден');
     return r;
   }
   async edit(actor: Actor, id: string, version: number, draft: Extraction) {
     return this.db.transaction(async (tx) => {
+      actor = await activeActor(tx, actor.id);
       const r = await this.get(actor, id, tx, true);
       requireCondition(
         r.status === 'review' && r.version === version,
@@ -306,6 +334,7 @@ export class ReportService {
     );
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      actor = await activeActor(tx, actor.id);
       const r = await this.get(actor, id, tx, true);
       if (r.status === 'saved') return { id, status: 'saved', result: r.result };
       requireCondition(
@@ -316,7 +345,7 @@ export class ReportService {
       // Serialize cross-report matching/new-company creation to prevent duplicate companies from concurrent confirmations.
       await tx.query('SELECT pg_advisory_xact_lock(7142503)');
       const [author] = await tx.query<Actor>(
-        'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1',
+        'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1 FOR SHARE',
         [r.author_id],
       );
       requireCondition(author?.active, 409, 'Автор отчёта неактивен');
@@ -447,6 +476,7 @@ export class ReportService {
   }
   async transition(actor: Actor, id: string, action: 'cancel' | 'retry') {
     return this.db.transaction(async (tx) => {
+      actor = await activeActor(tx, actor.id);
       const r = await this.get(actor, id, tx, true);
       if (action === 'cancel' && r.status === 'cancelled') return { ok: true };
       requireCondition(
@@ -461,6 +491,7 @@ export class ReportService {
         409,
         'Недопустимое состояние отчёта',
       );
+      if (action === 'retry') await this.checkQueue(tx, r.author_id);
       await tx.query(
         `UPDATE reports SET status=$1,attempts=0,error=NULL,lease_until=NULL,lease_token=NULL,available_at=now(),version=version+1 WHERE id=$2`,
         [action === 'retry' ? 'queued' : 'cancelled', id],

@@ -17,13 +17,19 @@ export function photoMime(bytes: Uint8Array): 'image/jpeg' | 'image/png' {
   return mime;
 }
 
-export function photoDataUrl(bytes: Uint8Array) {
+export function photoDataUrl(bytes: Uint8Array, declaredMime?: string) {
   requireCondition(
     bytes.length > 0 && bytes.length <= maxPhotoBytes,
     413,
     'Фото должно быть не больше 10 МБ',
   );
-  return `data:${photoMime(bytes)};base64,${Buffer.from(bytes).toString('base64')}`;
+  const mime = photoMime(bytes);
+  requireCondition(
+    !declaredMime || mime === declaredMime,
+    400,
+    'Формат изображения не совпадает с типом файла. Пришлите исходный JPEG или PNG.',
+  );
+  return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
 }
 
 export const photoInstructions = `

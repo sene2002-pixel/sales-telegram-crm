@@ -25,6 +25,15 @@ import {
   normalizedPhones,
   normalizedImportDate,
 } from './import-normalization';
+import {
+  ColumnChoice,
+  ImportColumnModel,
+  importCompanyNameHeader,
+  knownImportCity,
+  mapUnknownColumn,
+  matchesColumnField,
+  withImportColumnModel,
+} from './import-column-mapping';
 import { normalizeLayout } from './import-table-layout';
 import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { companyDisplayName } from '../../shared/company-display-name';
@@ -73,6 +82,7 @@ export function assertImportPrivacy(text: string) {
 }
 
 export type ImportedCompany = {
+  registryPrefix?: string;
   legalForm?: string;
   raw?: Record<string, string>;
   sourceDate?: string;
@@ -283,7 +293,8 @@ export function sanitizeImportedCell(value: string): string {
 }
 const emptyCell = (value: string) => /^(?:[-—–]+|нет|н\/?д|нд|\?|уточнить)?$/iu.test(value.trim());
 function isNameHeader(value: string) {
-  return aliases[normalize(value)] === 'name';
+  const header = normalize(value);
+  return aliases[header] === 'name' || importCompanyNameHeader(header);
 }
 function extractCompanyNameCell(value: string): Record<string, any> {
   let name = value
@@ -303,8 +314,7 @@ function extractCompanyNameCell(value: string): Record<string, any> {
     if (candidate) facts.inn = candidate;
     name = name.replace(inn[0], ' ').trim();
   }
-  const knownCities =
-    /^(?:Москва|Санкт-Петербург|СПб|Спб|Мск|Казань|Омск|Тула|Рязань|Екатеринбург|Екб|Нижний Новгород|Новосибирск|Алматы|Астана)$/iu;
+
   name = name.replace(/\(([^()]*)\)/g, (whole, content: string) => {
     const segment = normalizedSegment(content.trim());
     if (segment) {
@@ -312,7 +322,7 @@ function extractCompanyNameCell(value: string): Record<string, any> {
       return '';
     }
     const pieces = content.split(',').map((v) => v.trim());
-    const city = pieces.find((v) => knownCities.test(v.replace(/^г\.?\s*/iu, '')));
+    const city = pieces.find((v) => knownImportCity.test(v.replace(/^г\.?\s*/iu, '')));
     if (city) {
       facts.city = normalizedCity(city);
       const alias = pieces.filter((v) => v !== city).join(' ');
@@ -331,7 +341,7 @@ function extractCompanyNameCell(value: string): Record<string, any> {
     return whole;
   });
   const citySuffix = /\s*(?:\||\sг\.?\s+)\s*([^|,;]+)$/iu.exec(name);
-  if (citySuffix && knownCities.test(citySuffix[1]!.trim())) {
+  if (citySuffix && knownImportCity.test(citySuffix[1]!.trim())) {
     facts.city = normalizedCity(citySuffix[1]!);
     name = name.slice(0, citySuffix.index).trim();
   }
@@ -360,6 +370,38 @@ function isTableHeader(row: string[]) {
     (projectColumn(row) >= 0 && customerColumn(row) >= 0) ||
     row.some((h) => /^(?:договор|счет|счёт|документ)$/iu.test(h.trim()))
   );
+}
+
+// Require a matching anchor in its original column or corroborating headings before
+// treating data as the start of the next table ("Юридическое лицо" is also a value).
+function tableStarts(rows: string[][]): number[] {
+  const starts: number[] = [];
+  let previous: string[] | undefined;
+  for (const [i, row] of rows.entries()) {
+    if (!isTableHeader(row)) continue;
+    const nameIndex = row.findIndex(isNameHeader);
+    if (
+      previous &&
+      nameIndex >= 0 &&
+      !(
+        isNameHeader(previous[nameIndex] || '') &&
+        normalize(previous[nameIndex]!) === normalize(row[nameIndex]!)
+      ) &&
+      !row.some(
+        (h, col) =>
+          col !== nameIndex &&
+          (aliases[normalize(h)] ||
+            /^(?:фио|телефон|контакты?|e-?mail|должность|классификация|тип записи)$/iu.test(
+              h.trim(),
+            )),
+      ) &&
+      !(projectColumn(row) >= 0 && customerColumn(row) >= 0)
+    )
+      continue;
+    previous = row;
+    starts.push(i);
+  }
+  return starts;
 }
 
 function parseProjectTable(
@@ -690,6 +732,7 @@ export function parseCompanyTable(
   privacy: ImportPrivacyGuard,
   sourceRows?: number[],
   sourceDate?: string,
+  choose?: ColumnChoice,
 ): ImportedCompany[] {
   let rowNumbers = sourceRows?.slice() || rows.map((_, index) => index + 1);
   requireCondition(
@@ -699,8 +742,9 @@ export function parseCompanyTable(
   );
   let removed = false;
   let forbiddenColumns = new Set<number>();
-  rows = rows.map((row) => {
-    if (isTableHeader(row))
+  const headerRows = new Set(tableStarts(rows));
+  rows = rows.map((row, index) => {
+    if (headerRows.has(index))
       forbiddenColumns = new Set(
         row.flatMap((value, col) =>
           sanitizeImportedCell(value) !== value ||
@@ -747,7 +791,12 @@ export function parseCompanyTable(
   const output: ImportedCompany[] = [];
   for (const [left, right] of regions) {
     const originalRegion = rows.map((r) => r.slice(left, right));
-    const originalStarts = originalRegion.flatMap((row, i) => (isTableHeader(row) ? [i] : []));
+    const originalStarts = tableStarts(originalRegion);
+    requireCondition(
+      originalStarts[0] === undefined || originalStarts[0] <= companyImportLimits.preambleRows,
+      400,
+      'Нужна шапка таблицы в первых 21 строках',
+    );
     const layouts =
       originalStarts.length > 1
         ? originalStarts.map((start, i) => {
@@ -777,7 +826,7 @@ export function parseCompanyTable(
         };
       }
     };
-    const starts = region.flatMap((row, i) => (isTableHeader(row) ? [i] : []));
+    const starts = tableStarts(region);
     if (!starts.length) continue;
     region.slice(0, starts[0]).forEach((row) =>
       row.forEach((cell) => {
@@ -877,6 +926,7 @@ export function parseCompanyTable(
         [header, ...data],
         `${source}${starts.length > 1 || regions.length > 1 ? ` · таблица ${block + 1}` : ''}`,
         privacy,
+        choose,
       );
       parsed.forEach((record, index) => {
         if (extraContacts.has(index))
@@ -902,6 +952,7 @@ function parseSingleCompanyTable(
   rows: string[][],
   source: string,
   privacy: ImportPrivacyGuard,
+  choose?: ColumnChoice,
 ): ImportedCompany[] {
   requireCondition(
     rows.length > 1 &&
@@ -909,9 +960,7 @@ function parseSingleCompanyTable(
     400,
     'Таблица должна содержать заголовок и до 100 компаний',
   );
-  const headerIndex = rows.findIndex((row) =>
-    row.some((cell) => aliases[normalize(cell)] === 'name'),
-  );
+  const headerIndex = rows.findIndex((row) => row.some(isNameHeader));
   requireCondition(
     headerIndex >= 0 && headerIndex <= companyImportLimits.preambleRows,
     400,
@@ -947,28 +996,10 @@ function parseSingleCompanyTable(
   const roleCol = fieldColumn(/^(?:должность|позиция контакта)$/iu);
   const phoneCol = fieldColumn(/^(?:телефон|телефоны|phone|тел\.)$/iu);
   const emailCol = fieldColumn(/^(?:e-?mail|email|почта|электронная почта)$/iu);
-  const cityCol = originalHeaders.findIndex((h) => aliases[normalize(h)] === 'city');
   const contactColumns = new Set(
     [contactColumn, personCol, roleCol, phoneCol, emailCol].filter((i) => i >= 0),
   );
   const originalRows = rows;
-  const contactRows = rows.slice(1).map((row) => {
-    const contacts =
-      contactColumn >= 0
-        ? parseBusinessContacts(row[contactColumn] || '', privacy, row[cityCol] || '')
-        : [];
-    if (personCol >= 0 && row[personCol]?.trim())
-      contacts.push(
-        ...parseBusinessContacts(
-          [row[personCol] || '', row[roleCol] || '', row[phoneCol] || '', row[emailCol] || ''].join(
-            ',',
-          ),
-          privacy,
-          row[cityCol] || '',
-        ),
-      );
-    return contacts;
-  });
   const safeRows = rows.map((row) =>
     row.map((value, col) => (contactColumns.has(col) ? '' : value)),
   );
@@ -989,8 +1020,47 @@ function parseSingleCompanyTable(
       requireCondition(!/^\s*[=+@]/.test(value), 400, 'Формулы в импортируемой таблице запрещены');
     }
   }
-  const header = rows[0]!.map(normalize),
-    mapped = header.map((h) => aliases[h]);
+  const header = rows[0]!.map(normalize);
+  const exact = header.map((h) => aliases[h] || (importCompanyNameHeader(h) ? 'name' : undefined));
+  const samples = rows.slice(1, 4);
+  const inferred = header.map((h, i) =>
+    exact[i] || !h
+      ? undefined
+      : mapUnknownColumn(
+          h,
+          samples.map((row) => row[i] || ''),
+          choose,
+        ),
+  );
+  const mapped = exact.map((field, i) => {
+    const candidate = inferred[i];
+    if (
+      field ||
+      !candidate ||
+      exact.includes(candidate) ||
+      inferred.indexOf(candidate) !== inferred.lastIndexOf(candidate)
+    )
+      return field;
+    return candidate;
+  });
+  const cityCol = mapped.indexOf('city');
+  const contactRows = originalRows.slice(1).map((row) => {
+    const value = row[cityCol]?.trim() || '';
+    const city = !inferred[cityCol] || matchesColumnField('city', value) ? value : '';
+    const contacts =
+      contactColumn >= 0 ? parseBusinessContacts(row[contactColumn] || '', privacy, city) : [];
+    if (personCol >= 0 && row[personCol]?.trim())
+      contacts.push(
+        ...parseBusinessContacts(
+          [row[personCol] || '', row[roleCol] || '', row[phoneCol] || '', row[emailCol] || ''].join(
+            ',',
+          ),
+          privacy,
+          city,
+        ),
+      );
+    return contacts;
+  });
   requireCondition(mapped.includes('name'), 400, 'Нужна колонка «Название компании»');
   requireCondition(
     new Set(mapped.filter(Boolean)).size === mapped.filter(Boolean).length,
@@ -1019,6 +1089,16 @@ function parseSingleCompanyTable(
       );
   });
   const result: ImportedCompany[] = [];
+  const nameColumn = mapped.indexOf('name');
+  const namesByWidth = new Map<number, Set<string>>();
+  for (const cells of originalRows.slice(1)) {
+    const value = cells[nameColumn]?.trim();
+    if (value && value.length >= 16) {
+      const names = namesByWidth.get(value.length) ?? new Set<string>();
+      names.add(value);
+      namesByWidth.set(value.length, names);
+    }
+  }
   for (let index = 1; index < rows.length; index++) {
     const row = rows[index]!;
     if (!row.some((v) => v.trim()) && !contactRows[index - 1]?.length) continue;
@@ -1031,6 +1111,11 @@ function parseSingleCompanyTable(
     mapped.forEach((field, col) => {
       const value = (row[col] || '').trim();
       if (!field || !value) return;
+      const candidate = inferred[col];
+      if (candidate && !matchesColumnField(candidate, value)) {
+        rowWarnings.push(`Значение колонки «${originalHeaders[col]}» пропущено: другой формат`);
+        return;
+      }
       if (field === 'segment') {
         const key =
           normalizedSegment(value) ||
@@ -1093,8 +1178,20 @@ function parseSingleCompanyTable(
       400,
       `Строка ${index + 1}: нет названия компании`,
     );
-    const originalName =
-      originalRows[index]?.[mapped.findIndex((field) => field === 'name')] || data.name;
+    const originalName = originalRows[index]?.[nameColumn]?.trim() || data.name;
+    const clippedForm = originalName.match(/^(.*?)\s+(?:ОО|ПА|ОА|ЗА)$/u);
+    const openQuote = originalName.match(/(?:^|\s)(?:(?:ООО|АО|ПАО|ОАО|ЗАО)\s+)?[«"]([^«»"]+)$/u);
+    const openParenthesis = originalName.match(/^([^()]+)\s*\([^()]*$/u);
+    const prefix =
+      clippedForm?.[1] ||
+      openQuote?.[1] ||
+      openParenthesis?.[1] ||
+      (/(?:…|\.{3})$/u.test(originalName)
+        ? originalName.replace(/(?:…|\.{3})$/u, '')
+        : (namesByWidth.get(originalName.length)?.size || 0) >= 4
+          ? originalName
+          : '');
+
     const holding = classifyHoldingMention(originalName);
     const eligibleHolding =
       (!data.country || /^(?:россия|рф|ru|russia)$/iu.test(data.country)) &&
@@ -1114,6 +1211,7 @@ function parseSingleCompanyTable(
     result.push({
       source: `${source} · строка ${index + headerIndex + 1}`,
       ...(legalForm ? { legalForm } : {}),
+      ...(prefix ? { registryPrefix: normalizedCompanyName(prefix.trim()) } : {}),
       ...(holding.holdingName && eligibleHolding && !holding.isHolding
         ? { holdingName: holding.holdingName }
         : {}),
@@ -1155,24 +1253,16 @@ function parseSingleCompanyTable(
   requireCondition(result.length, 400, 'В таблице нет компаний');
   return result;
 }
+function tableDelimiter(line: string): string | undefined {
+  return ['\t', ';', ','].find(
+    (separator) =>
+      line.includes(separator) &&
+      isTableHeader(line.split(separator).map((cell) => cell.trim().replace(/^"|"$/g, ''))),
+  );
+}
 function csv(text: string): string[][] {
   const lines = text.split(/\r?\n/, companyImportLimits.preambleRows + 1);
-  let delimiter = '';
-  for (const line of lines) {
-    const candidate = ['\t', ';', ','].find((separator) =>
-      line
-        .split(separator)
-        .some(
-          (cell) =>
-            isNameHeader(cell.trim().replace(/^"|"$/g, '')) ||
-            projectColumn([cell.trim().replace(/^"|"$/g, '')]) >= 0,
-        ),
-    );
-    if (candidate) {
-      delimiter = candidate;
-      break;
-    }
-  }
+  let delimiter = lines.map(tableDelimiter).find(Boolean);
   const first = lines[0] || '';
   delimiter ||= first.includes('\t') ? '\t' : first.includes(';') ? ';' : ',';
   const rows: string[][] = [],
@@ -1335,15 +1425,28 @@ export async function parseCompanyImport(
   format: 'xlsx' | 'csv' | 'txt' | 'docx' | 'ods',
   privacy: ImportPrivacyGuard,
   sourceDate?: string,
+  model?: ImportColumnModel,
+): Promise<ImportedCompany[]> {
+  return withImportColumnModel(
+    (choose) => parseImportContent(bytes, format, privacy, sourceDate, choose),
+    model,
+  );
+}
+async function parseImportContent(
+  bytes: Uint8Array,
+  format: 'xlsx' | 'csv' | 'txt' | 'docx' | 'ods',
+  privacy: ImportPrivacyGuard,
+  sourceDate?: string,
+  choose?: ColumnChoice,
 ): Promise<ImportedCompany[]> {
   requireCondition(
     bytes.length > 0 && bytes.length <= companyImportLimits.bytes,
     413,
     'Файл должен быть не больше 2 МБ',
   );
-  if (format === 'docx') return parseGoogleDocx(Buffer.from(bytes), privacy);
+  if (format === 'docx') return parseGoogleDocx(Buffer.from(bytes), privacy, choose);
   if (format === 'ods')
-    return parseOdsImport(await unzip(Buffer.from(bytes), 'ods'), privacy, sourceDate);
+    return parseOdsImport(await unzip(Buffer.from(bytes), 'ods'), privacy, sourceDate, choose);
   if (format !== 'xlsx') {
     let text: string;
     try {
@@ -1353,11 +1456,12 @@ export async function parseCompanyImport(
     }
     if (
       format === 'csv' ||
-      /^(?:название(?: компании)?|наименование|компания|name|company|проект|объект|заказчик)[\t;,]/i.test(
-        text.trim(),
-      )
+      text
+        .trim()
+        .split(/\r?\n/, companyImportLimits.preambleRows + 1)
+        .some(tableDelimiter)
     )
-      return parseCompanyTable(csv(text), 'Таблица', privacy, undefined, sourceDate);
+      return parseCompanyTable(csv(text), 'Таблица', privacy, undefined, sourceDate, choose);
     if (!text.includes(':'))
       return parseCompanyTable(
         [
@@ -1393,7 +1497,14 @@ export async function parseCompanyImport(
         headers.push(match[1]!);
         values.push(match[2]!);
       }
-      const parsed = parseCompanyTable([headers, values], 'Документ', privacy);
+      const parsed = parseCompanyTable(
+        [headers, values],
+        'Документ',
+        privacy,
+        undefined,
+        undefined,
+        choose,
+      );
       companies.push(
         ...parsed.map((company) => ({ ...company, source: `Документ · блок ${index + 1}` })),
       );
@@ -1403,7 +1514,7 @@ export async function parseCompanyImport(
   const parts = await unzip(Buffer.from(bytes));
   const template = parsePicoTemplate(parts, privacy);
   if (template) return template;
-  return parseGenericXlsx(parts, privacy, sourceDate);
+  return parseGenericXlsx(parts, privacy, sourceDate, choose);
 }
 function excelColumn(value: string) {
   return [...value].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
@@ -1412,6 +1523,7 @@ function parseGenericXlsx(
   parts: Map<string, string>,
   privacy: ImportPrivacyGuard,
   contextDate?: string,
+  choose?: ColumnChoice,
 ): ImportedCompany[] {
   requireCondition(parts.has('xl/workbook.xml'), 400, 'Это не XLSX-книга');
   const shared = arr(xml(parts.get('xl/sharedStrings.xml') || '<sst/>').sst?.si).map(textNode);
@@ -1547,6 +1659,7 @@ function parseGenericXlsx(
         privacy,
         orderedRows.map(([number]) => number),
         sourceDate,
+        choose,
       ),
     );
   }
@@ -1572,6 +1685,7 @@ function parseOdsImport(
   parts: Map<string, string>,
   privacy: ImportPrivacyGuard,
   contextDate?: string,
+  choose?: ColumnChoice,
 ): ImportedCompany[] {
   requireCondition(
     parts.has('content.xml') &&
@@ -1740,7 +1854,14 @@ function parseOdsImport(
     }
     if (rows.some(isTableHeader))
       result.push(
-        ...parseCompanyTable(rows, `ODS · лист ${index + 1}`, privacy, undefined, contextDate),
+        ...parseCompanyTable(
+          rows,
+          `ODS · лист ${index + 1}`,
+          privacy,
+          undefined,
+          contextDate,
+          choose,
+        ),
       );
   }
   requireCondition(
@@ -2350,6 +2471,7 @@ function parsePicoTemplate(
 async function parseGoogleDocx(
   bytes: Buffer,
   privacy: ImportPrivacyGuard,
+  choose?: ColumnChoice,
 ): Promise<ImportedCompany[]> {
   const parts = await unzip(bytes, 'docx');
   const raw = parts.get('word/document.xml');
@@ -2402,7 +2524,10 @@ async function parseGoogleDocx(
   const flush = async () => {
     const value = paragraphs.join('\n').trim();
     paragraphs = [];
-    if (value) result.push(...(await parseCompanyImport(Buffer.from(value), 'txt', privacy)));
+    if (value)
+      result.push(
+        ...(await parseImportContent(Buffer.from(value), 'txt', privacy, undefined, choose)),
+      );
   };
   for (const block of body) {
     if (block.p) paragraphs.push(text(block.p));
@@ -2449,7 +2574,9 @@ async function parseGoogleDocx(
         400,
         'Google Docs: число ячеек строки должно совпадать с заголовком',
       );
-      result.push(...parseCompanyTable(rows, 'Google Docs · таблица', privacy));
+      result.push(
+        ...parseCompanyTable(rows, 'Google Docs · таблица', privacy, undefined, undefined, choose),
+      );
     } else
       requireCondition(
         block.sectPr,

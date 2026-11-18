@@ -11,7 +11,7 @@ import { CompanyImports } from '../server/services/company-imports';
 import { assertImportPrivacy } from '../server/services/company-import-parser';
 import { Actor } from '../shared/contracts';
 
-test('registry enrichment preserves supplied city, original name, verified legal form and per-import lookup cache', async (t) => {
+async function fixture(t: import('node:test').TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'pico-registry-import-'));
   const db = new Database(makeConfig({ DATA_DIR: dir, DATABASE_URL: '', WORKER_ENABLED: 'false' }));
   await db.init();
@@ -32,8 +32,12 @@ test('registry enrichment preserves supplied city, original name, verified legal
     actor.name,
     actor.role,
   ]);
+  return { actor, db, crm: new CrmService(db) };
+}
+
+test('registry enrichment preserves supplied city, original name, verified legal form and per-import lookup cache', async (t) => {
+  const { actor, db, crm } = await fixture(t);
   let calls = 0;
-  const crm = new CrmService(db);
   const service = new CompanyImports(db, crm, assertImportPrivacy, {
     lookup: async (inn, signal) => {
       calls++;
@@ -64,4 +68,39 @@ test('registry enrichment preserves supplied city, original name, verified legal
   assert.equal(company.registrationCity, 'Москва');
   assert.equal(company.okved, '64.19');
   assert.ok(company.alternativeNames?.includes('Исходное'));
+});
+
+test('without a usable INN, only verified names and unique prefixes enrich an import before confirmation', async (t) => {
+  const { actor, db, crm } = await fixture(t);
+  const searched: string[] = [];
+  const inns = ['7707083893', '7736050003'];
+  const service = new CompanyImports(db, crm, assertImportPrivacy, {
+    search: async (name, city) => {
+      searched.push([name, city].join('|'));
+      return name === 'Отраслевой' ? inns : name === 'Примерный' ? [inns[0]!] : [];
+    },
+    lookup: async (inn) => ({
+      name: inn === inns[0] ? 'ООО «Примерный завод»' : 'ООО «Отраслевой склад»',
+      legalForm: 'ООО',
+      registrationCity: 'Москва',
+    }),
+  });
+  const preview = await service.prepare(actor, {
+    sourceKey: randomUUID(),
+    format: 'csv',
+    bytes: Buffer.from(
+      'Компания;ИНН;Город;Страна;Тип клиента\nПримерный…;124;Мск;Россия;\nОтраслевой; ;Москва;Россия;\nИностранный;;Москва;Казахстан;\nГруппа Подготовки;;Москва;Россия;Холдинг\nБез географии;;;;',
+    ),
+  });
+  assert.deepEqual(searched.sort(), ['Отраслевой|Москва', 'Примерный|Москва']);
+  const row = preview.rows.find((row) => row.data.name === 'Примерный завод');
+  assert.equal(row?.data.inn, inns[0]);
+  assert.equal(row?.data.registrationCity, 'Москва');
+  assert.ok(row?.data.alternativeNames?.includes('Примерный…'));
+  assert.ok(!row?.missing.includes('ИНН'));
+  assert.equal(preview.rows.find((row) => row.data.name === 'Отраслевой')?.data.inn, undefined);
+  assert.equal((await db.query('SELECT id FROM companies')).length, 0);
+  const confirmed = await service.confirm(actor, preview.id, preview.version);
+  const companies = await Promise.all(confirmed.created.map((id) => crm.company(actor, id)));
+  assert.equal(companies.find((row) => row.inn === inns[0])?.name, 'Примерный завод');
 });

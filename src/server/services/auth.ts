@@ -62,6 +62,34 @@ export function isLeader(actor: Actor) {
 }
 export const userProjection =
   'id, telegram_id AS "telegramId", name, role, active, supervisor_id AS "supervisorId"';
+// Use one MVCC snapshot for the role, team membership and protected rows.
+export function readAsActor<T>(
+  db: Database,
+  actor: Actor,
+  read: (tx: Sql, current: Actor) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+    const [current] = await tx.query<Actor>(`SELECT ${userProjection} FROM users WHERE id=$1`, [
+      actor.id,
+    ]);
+    requireCondition(
+      current?.active && current.role === actor.role,
+      403,
+      'Доступ изменён. Обновите страницу',
+    );
+    return read(tx, current);
+  });
+}
+// Keep the user's authorization stable until the protected database operation commits.
+export async function activeActor(tx: Sql, id: string, exclusive = false): Promise<Actor> {
+  const [current] = await tx.query<Actor>(
+    `SELECT ${userProjection} FROM users WHERE id=$1 FOR ${exclusive ? 'UPDATE' : 'SHARE'}`,
+    [id],
+  );
+  requireCondition(current?.active, 403, 'Доступ изменён. Учётная запись отключена');
+  return current;
+}
 export class AuthService {
   constructor(
     private db: Database,
@@ -150,8 +178,11 @@ export class AuthService {
     return { token: this.issue(actor), user: actor };
   }
   async users(actor: Actor) {
-    if (!isLeader(actor)) return [actor];
-    return this.db.query<Actor>(`SELECT ${userProjection} FROM users ORDER BY name`);
+    return readAsActor(this.db, actor, (tx, current) =>
+      isLeader(current)
+        ? tx.query<Actor>(`SELECT ${userProjection} FROM users ORDER BY name`)
+        : Promise.resolve([current]),
+    );
   }
   async admitUser(actor: Actor, raw: unknown) {
     requireCondition(actor.role === 'admin', 403, 'Только администратор управляет сотрудниками');
@@ -171,6 +202,11 @@ export class AuthService {
       .parse(raw);
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      requireCondition(
+        (await activeActor(tx, actor.id)).role === 'admin',
+        403,
+        'Только администратор управляет сотрудниками',
+      );
       const [existing] = await tx.query('SELECT id FROM users WHERE telegram_id=$1', [telegramId]);
       requireCondition(
         !existing,
@@ -201,6 +237,11 @@ export class AuthService {
       .parse(raw);
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      requireCondition(
+        (await activeActor(tx, actor.id)).role === 'admin',
+        403,
+        'Только администратор управляет сотрудниками',
+      );
       const [existing] = await tx.query<Actor>(
         `SELECT ${userProjection} FROM users WHERE telegram_id=$1 FOR UPDATE`,
         [input.telegramId],

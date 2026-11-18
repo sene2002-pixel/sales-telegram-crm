@@ -1,3 +1,4 @@
+import { contactPhone } from '../shared/contact-phone';
 import { companyDisplayName } from '../shared/company-display-name';
 import { companyContactChanges } from '../shared/company-edit-contacts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -486,7 +487,8 @@ export function CompanyDetail({
                   </div>
                   {tab === 'contact' && (
                     <p className="company-contact-values">
-                      <span>{r.data.role}</span> <span>{r.data.phone}</span>{' '}
+                      <span>{r.data.role}</span>{' '}
+                      <span>{contactPhone(r.data.phone, r.data.extension)}</span>{' '}
                       <span>{r.data.email}</span>
                     </p>
                   )}

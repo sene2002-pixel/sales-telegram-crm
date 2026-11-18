@@ -390,8 +390,9 @@ test('voice deletion uses private preview and confirmation, with durable transac
       await callback(actor, `sx:${draft.id}`);
       assert.equal(answers.at(-1).show_alert, true);
       assert.equal((await draftById(draft.id)).status, 'selecting_delete');
-      assert.deepEqual(await s.letters.signatures(actor), before);
+      await assert.rejects(s.letters.signatures(actor), /Доступ изменён/);
       await db.query('UPDATE users SET active=true WHERE id=$1', [actor.id]);
+      assert.deepEqual(await s.letters.signatures(actor), before);
       await callback(actor, `sx:${draft.id}`);
       assert.equal((await draftById(draft.id)).status, 'cancelled');
       await callback(actor, `sp:${draft.id}:0`);
@@ -636,6 +637,8 @@ test('voice deletion uses private preview and confirmation, with durable transac
         await callback(actor, `sx:${selecting.id}`);
         assert.equal(answers.at(-1).show_alert, true);
         assert.equal((await draftById(selecting.id)).status, 'pending');
+        await assert.rejects(s.letters.signatures(actor), /Доступ изменён/);
+        await db.query('UPDATE users SET active=true WHERE id=$1', [actor.id]);
         assert.deepEqual(await s.letters.signatures(actor), before);
       },
     );

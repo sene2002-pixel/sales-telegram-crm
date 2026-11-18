@@ -1322,6 +1322,7 @@ export class DialogueService {
       ]);
       if (job) {
         requireCondition(job.status === 'failed', 409, 'Письмо уже запущено или завершено.');
+        if (!job.file_id) await this.reports.checkQueue(tx, actor.id);
         await tx.query(
           'UPDATE letter_jobs SET status=$2,attempts=0,error=NULL,signature_id=$3,query=CASE WHEN file_id IS NULL THEN $4 ELSE query END,available_at=now(),lease_token=NULL,lease_until=NULL WHERE id=$1',
           [job.id, job.file_id ? 'ready' : 'queued', s.signature.id, query],
