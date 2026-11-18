@@ -1,3 +1,4 @@
+import { teamExportSchema } from '../../shared/team-metrics';
 import { AiBudget, AiBudgetLimit } from '../infra/ai-budget';
 import { PicoIdeas } from '../services/pico-ideas';
 import { maxIdeaScreenshotBytes } from '../../shared/pico-ideas';
@@ -385,12 +386,12 @@ class CrmController {
     return this.s.letters.create(r.actor, id, b);
   }
   @Post('dashboard/export-link') exportLink(@Req() r: AuthedRequest, @Body() body: unknown) {
-    const input = z.object({ from: z.string(), to: z.string() }).strict().parse(body);
-    return this.s.exports.issue(r.actor, input.from, input.to);
+    const { from, to, ...filter } = teamExportSchema.parse(body);
+    return this.s.exports.issue(r.actor, from, to, filter);
   }
   @Post('dashboard/export-bot') exportBot(@Req() r: AuthedRequest, @Body() body: unknown) {
-    const input = z.object({ from: z.string(), to: z.string() }).strict().parse(body);
-    return this.s.exports.sendToBot(r.actor, input.from, input.to);
+    const { from, to, ...filter } = teamExportSchema.parse(body);
+    return this.s.exports.sendToBot(r.actor, from, to, filter);
   }
   @Get('me') me(@Req() r: AuthedRequest) {
     return r.actor;
@@ -617,14 +618,14 @@ class CrmController {
   }
   @Get('dashboard/export') async csv(
     @Req() r: AuthedRequest,
-    @Query('from') from: string,
-    @Query('to') to: string,
+    @Query() query: unknown,
     @Res() response: Response,
   ) {
+    const { from, to, ...filter } = teamExportSchema.strip().parse(query);
     response
       .type('text/csv')
       .attachment('team-report.csv')
-      .send(await this.s.dashboard.csv(r.actor, from, to));
+      .send(await this.s.dashboard.csv(r.actor, from, to, filter));
   }
   @Post('companies/:id/files')
   @UseInterceptors(

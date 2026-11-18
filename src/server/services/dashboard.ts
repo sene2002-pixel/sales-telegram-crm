@@ -1,7 +1,9 @@
+import { selectTeamMetrics, TeamMetricsFilter, TeamStats } from '../../shared/team-metrics';
 import { resolveEmployeeFilter } from './employee-filter';
 import {
   Actor,
   dateSchema,
+  labels,
   AnalyticsSettings,
   analyticsSettingsInputSchema,
 } from '../../shared/contracts';
@@ -128,7 +130,9 @@ export class DashboardService {
     requireCondition(from <= to, 400, 'Неверный период');
     const { users, companies, records } = await readAsActor(this.db, actor, async (tx, current) => {
       requireCondition(isLeader(current), 403, 'Отчёт доступен руководителю');
-      const users = await tx.query('SELECT id,name,role,active FROM users ORDER BY name');
+      const users = await tx.query<Pick<TeamStats, 'id' | 'role' | 'name' | 'active'>>(
+        'SELECT id,name,role,active FROM users ORDER BY name,id',
+      );
       const companies = await tx.query('SELECT id,owner_id,data FROM companies');
       const records = await tx.query(
         `SELECT * FROM records WHERE kind IN ('task','activity') AND NOT deleted`,
@@ -183,8 +187,8 @@ export class DashboardService {
       };
     });
   }
-  async csv(actor: Actor, from: string, to: string) {
-    const rows = await this.summary(actor, from, to);
+  async csv(actor: Actor, from: string, to: string, filter: TeamMetricsFilter = {}) {
+    const rows = selectTeamMetrics(await this.summary(actor, from, to), filter);
     const cell = (v: unknown) =>
       '"' +
       String(v)
@@ -202,6 +206,7 @@ export class DashboardService {
           'Выполнено за период',
           'Контактов за период',
           'Без активности 14 дней',
+          'Роль',
         ],
         ...rows.map((r) => [
           r.name,
@@ -211,6 +216,7 @@ export class DashboardService {
           r.completed,
           r.interactions,
           r.inactiveCompanies.length,
+          labels[r.role],
         ]),
       ]
         .map((row) => row.map(cell).join(';'))
