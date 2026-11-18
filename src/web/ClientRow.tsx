@@ -1,3 +1,4 @@
+import { contactPhone } from '../shared/contact-phone';
 import { companyDisplayName } from '../shared/company-display-name';
 import { companyContactChanges } from '../shared/company-edit-contacts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -568,7 +569,9 @@ export function ClientRow({
                             </div>
                             <div>
                               <span>Телефон</span>
-                              <span>{r.data.phone || 'Не указан'}</span>
+                              <span>
+                                {contactPhone(r.data.phone, r.data.extension) || 'Не указан'}
+                              </span>
                             </div>
                           </div>
                           <div className="cc-contact-email">

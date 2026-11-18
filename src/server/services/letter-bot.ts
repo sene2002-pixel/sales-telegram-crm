@@ -1,3 +1,5 @@
+import { AiBudgetLimit } from '../infra/ai-budget';
+import { UncertainAiResult } from '../infra/ai';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -278,6 +280,7 @@ export class LetterBot {
           await this.industryChoices(tx, actor, job);
           return;
         }
+        await this.reports.checkQueue(tx, actor.id);
         await tx.query(
           "UPDATE letter_jobs SET status='queued',research_confirmed=true,attempts=0,available_at=now() WHERE id=$1",
           [id],
@@ -402,6 +405,7 @@ export class LetterBot {
         );
         return true;
       }
+      await this.reports.checkQueue(tx, actor.id);
       await tx.query(
         "UPDATE letter_jobs SET query=$2,status='queued',research=NULL,research_confirmed=false,recipient_user_provided=false,attempts=0,error=NULL,available_at=now() WHERE id=$1",
         [job.id, `ИНН ${inn}`],
@@ -478,6 +482,7 @@ export class LetterBot {
         409,
         'Предыдущее письмо ещё обрабатывается. Дождитесь результата',
       );
+      if (signature) await this.reports.checkQueue(tx, actor.id);
       const jobId = randomUUID();
       await tx.query(
         'INSERT INTO letter_jobs(id,source_key,user_id,chat_id,query,signature_id,status,signature_options) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
@@ -578,6 +583,7 @@ export class LetterBot {
         }
         requireCondition(Number.isInteger(index) && index >= 0, 400, 'Выберите подпись из списка');
         const selected = await checkedSignature(tx, actor.id, job.signature_options[index]);
+        await this.reports.checkQueue(tx, actor.id);
         await assignDefault(tx, actor.id, selected.id);
         await tx.query(
           "UPDATE letter_jobs SET signature_id=$1,status='queued',signature_options='[]',available_at=now() WHERE id=$2",
@@ -640,7 +646,8 @@ export class LetterBot {
         await this.enqueue(actor, report.source_key, query, tx);
       });
     } catch (error) {
-      if (!(error instanceof DomainError) || error.status >= 500) throw error;
+      if (error instanceof AiBudgetLimit || !(error instanceof DomainError) || error.status >= 500)
+        throw error;
       await this.crm.db.transaction(async (tx) => {
         const rows = await tx.query(
           `UPDATE reports SET purpose='letter',status='failed',transcript=NULL,audio_file_id=NULL,
@@ -997,13 +1004,32 @@ export class LetterBot {
         });
         // Saving the PDF, recipient and ready state is atomic inside LetterService.
       } catch (error) {
+        if (error instanceof AiBudgetLimit) {
+          await this.crm.db.transaction(async (tx) => {
+            const rows = await tx.query(
+              `UPDATE letter_jobs SET status='queued',attempts=greatest(0,attempts-1),lease_until=NULL,lease_token=NULL,
+               available_at=now()+$3::int*interval '1 second' WHERE id=$1 AND lease_token=$2 RETURNING id`,
+              [job.id, token, error.retryAfter],
+            );
+            if (rows.length)
+              await this.reports.processing.stage(
+                job.source_key,
+                'Ожидаю свободного лимита ИИ…',
+                tx,
+              );
+          });
+          return;
+        }
         await new ErrorLog(this.crm.db).record(error, {
           event: 'letter.job_failed',
           actorId: job.user_id,
           entityId: job.id,
           attempt: job.attempts,
         });
-        const terminal = job.attempts >= 3 || (error instanceof DomainError && error.status < 500);
+        const terminal =
+          job.attempts >= 3 ||
+          error instanceof UncertainAiResult ||
+          (error instanceof DomainError && error.status < 500);
         const message =
           error instanceof DomainError
             ? error.message

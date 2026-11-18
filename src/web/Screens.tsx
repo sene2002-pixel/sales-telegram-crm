@@ -1,3 +1,4 @@
+import { contactPhone } from '../shared/contact-phone';
 import { SwipeAction } from './ClientCardWidgets';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { AgendaTaskType, HomeAgenda } from './HomeAgenda';
@@ -197,7 +198,11 @@ function ContactLabel({ companyId, contactId }: { companyId: string; contactId?:
         <>
           {contact.data.name}
           <small>
-            {[contact.data.role, contact.data.phone, contact.data.email]
+            {[
+              contact.data.role,
+              contactPhone(contact.data.phone, contact.data.extension),
+              contact.data.email,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </small>
@@ -276,7 +281,7 @@ export function ScreenGuide({
     </section>
   );
 }
-function Empty({ icon, title, text }: { icon: string; title: string; text: string }) {
+export function Empty({ icon, title, text }: { icon: string; title: string; text: ReactNode }) {
   return (
     <div className={'pico-empty' + (icon === 'task-empty-calendar' ? ' pico-task-empty' : '')}>
       <span className="pico-empty-icon">

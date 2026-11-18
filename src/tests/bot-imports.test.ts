@@ -419,3 +419,213 @@ test('Template delivery failure is explained safely and a later button press can
   assert.equal(sends, 2);
   assert.equal((await rows('companies')).length, 0);
 });
+
+test('photo import requires an explicit caption, replays its preview, confirms once and supports undo', async (t) => {
+  input = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ2kAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const enabled = services.config.aiBudget.enabled;
+  services.config.aiBudget.enabled = true;
+  t.after(() => {
+    services.config.aiBudget.enabled = enabled;
+  });
+  assert.equal(services.diagnostics.enabled, false);
+  const sample = document(actor);
+  const message = { ...sample.message, document: undefined };
+  const image = {
+    ...sample,
+    message: {
+      ...message,
+      photo: [{ file_id: 'table-photo', width: 100, height: 100, file_size: input.length }],
+      caption: '/import',
+    },
+  };
+  const originalKey = services.config.apiKey;
+  services.config.apiKey = 'test-double';
+  t.after(() => {
+    services.config.apiKey = originalKey;
+  });
+  let signal!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+      signal = resolve;
+    }),
+    ongoing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  const provider = t.mock.method(
+    globalThis,
+    'fetch',
+    async (_url: unknown, options: RequestInit) => {
+      const body = JSON.parse(String(options.body));
+      assert.equal(body.store, false);
+      assert.equal(body.tools, undefined);
+      assert.equal(body.text.format.name, 'company_table');
+      signal();
+      await ongoing;
+      return Response.json({
+        status: 'completed',
+        output: [
+          {
+            content: [
+              {
+                type: 'output_text',
+                text: JSON.stringify({
+                  status: 'table',
+                  rows: [
+                    ['Название', 'Город'],
+                    ['Учебная компания', 'Самара'],
+                  ],
+                }),
+              },
+            ],
+          },
+        ],
+      });
+    },
+  );
+  await webhook({
+    ...image,
+    update_id: ++sequence,
+    message: { ...image.message, caption: '' },
+  }).expect(201);
+  assert.equal((await rows('reports')).length, 1);
+  assert.equal(provider.mock.callCount(), 0);
+  const sending = webhook(image)
+    .expect(201)
+    .then(() => undefined);
+  try {
+    await Promise.race([
+      started,
+      sending.then(() => {
+        throw new Error('OCR did not start');
+      }),
+    ]);
+    await webhook(image).expect(201);
+    assert.equal(provider.mock.callCount(), 1);
+  } finally {
+    release();
+    await sending;
+  }
+  assert.equal((await rows('companies')).length, 0);
+  const confirm = confirmData();
+  await webhook(image).expect(201);
+  assert.equal(confirmData(), confirm);
+  assert.equal(downloads, 1);
+  assert.equal(provider.mock.callCount(), 1);
+  const [usage] = await db.query(
+    'SELECT count(*)::int AS calls,count(lease_until)::int AS leases FROM ai_budget_requests WHERE actor_id=$1',
+    [actor.id],
+  );
+  assert.deepEqual(usage, { calls: 1, leases: 0 });
+  await webhook(callback(confirm, foreign)).expect(201);
+  assert.equal((await rows('companies')).length, 0);
+  await webhook(callback(confirm)).expect(201);
+  await webhook(callback(confirm)).expect(201);
+  const companies = await rows('companies');
+  assert.equal(companies.length, 1);
+  assert.equal(companies[0].data.city, 'Самара');
+  const undo = replies
+    .flatMap((r) => r.payload.reply_markup?.inline_keyboard?.flat() || [])
+    .find((b) => b.callback_data?.startsWith('iz:'));
+  assert.ok(undo);
+  await webhook(callback(undo.callback_data)).expect(201);
+  assert.equal((await rows('companies'))[0].data.archived, true);
+});
+
+test('photo import safely rejects unreadable, oversized and unauthorized results', async (t) => {
+  input = Buffer.from([255, 216, 255, 0]);
+  const sample = document();
+  const image = (extras: object = {}) => ({
+    ...sample,
+    update_id: ++sequence,
+    message: {
+      ...sample.message,
+      caption: '/import',
+      document: {
+        ...sample.message.document,
+        mime_type: 'image/jpeg',
+        file_name: 'company.jpg',
+        ...extras,
+      },
+    },
+  });
+  const originalKey = services.config.apiKey;
+  services.config.apiKey = 'test-double';
+  t.after(() => {
+    services.config.apiKey = originalKey;
+  });
+  let result: unknown = { status: 'table', rows: [['Название', 'Город'], ['Сдвинутая строка']] };
+  const provider = t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      status: 'completed',
+      output: [{ content: [{ type: 'output_text', text: JSON.stringify(result) }] }],
+    }),
+  );
+  const oversized = image({ file_size: companyImportLimits.bytes + 1 });
+  await webhook(oversized).expect(201);
+  assert.equal(downloads, 0);
+  assert.equal(provider.mock.callCount(), 0);
+  await webhook(image({ mime_type: 'image/gif' })).expect(201);
+  assert.equal(downloads, 0);
+  await webhook(image({ mime_type: 'image/png' })).expect(201);
+  assert.equal(downloads, 1);
+  assert.equal(provider.mock.callCount(), 0);
+  input = Buffer.alloc(companyImportLimits.bytes + 1);
+  await webhook(image({ file_size: 30 })).expect(201);
+  assert.equal(provider.mock.callCount(), 0);
+  input = Buffer.from([255, 216, 255, 0]);
+  const wrong = image();
+  await webhook(wrong).expect(201);
+  await webhook(wrong).expect(201);
+  assert.equal(provider.mock.callCount(), 1);
+  assert.equal(downloads, 3);
+  assert.equal((await rows('company_imports')).length, 0);
+  assert.ok(replies.some((r) => r.payload.text?.includes('Не удалось прочитать таблицу целиком')));
+  result = { status: 'too_large', rows: [] };
+  await webhook(image()).expect(201);
+  assert.ok(replies.some((r) => r.payload.text?.includes('Разделите таблицу')));
+  result = { status: 'table', command: 'save', rows: [['Название'], ['Тест']] };
+  await webhook(image()).expect(201);
+  assert.equal((await rows('company_imports')).length, 0);
+  result = { status: 'table', rows: [['Название'], ['а'.repeat(companyImportLimits.cell + 1)]] };
+  await webhook(image()).expect(201);
+  assert.equal((await rows('company_imports')).length, 0);
+  const blocked = image();
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actor.id]);
+  await webhook(blocked).expect(201);
+  assert.equal(provider.mock.callCount(), 4);
+  assert.equal((await rows('companies')).length, 0);
+});
+
+test('regional refusal shows the file alternative immediately and does not retry the paid request', async (t) => {
+  input = Buffer.from([255, 216, 255, 0]);
+  const key = services.config.apiKey;
+  services.config.apiKey = 'test-double';
+  t.after(() => {
+    services.config.apiKey = key;
+  });
+  const provider = t.mock.method(globalThis, 'fetch', async () =>
+    Response.json(
+      { error: { code: 'unsupported_country_region_territory', message: 'provider details' } },
+      { status: 403 },
+    ),
+  );
+  const original = document(actor, { mime_type: 'image/jpeg', file_name: 'scan.jpg' });
+  const photo = { ...original, message: { ...original.message, caption: '/import' } };
+  await webhook(photo).expect(201);
+  assert.ok(
+    replies.some(
+      (r) =>
+        r.payload.text?.includes('в регионе сервиса') && r.payload.text?.includes('CSV или XLSX'),
+    ),
+  );
+  await webhook(photo).expect(201);
+  assert.equal(provider.mock.callCount(), 1);
+  assert.equal((await rows('company_imports')).length, 0);
+  input = Buffer.from('Название;Город\nУчебная компания;Самара');
+  const file = document(actor);
+  await webhook({ ...file, message: { ...file.message, caption: '/import' } }).expect(201);
+  assert.ok(confirmData());
+  assert.equal(provider.mock.callCount(), 1);
+});

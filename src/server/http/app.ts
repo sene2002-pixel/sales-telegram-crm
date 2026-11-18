@@ -1,8 +1,11 @@
+import { AiBudget, AiBudgetLimit } from '../infra/ai-budget';
 import { PicoIdeas } from '../services/pico-ideas';
 import { maxIdeaScreenshotBytes } from '../../shared/pico-ideas';
 import { TeamInvitations } from '../services/team-invitations';
 import { PicoStars } from '../services/pico-stars';
+import { readImportPhoto } from '../services/import-photo';
 import { CompanyImports } from '../services/company-imports';
+import { importColumnModel } from '../services/import-column-mapping';
 import { SabyRegistry } from '../services/company-registry';
 import { assertImportPrivacy } from '../services/company-import-parser';
 import { mountApiDocs } from './api-docs';
@@ -36,13 +39,13 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response, json, static as serveStatic } from 'express';
 import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { storeCompanyFile } from '../services/file-storage';
 import { resolve, join, basename } from 'node:path';
 import { z, ZodError } from 'zod';
 import { Config } from '../config';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
-import { RateLimits } from '../infra/rate-limit';
+import { RateLimits, SharedRateLimits } from '../infra/rate-limit';
 import { redactSystemPayload, redactSystemText } from '../infra/system-confidentiality';
 import { DiagnosticLog } from '../infra/diagnostic-log';
 import { FileDownloads } from '../services/file-downloads';
@@ -95,9 +98,15 @@ export class Services {
     this.crm = new CrmService(db);
     this.ideas = new PicoIdeas(db);
     this.fileDownloads = new FileDownloads(this.crm, config);
-    const ai = new OpenAiAdapter(config, this.diagnostics);
+    const ai = new OpenAiAdapter(config, this.diagnostics, new AiBudget(db, config.aiBudget), db);
     this.letters = new LetterService(this.crm, config, ai, this.diagnostics);
-    this.reports = new ReportService(db, this.crm, this.diagnostics, config.requestRetentionDays);
+    this.reports = new ReportService(
+      db,
+      this.crm,
+      this.diagnostics,
+      config.requestRetentionDays,
+      config.aiBudget,
+    );
     const telegram = new TelegramAdapter(config, this.errors);
     this.telegram = telegram;
     this.invitations = new TeamInvitations(db);
@@ -154,9 +163,11 @@ export class Services {
           clientSecret: config.sabyClientSecret,
           serviceKey: config.sabyServiceKey,
         }),
+        config.apiKey ? importColumnModel(ai, config.extractionModel) : undefined,
       ),
       this.invitations,
       this.stars,
+      (bytes, declaredMime) => readImportPhoto(ai, config, bytes, declaredMime),
     );
     this.dashboard = new DashboardService(db, config.timezone);
     this.commercial = new CommercialReportService(db);
@@ -205,6 +216,7 @@ class Errors implements ExceptionFilter {
       status = 400;
       message = 'Связанная запись не найдена';
     }
+    if (error instanceof AiBudgetLimit) res.setHeader('Retry-After', String(error.retryAfter));
     const req = host.switchToHttp().getRequest();
     await this.logs.record(error, {
       event: 'request.failed',
@@ -624,33 +636,33 @@ class CrmController {
     @UploadedFile() file: Express.Multer.File,
     @Body() b: any,
   ) {
-    await this.s.crm.company(r.actor, id);
+    const company = await this.s.crm.company(r.actor, id);
+    requireCondition(!company.archived, 409, 'Сначала восстановите компанию из архива');
     requireCondition(file, 400, 'Выберите файл');
     const category = z
       .enum(['docs', 'catalog', 'brochure', 'ref', 'model'])
       .parse(b.category || 'docs');
     const projectId = b.projectId ? idSchema.parse(b.projectId) : null;
-    const key = randomUUID(),
-      folder = join(this.s.config.dataDir, 'files');
-    await mkdir(folder, { recursive: true });
-    await writeFile(join(folder, key), file.buffer, { flag: 'wx', mode: 0o600 });
-    try {
-      return await this.s.crm.createRecord(
-        r.actor,
-        id,
-        'file',
-        {
-          name: basename(Buffer.from(file.originalname, 'latin1').toString('utf8')).slice(0, 200),
-          category,
-          size: file.size,
-          key,
-        },
-        projectId,
-      );
-    } catch (e) {
-      await unlink(join(folder, key));
-      throw e;
-    }
+    return storeCompanyFile(
+      this.s.db,
+      this.s.config,
+      { authorId: r.actor.id, companyId: id },
+      file.buffer,
+      (tx, key) =>
+        this.s.crm.createRecord(
+          r.actor,
+          id,
+          'file',
+          {
+            name: basename(Buffer.from(file.originalname, 'latin1').toString('utf8')).slice(0, 200),
+            category,
+            size: file.buffer.length,
+            key,
+          },
+          projectId,
+          tx,
+        ),
+    );
   }
   @Get('files/:id') async file(
     @Req() r: AuthedRequest,
@@ -738,7 +750,7 @@ class IdeasController {
 
 export async function createApp(config: Config, existingDb?: Database) {
   const db = existingDb || new Database(config);
-  if (!existingDb) await db.init();
+  if (!existingDb) await db.init({ migrate: config.migrateOnStartup });
   const services = new Services(db, config);
   @Module({
     controllers: [PublicController, CrmController, IdeasController],
@@ -760,7 +772,9 @@ export async function createApp(config: Config, existingDb?: Database) {
   app.use((req: Request, res: Response, next: () => void) => {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-ID', res.locals.requestId);
-    if (!req.path.startsWith('/api') || !services.diagnostics.enabled) return next();
+    if (!req.path.startsWith('/api')) return next();
+    if (!services.diagnostics.enabled && !config.aiBudget.enabled && !config.aiUsageMetrics)
+      return next();
     const traceId = `http:${res.locals.requestId}`,
       started = Date.now();
     res.once('finish', () => {
@@ -792,14 +806,16 @@ export async function createApp(config: Config, existingDb?: Database) {
       },
     }),
   );
-  app.use(json({ limit: '256kb' }));
-  const limits = new RateLimits();
-  app.use((req: Request, res: Response, next: () => void) => {
+  const express = app.getHttpAdapter().getInstance();
+  if (config.trustedProxies.length) express.set('trust proxy', config.trustedProxies);
+  const limits = config.databaseUrl ? new SharedRateLimits(db) : new RateLimits();
+  const limitNotices = new RateLimits();
+  app.use(async (req: Request, res: Response, next: () => void) => {
     if (!req.path.startsWith('/api')) return next();
     res.setHeader('Cache-Control', 'no-store');
-    const ip = req.socket.remoteAddress || 'unknown';
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const authPath = req.path === '/api/auth' || req.path.startsWith('/api/auth/');
-    const ipWait = limits.consume(
+    const ipWait = await limits.consume(
       `ip:${ip}:${authPath ? 'auth' : 'api'}`,
       authPath ? 30 : config.apiIpLimit,
     );
@@ -815,17 +831,18 @@ export async function createApp(config: Config, existingDb?: Database) {
     }
     const identityWait = authPath
       ? 0
-      : limits.consume(
+      : await limits.consume(
           subject ? `user:${subject}` : `anonymous:${ip}`,
           subject ? config.apiUserLimit : 600,
         );
     const wait = Math.max(ipWait, identityWait);
     if (wait) {
-      void services.errors.record(new DomainError(429, 'Превышен лимит запросов'), {
-        event: 'request.rate_limited',
-        status: 429,
-        requestId: res.locals.requestId,
-      });
+      if (!limitNotices.consume('http-limit', 1))
+        void services.errors.record(new DomainError(429, 'Превышен лимит запросов'), {
+          event: 'request.rate_limited',
+          status: 429,
+          requestId: res.locals.requestId,
+        });
       res.setHeader('Retry-After', String(wait));
       res.status(429).json({
         message: `Слишком много запросов. Повторите через ${wait} сек.`,
@@ -835,6 +852,7 @@ export async function createApp(config: Config, existingDb?: Database) {
     }
     next();
   });
+  app.use(json({ limit: '256kb' }));
   app.useGlobalFilters(new Errors(services.errors, services.diagnostics));
   mountApiDocs(app.getHttpAdapter().getInstance(), {
     enabled: config.apiDocsEnabled,

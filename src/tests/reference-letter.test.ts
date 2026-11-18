@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server/http/app';
@@ -10,11 +10,8 @@ import { Actor } from '../shared/contracts';
 
 test('letter generation requires industry confirmation and rejects out-of-list references with bounded retries', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'crm-reference-pipeline-'));
-  const {
-    app,
-    db,
-    services: s,
-  } = await createApp(makeConfig({ DATA_DIR: dir, OPENAI_API_KEY: 'test' }));
+  const config = makeConfig({ DATA_DIR: dir, OPENAI_API_KEY: 'test' });
+  const { app, db, services: s } = await createApp(config);
   const actor: Actor = {
     id: randomUUID(),
     telegramId: '123',
@@ -140,6 +137,20 @@ test('letter generation requires industry confirmation and rejects out-of-list r
       );
       assert.deepEqual(history.details.ids, expectedIds);
       assert.equal(result.referenceWarning, undefined);
+      config.fileQuotas.enabled = true;
+      config.fileQuotas.companyFiles = 1;
+      const files = await readdir(join(dir, 'files'));
+      const numbers = await db.query('SELECT number FROM letter_numbers');
+      await assert.rejects(
+        s.letters.create(actor, company.id, { ...raw, confirmedIndustry: 'Машиностроение/OEM' }),
+        /лимит хранения файлов компании/,
+      );
+      assert.deepEqual(await readdir(join(dir, 'files')), files);
+      assert.deepEqual(await db.query('SELECT number FROM letter_numbers'), numbers);
+      assert.deepEqual(await db.query("SELECT id FROM records WHERE kind='file'"), [
+        { id: result.record.id },
+      ]);
+      config.fileQuotas.companyFiles = 2;
       const fs = require('node:fs/promises');
       const read = fs.readFile;
       const override = t.mock.method(fs, 'readFile', async (path: any, ...args: any[]) => {

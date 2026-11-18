@@ -10,7 +10,7 @@ import {
 } from '../../shared/sales';
 import { Database } from '../infra/database';
 import { requireCondition } from '../domain/errors';
-import { isLeader } from './auth';
+import { isLeader, readAsActor } from './auth';
 
 const statuses: Record<string, string> = {
   implementation: 'в реализации',
@@ -35,31 +35,33 @@ const clean = (s: string) =>
 export class CommercialReportService {
   constructor(private db: Database) {}
   async generate(actor: Actor, from: string, to: string, authorId?: string, employeeId?: unknown) {
-    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
-    if (employee) {
+    const rows = await readAsActor(this.db, actor, async (tx, current) => {
+      const employee = await resolveEmployeeFilter(tx, current, employeeId);
+      if (employee) {
+        requireCondition(
+          !authorId || authorId === employee,
+          400,
+          'Выбранный автор не соответствует фильтру сотрудника',
+        );
+        authorId = employee;
+      }
       requireCondition(
-        !authorId || authorId === employee,
-        400,
-        'Выбранный автор не соответствует фильтру сотрудника',
+        isLeader(current),
+        403,
+        'Коммерческий отчёт доступен руководителю и администратору',
       );
-      authorId = employee;
-    }
-    requireCondition(
-      isLeader(actor),
-      403,
-      'Коммерческий отчёт доступен руководителю и администратору',
-    );
-    dateSchema.parse(from);
-    dateSchema.parse(to);
-    requireCondition(from <= to, 400, 'Неверный период');
-    if (authorId) idSchema.parse(authorId);
-    const rows = await this.db.query(
-      `SELECT r.id,r.company_id,r.author_id,r.data,r.created_at,c.data AS company_data
+      dateSchema.parse(from);
+      dateSchema.parse(to);
+      requireCondition(from <= to, 400, 'Неверный период');
+      if (authorId) idSchema.parse(authorId);
+      return tx.query(
+        `SELECT r.id,r.company_id,r.author_id,r.data,r.created_at,c.data AS company_data
       FROM records r JOIN companies c ON c.id=r.company_id
       WHERE r.kind='activity' AND NOT r.deleted
       AND r.data->>'occurredOn'<=$1 ORDER BY r.created_at,r.id`,
-      [to],
-    );
+        [to],
+      );
+    });
     const companies = new Map<string, { name: string; events: SalesEvent[]; period: any[] }>();
     for (const r of rows) {
       const parsed = salesUpdateSchema.safeParse(r.data.sales);

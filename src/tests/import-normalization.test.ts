@@ -171,3 +171,30 @@ test('twenty preamble rows do not reduce the one hundred client import limit', a
     /21|заголовком/,
   );
 });
+
+test('registry prefix records clipping evidence without rewriting the imported name', () => {
+  const fixedWidth = [
+    'Промышленная линия А',
+    'Промышленная линия Б',
+    'Промышленная линия В',
+    'Промышленная линия Г',
+  ];
+  const cases: [string, string | undefined][] = [
+    ['Казанские Металлокорпусные Изделия ОО', 'Казанские Металлокорпусные Изделия'],
+    ['Энергетики ИЦ ООО "Инженерный Центр Э', 'Инженерный Центр Э'],
+    ['Отраслевой завод (обособленное', 'Отраслевой завод'],
+    ['РЕГИОНАЛЬНАЯ ЭНЕРГЕТИЧЕ…', 'РЕГИОНАЛЬНАЯ ЭНЕРГЕТИЧЕ'],
+    ['ООО «Полное название»', undefined],
+    ...fixedWidth.map((name): [string, string] => [name, name]),
+  ];
+  const rows = parseCompanyTable(
+    [['Компания', 'Город'], ...cases.map(([name]) => [name, 'Москва'])],
+    'CSV',
+    assertImportPrivacy,
+  );
+  assert.deepEqual(
+    rows.map((row) => row.registryPrefix),
+    cases.map(([, prefix]) => prefix),
+  );
+  assert.equal(rows[0]?.data.name, cases[0]![0]);
+});

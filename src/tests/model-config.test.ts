@@ -75,3 +75,25 @@ test('Luna and legacy requests preserve structured output, vision and search con
     assert.equal(requests[1].max_output_tokens, 2000);
   }
 });
+
+test('web-search tool limit is configurable, bounded and applied only to budgeted searches', async () => {
+  for (const value of ['0', '4', '1.5'])
+    assert.throws(() => makeConfig({ AI_MAX_WEB_SEARCH_CALLS: value }), /AI_MAX_WEB_SEARCH_CALLS/);
+  for (const enabled of [true, false]) {
+    const config = makeConfig({ AI_BUDGET_ENABLED: String(enabled), AI_MAX_WEB_SEARCH_CALLS: '3' });
+    const ai = new OpenAiAdapter(config);
+    const requests: Record<string, unknown>[] = [];
+    ai.request = async (_path, body) => {
+      requests.push(JSON.parse(String(body)));
+      return {
+        status: 'completed',
+        output: [{ content: [{ type: 'output_text', text: '{"ok":true}' }] }],
+      };
+    };
+    const letters = new LetterService({} as CrmService, config, ai);
+    for (const search of [false, true]) {
+      await letters.structured(z.object({ ok: z.boolean() }), 'Test', 'Example', search);
+      assert.equal(requests.at(-1)?.max_tool_calls, enabled && search ? 3 : undefined);
+    }
+  }
+});

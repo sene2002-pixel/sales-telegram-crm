@@ -5,9 +5,9 @@ import {
   AnalyticsSettings,
   analyticsSettingsInputSchema,
 } from '../../shared/contracts';
-import { Database } from '../infra/database';
+import { Database, Sql } from '../infra/database';
 import { requireCondition } from '../domain/errors';
-import { isLeader } from './auth';
+import { isLeader, readAsActor } from './auth';
 import { summarizeAnalytics, summarizeClientAnalytics } from '../../shared/analytics';
 import { audit } from '../infra/audit';
 import { z } from 'zod';
@@ -16,17 +16,11 @@ export class DashboardService {
     private db: Database,
     private timezone: string,
   ) {}
-  private async currentActor(actor: Actor) {
-    const [current] = await this.db.query('SELECT active,role FROM users WHERE id=$1', [actor.id]);
-    requireCondition(
-      current?.active && current.role === actor.role,
-      403,
-      'Доступ изменён. Обновите страницу',
-    );
-  }
   async analyticsSettings(actor: Actor): Promise<AnalyticsSettings> {
-    await this.currentActor(actor);
-    const [row] = await this.db.query('SELECT * FROM analytics_settings WHERE id=1');
+    return readAsActor(this.db, actor, (tx) => this.readSettings(tx));
+  }
+  private async readSettings(tx: Sql): Promise<AnalyticsSettings> {
+    const [row] = await tx.query('SELECT * FROM analytics_settings WHERE id=1');
     return {
       revision: row.revision,
       taskDays: row.task_days,
@@ -69,7 +63,6 @@ export class DashboardService {
     return this.analyticsSettings(actor);
   }
   async analytics(actor: Actor, from: string, to: string, employeeId?: unknown, rawMode?: unknown) {
-    await this.currentActor(actor);
     const mode = z.enum(['all', 'range']).parse(rawMode ?? 'range');
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: this.timezone,
@@ -82,7 +75,6 @@ export class DashboardService {
       400,
       'Начало периода не должно быть в будущем',
     );
-    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
     dateSchema.parse(from);
     dateSchema.parse(to);
     requireCondition(from <= to, 400, 'Неверный период');
@@ -91,23 +83,31 @@ export class DashboardService {
       400,
       'Период не должен превышать десять лет',
     );
-    const companies = await this.db.query(
-      'SELECT id,data,created_at,updated_at FROM companies WHERE ($1::boolean OR owner_id=$2) AND ($3::uuid IS NULL OR owner_id=$3)',
-      [isLeader(actor), actor.id, employee],
+    const { companies, events, records, recordEvents, settings } = await readAsActor(
+      this.db,
+      actor,
+      async (tx, current) => {
+        const employee = await resolveEmployeeFilter(tx, current, employeeId);
+        const companies = await tx.query(
+          'SELECT id,data,created_at,updated_at FROM companies WHERE ($1::boolean OR owner_id=$2) AND ($3::uuid IS NULL OR owner_id=$3)',
+          [isLeader(current), current.id, employee],
+        );
+        const events = await tx.query(
+          "SELECT a.company_id,a.entity_id,a.action,a.details,a.created_at,a.analytics_seq,a.analytics_order_proven FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND ($3::uuid IS NULL OR c.owner_id=$3) AND a.action IN ('company.created','company.updated','company.sales_updated','company.archived','company.restored','report.applied') ORDER BY a.created_at,a.analytics_seq",
+          [isLeader(current), current.id, employee],
+        );
+        const records = await tx.query(
+          "SELECT r.* FROM records r JOIN companies c ON c.id=r.company_id WHERE ($1::boolean OR c.owner_id=$2) AND r.kind IN ('task','contact','project')",
+          [isLeader(current), current.id],
+        );
+        const recordEvents = await tx.query(
+          "SELECT a.company_id,a.entity_id,a.action,a.details,a.created_at,a.analytics_seq,a.analytics_order_proven FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND a.action IN ('task.created','task.updated','task.deleted','contact.created','contact.updated','contact.deleted','project.created','project.updated') ORDER BY a.created_at,a.analytics_seq",
+          [isLeader(current), current.id],
+        );
+        const settings = await this.readSettings(tx);
+        return { companies, events, records, recordEvents, settings };
+      },
     );
-    const events = await this.db.query(
-      "SELECT a.company_id,a.entity_id,a.action,a.details,a.created_at,a.analytics_seq,a.analytics_order_proven FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND ($3::uuid IS NULL OR c.owner_id=$3) AND a.action IN ('company.created','company.updated','company.sales_updated','company.archived','company.restored','report.applied') ORDER BY a.created_at,a.analytics_seq",
-      [isLeader(actor), actor.id, employee],
-    );
-    const records = await this.db.query(
-      "SELECT r.* FROM records r JOIN companies c ON c.id=r.company_id WHERE ($1::boolean OR c.owner_id=$2) AND r.kind IN ('task','contact','project')",
-      [isLeader(actor), actor.id],
-    );
-    const recordEvents = await this.db.query(
-      "SELECT a.company_id,a.entity_id,a.action,a.details,a.created_at,a.analytics_seq,a.analytics_order_proven FROM audit a JOIN companies c ON c.id=a.company_id WHERE ($1::boolean OR c.owner_id=$2) AND a.action IN ('task.created','task.updated','task.deleted','contact.created','contact.updated','contact.deleted','project.created','project.updated') ORDER BY a.created_at,a.analytics_seq",
-      [isLeader(actor), actor.id],
-    );
-    const settings = await this.analyticsSettings(actor);
     return {
       ...summarizeAnalytics(companies as any, events as any, from, to, this.timezone),
       clientAnalytics: summarizeClientAnalytics(
@@ -123,15 +123,18 @@ export class DashboardService {
     };
   }
   async summary(actor: Actor, from: string, to: string) {
-    requireCondition(isLeader(actor), 403, 'Отчёт доступен руководителю');
     dateSchema.parse(from);
     dateSchema.parse(to);
     requireCondition(from <= to, 400, 'Неверный период');
-    const users = await this.db.query('SELECT id,name,role,active FROM users ORDER BY name');
-    const companies = await this.db.query('SELECT id,owner_id,data FROM companies');
-    const records = await this.db.query(
-      `SELECT * FROM records WHERE kind IN ('task','activity') AND NOT deleted`,
-    );
+    const { users, companies, records } = await readAsActor(this.db, actor, async (tx, current) => {
+      requireCondition(isLeader(current), 403, 'Отчёт доступен руководителю');
+      const users = await tx.query('SELECT id,name,role,active FROM users ORDER BY name');
+      const companies = await tx.query('SELECT id,owner_id,data FROM companies');
+      const records = await tx.query(
+        `SELECT * FROM records WHERE kind IN ('task','activity') AND NOT deleted`,
+      );
+      return { users, companies, records };
+    });
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: this.timezone,
       year: 'numeric',

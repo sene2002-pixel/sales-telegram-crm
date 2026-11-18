@@ -1,7 +1,7 @@
 import { TeamInvitations } from './team-invitations';
 import { readFile } from 'node:fs/promises';
 import { importTemplateAction, importTemplateCaption } from './import-onboarding';
-import { CompanyImports } from './company-imports';
+import { CompanyImports, CompanyImportPreview } from './company-imports';
 import { companyImportLimits } from './company-import-parser';
 import { companyDisplayName } from '../../shared/company-display-name';
 import { timingSafeEqual } from 'node:crypto';
@@ -93,7 +93,16 @@ export class BotService {
     private imports?: CompanyImports,
     private invitations?: TeamInvitations,
     private stars?: PicoStars,
+    private readImportPhoto?: (bytes: Uint8Array, declaredMime?: string) => Promise<string[][]>,
   ) {}
+  private async sendImportPreview(chatId: string, preview: CompanyImportPreview) {
+    for (const [index, text] of preview.messages.entries()) {
+      await this.telegram.send(chatId, {
+        text,
+        ...(index === preview.messages.length - 1 ? { reply_markup: preview.replyMarkup } : {}),
+      });
+    }
+  }
   verify(secret: string) {
     const a = Buffer.from(secret),
       b = Buffer.from(this.config.webhookSecret);
@@ -247,11 +256,7 @@ export class BotService {
             Number(index),
             decision || '',
           );
-          for (const [i, text] of preview.messages.entries())
-            await this.telegram.send(chatId, {
-              text,
-              ...(i === preview.messages.length - 1 ? { reply_markup: preview.replyMarkup } : {}),
-            });
+          await this.sendImportPreview(chatId, preview);
         } else if (action === 'iz') {
           await this.imports.undo(actor, id || '', Number(version));
           await this.telegram.send(chatId, {
@@ -290,6 +295,40 @@ export class BotService {
         });
         return { ok: true };
       }
+      if (!callback && command === '/import' && this.imports) {
+        await this.telegram.send(chatId, {
+          text: 'Для импорта с фото прикрепите чёткое изображение одной таблицы с заголовками. В подписи напишите /import. Изображение обрабатывается ИИ: уберите пароли и чувствительные личные сведения. Pico покажет результат до сохранения.',
+        });
+        return { ok: true };
+      }
+      const tableCaption = /^\/import(?:@\w+)?$/i.test(msg?.caption?.trim() || '');
+      const recognize = this.readImportPhoto;
+      const photoAttached = msg?.photo?.length || msg?.document?.mime_type?.startsWith('image/');
+      if (!callback && tableCaption && photoAttached && this.imports && recognize && msg) {
+        const limit = companyImportLimits.bytes;
+        const photo = msg.photo
+          ?.filter((p) => (p.file_size || 0) <= limit)
+          .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+        const file = photo || msg.document;
+        requireCondition(
+          !!file && (file.file_size || 0) <= limit,
+          413,
+          'Прикрепите фото таблицы JPEG или PNG до 2 МБ.',
+        );
+        requireCondition(
+          !msg.document || ['image/jpeg', 'image/png'].includes(msg.document.mime_type || ''),
+          400,
+          'Для импорта с фото выберите JPEG или PNG.',
+        );
+        const preview = await this.imports.preparePhoto(
+          actor,
+          `telegram:${update.update_id}`,
+          () => this.telegram.download(file.file_id, limit),
+          (bytes) => recognize(bytes, msg.document?.mime_type),
+        );
+        await this.sendImportPreview(chatId, preview);
+        return { ok: true };
+      }
       if (!callback && msg?.document && this.imports) {
         const extension = /\.(xlsx|ods|csv|txt|docx)$/i
           .exec(msg.document.file_name || '')?.[1]
@@ -319,13 +358,7 @@ export class BotService {
             bytes,
             format,
           });
-          for (let index = 0; index < preview.messages.length; index++)
-            await this.telegram.send(chatId, {
-              text: preview.messages[index],
-              ...(index === preview.messages.length - 1
-                ? { reply_markup: preview.replyMarkup }
-                : {}),
-            });
+          await this.sendImportPreview(chatId, preview);
           return { ok: true };
         }
       }
@@ -339,11 +372,7 @@ export class BotService {
           sourceKey: `telegram:${update.update_id}`,
           url: googleDocument[1]!,
         });
-        for (let index = 0; index < preview.messages.length; index++)
-          await this.telegram.send(chatId, {
-            text: preview.messages[index],
-            ...(index === preview.messages.length - 1 ? { reply_markup: preview.replyMarkup } : {}),
-          });
+        await this.sendImportPreview(chatId, preview);
         return { ok: true };
       }
       if (callback) {
