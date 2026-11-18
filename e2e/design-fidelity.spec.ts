@@ -58,7 +58,7 @@ async function fullWidthAction(page: Page, name: string | RegExp) {
   expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
 }
 
-test('Design fidelity: typed badges use distinct reference colors and money is compact', async ({
+test('Design fidelity: task rows use the reminder badge and client money is compact', async ({
   page,
 }, info) => {
   await login(page);
@@ -75,25 +75,13 @@ test('Design fidelity: typed badges use distinct reference colors and money is c
   }
   await page.reload();
   await navigate(page, 'Задачи');
-  const colors: string[] = [];
   for (const type of ['call', 'meeting', 'email', 'reminder']) {
-    const badge = page
-      .locator('.task-row')
-      .filter({ hasText: `${type} ${suffix}` })
-      .locator('.checkbox');
-    const [color, background] = await badge.evaluate((el) => [
-      getComputedStyle(el).color,
-      getComputedStyle(el).backgroundColor,
-    ]);
-    colors.push(color + '/' + background);
-    const rgb = color.match(/\d+/g)!.map(Number);
-    if (type === 'call') expect(rgb[1]).toBeGreaterThan(rgb[0]);
-    if (type === 'meeting') expect(rgb[2]).toBeGreaterThan(rgb[1]);
-    if (type === 'email') expect(rgb[2]).toBeGreaterThan(rgb[0]);
-    if (type === 'reminder') expect(rgb[0]).toBeGreaterThan(rgb[2]);
+    const row = page.locator('.task-row').filter({ hasText: `${type} ${suffix}` });
+    await expect(row.locator('.checkbox')).toHaveCSS('color', 'rgb(231, 134, 50)');
+    await expect(row.locator('.checkbox')).toHaveCSS('background-color', 'rgb(255, 236, 222)');
+    await expect(row.getByRole('checkbox')).not.toBeChecked();
   }
-  expect(new Set(colors).size).toBe(4);
-  await screenshot(page, 'typed-task-badges');
+  await screenshot(page, 'task-row-reminders');
   await navigate(page, 'Клиенты');
   const row = page.locator('.pico-client-accordion').filter({ hasText: company.name });
   await expect(row).toContainText(/730\s*млн/);

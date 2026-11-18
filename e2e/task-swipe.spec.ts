@@ -143,7 +143,10 @@ test('Swipe deletion has no confirmation, supports undo, then retains the task i
   await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
   const row = page.locator('.task-row').filter({ hasText: title });
   await expect(row).toBeVisible();
-  await expect(row).toContainText('Удалена');
+  await expect(row.locator('small')).toContainText('удалена');
+  await expect(row.getByRole('checkbox')).toHaveCount(0);
+  await expect(row.locator('.pico-task-closed-icon svg')).toHaveCSS('color', 'rgb(163, 171, 191)');
+  await expect(row.locator('.checkbox')).toHaveCSS('color', 'rgb(231, 134, 50)');
   await expect(row.locator('xpath=..')).not.toHaveClass(/cc-swipe-content/);
   expect((await stored()).data).toMatchObject({
     text: title,

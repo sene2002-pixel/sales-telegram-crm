@@ -64,5 +64,39 @@ test('holding links enforce ownership/type and aggregates; creation contacts is 
     crm.createWithContacts(actor, { name: 'Invalid', initialContacts: [{ name: '' }] }),
   );
   assert.equal((await crm.list(actor)).filter((c) => c.name === 'Invalid').length, 0);
+  const candidate = await crm.create(actor, { name: 'Existing buyer' });
+  const foreign = await crm.create(other, { name: 'Another buyer' });
+  const selection = { id: candidate.id, version: candidate.version };
+  for (const invalid of [
+    { id: foreign.id, version: foreign.version },
+    { id: child.id, version: child.version },
+    { id: candidate.id, version: candidate.version + 1 },
+    selection,
+  ]) {
+    await assert.rejects(
+      crm.createWithContacts(actor, {
+        name: 'Rolled back group',
+        segment: 'holding',
+        initialMembers: [selection, invalid],
+      }),
+    );
+    assert.equal((await crm.company(actor, candidate.id)).version, candidate.version);
+    assert.ok(!(await crm.list(actor)).some((entry) => entry.name === 'Rolled back group'));
+  }
+  const group = await crm.createWithContacts(actor, {
+    name: 'Group with buyers',
+    segment: 'holding',
+    initialMembers: [selection, { name: 'New buyer', inn: '7707083893', city: 'Москва' }],
+  });
+  const groupDetail = await crm.detail(actor, group.id);
+  assert.deepEqual(groupDetail.holdingMembers.map((member) => member.name).sort(), [
+    'Existing buyer',
+    'New buyer',
+  ]);
+  assert.equal(
+    groupDetail.holdingMembers.find((member) => member.name === 'New buyer')!.inn,
+    '7707083893',
+  );
+  assert.equal((await crm.company(actor, candidate.id)).version, candidate.version + 1);
   await assert.rejects(crm.create(actor, { name: 'Bad website', website: 'javascript:alert(1)' }));
 });

@@ -63,7 +63,7 @@ export function ClientPicker({
     (c) =>
       !c.archived &&
       !exclude.includes(c.id) &&
-      `${c.name} ${companyDisplayName(c.name, c.country)} ${c.city} ${c.industry}`
+      `${c.name} ${companyDisplayName(c.name, c.country)} ${c.city} ${c.industry} ${c.inn}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );

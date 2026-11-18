@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   companySchema,
   companyEditSchema,
+  companyCreateSchema,
   holdingAllocationSchema,
   contactSchema,
   projectSchema,
@@ -56,9 +57,7 @@ const namedInput = {
   CompanyInput: companySchema,
   CompanyEditInput: companyEditSchema,
   HoldingAllocationInput: holdingAllocationSchema,
-  CompanyCreateInput: companySchema.extend({
-    initialContacts: z.array(contactSchema).max(20).default([]),
-  }),
+  CompanyCreateInput: companyCreateSchema,
   ContactInput: contactSchema,
   ProjectInput: projectSchema,
   TaskInput: taskSchema,
