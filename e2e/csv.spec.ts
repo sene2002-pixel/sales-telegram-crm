@@ -55,12 +55,14 @@ test('CSV bot delivery button reports success and errors without redirecting', a
     await route.fulfill({ json: { sent: true } });
   });
   await page.getByRole('button', { name: 'Получить CSV в боте' }).click();
-  await expect(page.getByRole('status')).toContainText('CSV отправлен');
+  await expect(page.getByRole('status').filter({ hasText: 'CSV отправлен' })).toBeVisible();
   await page.route('**/api/dashboard/export-bot', (route) =>
     route.fulfill({ status: 502, json: { message: 'Не удалось отправить CSV' } }),
   );
   await page.getByRole('button', { name: 'Получить CSV в боте' }).click();
-  await expect(page.getByRole('alert')).toContainText('Не удалось отправить CSV');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Не удалось отправить CSV' }),
+  ).toBeVisible();
 });
 
 test('CSV Telegram native download uses issued HTTPS link and reports cancellation', async ({
@@ -91,7 +93,7 @@ test('CSV Telegram native download uses issued HTTPS link and reports cancellati
     });
   });
   await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Скачивание отменено');
+  await expect(page.getByRole('status').filter({ hasText: 'Скачивание отменено' })).toBeVisible();
   expect(await page.evaluate(() => (window as any).csvParams)).toEqual({
     url: 'https://crm.example.test/api/downloads/csv/test-ticket',
     file_name: 'team-report.csv',
@@ -105,7 +107,7 @@ test('CSV old Telegram explains fallback; API failure is visible', async ({ page
     };
   });
   await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Получить CSV в боте');
+  await expect(page.getByRole('status').filter({ hasText: 'Получить CSV в боте' })).toBeVisible();
   await page.evaluate(() => {
     window.Telegram!.WebApp!.isVersionAtLeast = () => true;
     window.Telegram!.WebApp!.downloadFile = () => {};
@@ -114,6 +116,6 @@ test('CSV old Telegram explains fallback; API failure is visible', async ({ page
     route.fulfill({ status: 503, json: { message: 'Для скачивания в Telegram нужен HTTPS' } }),
   );
   await page.getByRole('button', { name: 'Экспорт CSV', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('нужен HTTPS');
+  await expect(page.getByRole('alert').filter({ hasText: 'нужен HTTPS' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Экспорт CSV', exact: true })).toBeEnabled();
 });
