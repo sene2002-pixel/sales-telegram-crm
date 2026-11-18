@@ -13,10 +13,14 @@ test.beforeEach(async ({ page }) => {
       width: { configurable: true, value: 1440 },
       height: { configurable: true, value: 2560 },
     });
-    Object.defineProperties(screen.orientation, {
-      type: { configurable: true, value: 'portrait-primary' },
-      angle: { configurable: true, value: 0 },
-    });
+    if (screen.orientation) {
+      Object.defineProperties(screen.orientation, {
+        type: { configurable: true, value: 'portrait-primary' },
+        angle: { configurable: true, value: 0 },
+      });
+    } else {
+      Object.defineProperty(window, 'orientation', { configurable: true, value: 0 });
+    }
   });
 });
 function localToken(id: string) {
@@ -89,12 +93,22 @@ async function setup(page: Page) {
   return { token, actor, company, project, dates, task, scope };
 }
 async function filterGeometry(page: Page, label: string) {
-  const filter = page.getByRole('button', { name: label, exact: true }),
-    box = (await filter.boundingBox())!,
-    row = (await page.locator('.pico-filter-chip-row').boundingBox())!;
+  const isClientFilter = label === 'Фильтры клиентов';
+  const filter = page.getByRole('button', { name: label, exact: true });
+  const box = (await filter.boundingBox())!;
+  const row = (await page
+    .locator(isClientFilter ? '.pico-client-list-heading' : '.pico-filter-chip-row')
+    .boundingBox())!;
   expect(box.width).toBeCloseTo(60, 0);
   expect(box.height).toBeCloseTo(30, 0);
   expect(box.x + box.width).toBeCloseTo(row.x + row.width, 0);
+  if (isClientFilter) {
+    const title = (await page
+      .getByRole('heading', { name: 'Клиенты', exact: true })
+      .boundingBox())!;
+    expect(box.x).toBeGreaterThan(title.x + title.width);
+    expect(box.y + box.height / 2).toBeCloseTo(title.y + title.height / 2, 0);
+  }
   await filter.click();
   await expect(
     page.getByRole('dialog', {

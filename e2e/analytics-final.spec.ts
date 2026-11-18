@@ -368,12 +368,35 @@ test('Analytics preserves compact white rows, equal empty/populated indentation 
   await trigger.click();
   const button = page.getByRole('button', { name: 'Сформировать коммерческий отчёт', exact: true });
   await button.scrollIntoViewIfNeeded();
-  const parent = (await page
-    .getByRole('region', { name: 'Коммерческий отчёт', exact: true })
-    .boundingBox())!;
-  const box = (await button.boundingBox())!;
-  expect(Math.abs(box.x + box.width / 2 - parent.x - parent.width / 2)).toBeLessThanOrEqual(1);
-  expect(box.width).toBeLessThanOrEqual(parent.width - 28);
+  const report = page.getByRole('region', { name: 'Коммерческий отчёт', exact: true });
+  const from = report.getByLabel('Период с', { exact: true });
+  const to = report.getByLabel('Период по', { exact: true });
+  await from.fill('2026-10-20');
+  await to.fill('2026-11-18');
+  await expect(from).toHaveValue('2026-10-20');
+  await expect(to).toHaveValue('2026-11-18');
+  await expect(button).toBeEnabled();
+
+  await to.blur();
+
+  const widths = info.project.name === 'mobile' ? [320, 390] : [page.viewportSize()!.width];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 844 });
+    const parent = (await report.boundingBox())!;
+    const box = (await button.boundingBox())!;
+    expect(box.x + box.width / 2).toBeCloseTo(parent.x + parent.width / 2, 0);
+    expect(box.width).toBeLessThanOrEqual(parent.width - 28);
+
+    for (const date of [from, to]) {
+      const field = (await date.locator('..').boundingBox())!;
+      const input = (await date.boundingBox())!;
+      expect(input.x).toBeCloseTo(field.x, 0);
+      expect(input.x + input.width).toBeCloseTo(field.x + field.width, 0);
+      expect(input.x).toBeGreaterThanOrEqual(parent.x + 14);
+      expect(input.x + input.width).toBeLessThanOrEqual(parent.x + parent.width - 14);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  }
   await page.screenshot({
     path: info.outputPath('analytics-reviewed-rows-and-submit.png'),
     animations: 'disabled',

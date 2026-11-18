@@ -674,6 +674,7 @@ function App() {
   const application = (
     <div
       data-section={tab}
+      data-role={user.role}
       className={`app-shell${window.Telegram?.WebApp?.initData ? ' telegram-native-header' : ''}`}
     >
       <aside>
@@ -924,8 +925,25 @@ function App() {
                   );
                   return (
                     <>
-                      <div className="section-head">
+                      <div className="section-head pico-client-list-heading">
                         <h1>Клиенты</h1>
+                        <button
+                          ref={clientFiltersButton}
+                          className="pico-filter-chip pico-client-filter-trigger"
+                          aria-describedby={
+                            selectedFilters.length ? 'client-filter-count' : undefined
+                          }
+                          aria-label="Фильтры клиентов"
+                          onClick={() => setFiltersOpen(true)}
+                        >
+                          <Icon name="filter" size={16} />
+                          {selectedFilters.length > 0 && (
+                            <span id="client-filter-count">
+                              <span className="pico-visually-hidden">Выбрано фильтров </span>
+                              {selectedFilters.length}
+                            </span>
+                          )}
+                        </button>
                       </div>
                       <div className="pico-search pico-list-search pico-client-list-search">
                         <Icon name="list-search" size={18} />
@@ -962,23 +980,6 @@ function App() {
                             {label}
                           </button>
                         ))}
-                        <button
-                          ref={clientFiltersButton}
-                          className="pico-filter-chip pico-client-filter-trigger"
-                          aria-describedby={
-                            selectedFilters.length ? 'client-filter-count' : undefined
-                          }
-                          aria-label="Фильтры клиентов"
-                          onClick={() => setFiltersOpen(true)}
-                        >
-                          <Icon name="filter" size={16} />
-                          {selectedFilters.length > 0 && (
-                            <span id="client-filter-count">
-                              <span className="pico-visually-hidden">Выбрано фильтров </span>
-                              {selectedFilters.length}
-                            </span>
-                          )}
-                        </button>
                       </div>
                       {selectedFilters.length > 0 && (
                         <div

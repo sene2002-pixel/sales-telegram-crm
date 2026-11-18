@@ -429,15 +429,6 @@ html.pico-home-active,
   .pico-home-workspace > header .header-leading {
     display: none;
   }
-  .pico-home-workspace .pico-more-button {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 7;
-  }
-  .pico-home-workspace:has(.pico-home-greeting .pico-admin-button) .pico-more-button {
-    right: 40px;
-  }
   .pico-home-greeting:not(:has(.pico-admin-button)) {
     padding-right: 48px;
   }

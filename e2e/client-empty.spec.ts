@@ -62,8 +62,19 @@ test('New manager can read the empty client card and start adding a client', asy
     await page.screenshot({ path: info.outputPath('clients-empty-desktop.png') });
     await page.setViewportSize({ width: 390, height: 844 });
   }
-  await expect(page.getByRole('button', { name: 'Дополнительное меню' })).toBeVisible();
+  const gear = page.getByRole('button', { name: 'Дополнительное меню' });
+  await expect(gear).toBeVisible();
+  const filter = page.getByRole('button', { name: 'Фильтры клиентов', exact: true });
+  const title = page.getByRole('heading', { name: 'Клиенты', exact: true });
   await page.evaluate(() => document.fonts.ready);
+  const [filterBox, titleBox, gearBox] = await Promise.all([
+    filter.boundingBox(),
+    title.boundingBox(),
+    gear.boundingBox(),
+  ]);
+  expect(filterBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width);
+  expect(filterBox!.y + filterBox!.height / 2).toBeCloseTo(titleBox!.y + titleBox!.height / 2, 0);
+  if (mobile) expect(filterBox!.x + filterBox!.width).toBeLessThanOrEqual(gearBox!.x);
   const footer = page.getByRole('navigation', { name: 'Основная навигация' });
   await expect(async () => {
     const [nav, card] = await Promise.all([footer.boundingBox(), guide.boundingBox()]);
@@ -104,6 +115,12 @@ test('New manager can read the empty client card and start adding a client', asy
     expect(bounds.y + bounds.height).toBeLessThanOrEqual((await footer.boundingBox())!.y);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   }
+  await filter.focus();
+  await filter.press('Enter');
+  const filters = page.getByRole('dialog', { name: 'Фильтры', exact: true });
+  await expect(filters).toBeVisible();
+  await filters.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(filter).toBeFocused();
   await search.fill('Неизвестная компания');
   await expect(search).toBeFocused();
   await expect(
