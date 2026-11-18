@@ -3,6 +3,7 @@ import { Company, validInn } from '../shared/contracts';
 import { companyDisplayName } from '../shared/company-display-name';
 import { ClientPicker } from './FormWidgets';
 import { Icon } from './Icons';
+import { ClientTypeBadge } from './ClientTypeBadge';
 import './new-holding-members.css';
 
 export type NewMemberCompany = Pick<Company, 'inn' | 'name' | 'city'>;
@@ -59,9 +60,7 @@ export function NewHoldingMembers({
           <ul>
             {members.map((member) => (
               <li key={member.id || member.inn}>
-                <span className="new-holding-icon">
-                  <Icon name="building" size={16} />
-                </span>
+                <ClientTypeBadge segment="end_client" />
                 <div className="new-holding-summary">
                   <strong>{companyDisplayName(member.name)}</strong>
                   {member.id &&

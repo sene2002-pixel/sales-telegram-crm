@@ -48,7 +48,7 @@ test('manager creates a company and task, then data survives reload', async ({
   await openCompanySection(page, 'actions');
   await page.getByRole('button', { name: 'Редактировать компанию' }).click();
   await page.getByLabel('Город', { exact: true }).fill('Москва');
-  await page.getByRole('button', { name: 'Сохранить клиента' }).click();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Москва');
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('crm.png'), fullPage: true });

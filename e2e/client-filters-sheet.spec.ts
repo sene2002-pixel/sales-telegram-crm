@@ -124,7 +124,10 @@ async function setup(page: Page, width = 390) {
   return { api, tag, companies, cards, search, open };
 }
 async function show(sheet: Locator, count: number) {
-  const button = sheet.getByRole('button', { name: `Показать ${count} клиентов`, exact: true });
+  const button = sheet.getByRole('button', {
+    name: `Показать ${count} ${count === 1 ? 'клиента' : 'клиентов'}`,
+    exact: true,
+  });
   await expect(button).toBeEnabled();
   return button;
 }
@@ -190,6 +193,14 @@ for (const width of [320, 390, 1440]) {
     await (await show(sheet, 1)).click();
     await expect(cards).toHaveCount(1);
     await expect(cards).toContainText(companies[0].name);
+    const applied = page.getByRole('group', { name: 'Применённые фильтры' });
+    await expect(applied.getByRole('button')).toHaveCount(4);
+    await expect(
+      page.getByRole('button', { name: 'Фильтры клиентов' }),
+    ).toHaveAccessibleDescription('Выбрано фильтров 4');
+    await applied.getByRole('button', { name: 'Снять фильтр «Москва»' }).press('Enter');
+    await expect(applied.getByRole('button').first()).toBeFocused();
+    await expect(applied.getByRole('button')).toHaveCount(3);
     sheet = await open();
     const reset = sheet.getByRole('button', { name: 'Сбросить', exact: true });
     const showAll = await show(sheet, 1);
@@ -210,6 +221,7 @@ for (const width of [320, 390, 1440]) {
     ).toHaveCount(0);
     await (await show(sheet, 5)).click();
     await expect(cards).toHaveCount(5);
+    await expect(applied).toHaveCount(0);
     expect(await names(cards)).toEqual(companies.slice(0, 5).map((company) => company.name));
     await page.getByRole('button', { name: 'Закрытые', exact: true }).click();
     await expect(cards).toHaveCount(1);
@@ -229,6 +241,11 @@ for (const width of [320, 390, 1440]) {
     );
     await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
     expect(await page.getByRole('textbox', { name: 'Поиск компаний' }).inputValue()).toBe(tag);
+    sheet = await open();
+    await chip(sheet, 'Категория клиента', labels.integrator);
+    await (await show(sheet, 0)).click();
+    await applied.getByRole('button').press('Enter');
+    await expect(page.getByRole('button', { name: 'Фильтры клиентов' })).toBeFocused();
   });
 }
 
@@ -251,7 +268,9 @@ test('Client sort menu has seven keyboard-accessible choices and matches real AP
   await trigger.click();
   const menu = sheet.getByRole('menu', { name: 'Сортировка клиентов', exact: true });
   await expect(menu.getByRole('menuitemradio')).toHaveText(sorts);
-  await expect(menu).toHaveCSS('background-color', 'rgba(62, 69, 87, 0.92)');
+  await expect(menu).toHaveCSS('background-color', 'rgba(72, 74, 80, 0.88)');
+  await expect(menu).toHaveCSS('width', '236px');
+  await expect(menu.getByRole('menuitemradio').first()).toHaveCSS('min-height', '44px');
   await expect(menu.getByRole('menuitemradio', { name: sorts[0], exact: true })).toHaveAttribute(
     'aria-checked',
     'true',

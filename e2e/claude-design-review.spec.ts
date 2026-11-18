@@ -83,11 +83,23 @@ for (const width of [320, 390, 1280]) {
     const inn = sheet.getByRole('textbox', { name: 'ИНН', exact: true });
     await expect(heading).toBeInViewport();
     await expect(inn).toBeInViewport();
+    await expect(sheet.getByLabel('Название', { exact: true })).toHaveAttribute(
+      'placeholder',
+      'Компания',
+    );
+    await expect(sheet.getByLabel('Город', { exact: true })).toHaveAttribute(
+      'placeholder',
+      'Город',
+    );
+    await expect(sheet.locator('.company-form-accordion > summary').first()).toHaveText(
+      'Потенциал',
+    );
     await page.screenshot({
       path: info.outputPath(`new-client-top-${width}.png`),
       animations: 'disabled',
     });
     await sheet.getByText('Потенциал', { exact: true }).click();
+    await expect(sheet.getByRole('textbox', { name: 'КСО (КРУ)', exact: true })).toHaveCount(1);
     await sheet.getByText('Дополнительные поля', { exact: true }).click();
     const save = sheet.getByRole('button', { name: 'Сохранить клиента', exact: true });
     await save.scrollIntoViewIfNeeded();
@@ -98,7 +110,9 @@ for (const width of [320, 390, 1280]) {
       path: info.outputPath(`new-client-expanded-${width}.png`),
       animations: 'disabled',
     });
-    await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).scrollIntoViewIfNeeded();
+    const comment = sheet.getByRole('textbox', { name: 'Комментарий', exact: true });
+    await comment.scrollIntoViewIfNeeded();
+    await expect(comment).toHaveCSS('height', '64px');
     await expect(save).toBeInViewport();
     await expect(heading).toBeInViewport();
     await page.screenshot({
@@ -162,7 +176,7 @@ for (const width of [320, 390, 1280]) {
     });
     const longCity = 'Комсомольск-на-Амуре, промышленная площадка электротехнического оборудования';
     await editSheet.getByRole('textbox', { name: 'Город', exact: true }).fill(longCity);
-    await editSheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+    await editSheet.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(editSheet).toBeHidden();
     await card
       .locator('.cc-section > summary')

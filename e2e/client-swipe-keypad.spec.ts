@@ -242,7 +242,13 @@ test('Bottom-most form amount remains above Pico panel on short phone', async ({
     .locator('.company-form-accordion > summary')
     .filter({ hasText: /^Потенциал/ })
     .click();
-  const last = sheet.locator('.pico-number-input').last();
+  const inputs = sheet.locator('.pico-number-input');
+  await expect(inputs).toHaveCount(8);
+  for (const input of await inputs.all()) {
+    await expect(input).toHaveCSS('width', '64px');
+    await expect(input).toHaveCSS('height', '32px');
+  }
+  const last = inputs.last();
   await last.scrollIntoViewIfNeeded();
   await last.click();
   const keypad = page.getByRole('region', { name: 'Клавиатура Pico' });

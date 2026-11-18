@@ -25,9 +25,9 @@
 .company-form-body {
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 1px;
+  padding: 0;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   scroll-padding: 16px;
 }
 .company-form .field {
@@ -42,6 +42,21 @@
   font-size: 16px;
   scroll-margin: 16px;
 }
+.company-form.pico-compact-form .field {
+  gap: 6px;
+}
+.company-form .field > :is(input, textarea.pico-growing-textarea) {
+  padding-inline: 14px;
+}
+.company-form-body > .pico-chip-field {
+  margin-top: 2px;
+}
+.company-form-body > .pico-chip-field + .company-form-accordion {
+  margin-top: -2px;
+}
+.company-form .pico-chip-field .pico-field-heading {
+  margin-bottom: 8px;
+}
 .company-form .pico-chips {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -51,6 +66,7 @@
   min-height: 30px;
   border-radius: 10px;
   font-size: 12px;
+  line-height: normal;
   padding: 5px 8px;
   overflow-wrap: anywhere;
 }
@@ -61,6 +77,7 @@
   min-width: 0;
 }
 .company-form-accordion > summary {
+  box-sizing: content-box;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -72,6 +89,12 @@
   font-weight: 800;
   color: var(--text);
   border-top: 1px solid var(--line);
+}
+.company-form-accordion + .company-form-accordion {
+  margin-top: -14px;
+}
+.company-form-accordion[open] + .company-form-accordion {
+  margin-top: -2px;
 }
 .company-form-accordion > summary::-webkit-details-marker {
   display: none;
@@ -86,6 +109,7 @@
 }
 .company-form-accordion > summary > svg {
   flex: none;
+  color: #7a8299;
   transition: transform 0.15s;
 }
 .company-form-accordion[open] > summary > svg {
@@ -113,11 +137,13 @@
   min-width: 0;
 }
 .company-form .company-equipment-row > input {
-  width: 64px;
+  --pico-number-inset: 24px;
+  flex-shrink: 0;
+  max-width: 100%;
   min-width: 64px;
   height: 32px;
   min-height: 32px;
-  padding: 4px;
+  padding: 0 12px;
   text-align: right;
 }
 .company-form-footer {
@@ -203,7 +229,13 @@
   background: #f3f6fb;
   border: 1px solid #e6ebf3;
 }
-.company-form.pico-compact-form input::placeholder {
+.company-form.pico-compact-form .field :is(input, textarea, select) {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a2151;
+}
+.company-form.pico-compact-form input::placeholder,
+.company-form.pico-compact-form textarea::placeholder {
   color: #8a92a8;
   font-size: 14px;
   font-weight: 500;
@@ -214,11 +246,12 @@
 .company-form.pico-compact-form .pico-chips > button {
   font-weight: 600;
   color: #4a5370;
-  border-color: #cdd5e3;
+  border-color: #dde4f0;
   background: #fff;
 }
 .company-form.pico-compact-form .pico-chips > button.active {
   background: #1f7aea;
+  border-color: #1f7aea;
   color: #fff;
   font-weight: 700;
 }
@@ -244,16 +277,17 @@
   align-items: center;
   min-height: 32px;
   background: #f7faff;
-  padding: 0 10px;
+  padding: 0 14px;
   font-size: 12px;
   font-weight: 600;
   color: #7a8299;
 }
 .company-equipment-row {
-  box-sizing: border-box;
+  box-sizing: content-box;
   height: 44px;
   min-height: 44px;
-  padding: 6px 10px;
+  padding: 0 6px 0 14px;
+  font-size: 14px;
   border-top: 1px solid #eef2f8;
   color: #4a5370;
   font-weight: 600;
@@ -264,6 +298,7 @@
 }
 .company-form.pico-compact-form .company-equipment-row > input {
   height: 32px;
+  border: 0;
   min-height: 32px;
   border-radius: 10px;
   background: #f3f6fb;
@@ -281,7 +316,7 @@
   border-radius: 0;
   padding: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px 10px;
 }
 .company-contacts fieldset > .field:first-of-type,
 .company-contacts fieldset > .field:last-of-type {
@@ -289,6 +324,7 @@
 }
 .company-form.pico-compact-form .company-contacts .pico-add-row {
   min-height: 28px;
+  margin: 0;
   font-size: 14px;
   font-weight: 700;
   color: #1f7aea;
@@ -297,6 +333,13 @@
   border: 0;
   background: none;
 }
+.company-extra {
+  padding: 8px 0 24px;
+}
+.company-extra > .company-contacts {
+  gap: 10px;
+  margin-top: -4px;
+}
 .company-form.pico-compact-form textarea {
   min-height: 64px;
   border: 1px solid #e6ebf3;
@@ -304,7 +347,7 @@
   background: #f3f6fb;
 }
 .company-form-footer {
-  padding: 12px 0 max(28px, env(safe-area-inset-bottom));
+  padding: 16px 0 max(28px, var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)));
   border-color: #eef2f8;
 }
 .company-form-footer > .primary {
@@ -338,7 +381,12 @@
   line-height: 17px;
   font-weight: 500;
 }
-.company-form.pico-compact-form textarea {
+.company-form.pico-compact-form textarea.pico-growing-textarea {
+  min-height: 40px;
+  line-height: 20px;
+  padding-block: 10px 8px;
+}
+.company-form.pico-compact-form textarea.company-comment {
   height: 64px;
   min-height: 64px;
   resize: vertical;
@@ -350,6 +398,7 @@
   .company-form.pico-compact-form input,
   .company-form.pico-compact-form select,
   .company-form.pico-compact-form textarea,
+  .company-form.pico-compact-form .field :is(input, textarea, select):focus,
   .company-form.pico-compact-form .company-equipment-row > input,
   .cc-contact-form input {
     font-size: 16px;
@@ -377,4 +426,80 @@
   font-size: 12px;
   line-height: 17px;
   padding-top: 6px;
+}
+
+.modal.client-sheet:has(
+    > .client-sheet-body
+      > :is(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
+  ) {
+  padding: 8px calc(16px + var(--pico-safe-right, env(safe-area-inset-right, 0px))) 0
+    calc(16px + var(--pico-safe-left, env(safe-area-inset-left, 0px)));
+}
+.modal.client-sheet:has(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
+  > .client-sheet-handle {
+  margin-bottom: 12px;
+}
+.modal.client-sheet:has(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
+  > .section-head {
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.modal.client-sheet:has(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
+  > .section-head
+  h2 {
+  letter-spacing: -0.2px;
+  color: #1a2151;
+}
+.modal.client-sheet:has(.company-form, .pico-client-filters, .cc-equipment-sheet, .cc-contact-form)
+  > .section-head
+  > .icon {
+  margin-right: -12px;
+}
+.modal.client-sheet
+  > .client-sheet-body:has(
+    > .company-form,
+    > .pico-client-filters,
+    > .cc-equipment-sheet,
+    > .cc-contact-form
+  ) {
+  padding: 0;
+  margin: 0;
+}
+
+.modal.client-sheet:has(.cc-equipment-sheet) > .client-sheet-handle {
+  margin-bottom: 10px;
+}
+
+.modal.client-sheet:has(.cc-contact-form) > .section-head {
+  margin-bottom: 10px;
+}
+
+.company-form:has(.company-form-accordion[open]) > .company-form-footer {
+  padding-top: 12px;
+}
+@media (max-width: 760px) {
+  .modal.client-sheet:has(.new-holding-members) {
+    max-height: min(
+      87.7dvh,
+      calc(
+        var(--pico-view-height, 100dvh) - var(--pico-safe-top, 0px) - var(--pico-safe-bottom, 0px) -
+          24px
+      )
+    );
+  }
+  html:not([data-pico-number-open='true'])
+    .company-form-body:has(> .company-form-accordion[open] + .company-form-accordion:not([open])) {
+    padding-bottom: clamp(12px, 6dvh, 52px);
+  }
+  .modal.client-sheet:has(.company-form-accordion[open]) {
+    max-height: min(
+      85dvh,
+      calc(
+        var(--pico-view-height, 100dvh) - var(--pico-safe-top, 0px) - var(--pico-safe-bottom, 0px) -
+          24px
+      )
+    );
+  }
 }

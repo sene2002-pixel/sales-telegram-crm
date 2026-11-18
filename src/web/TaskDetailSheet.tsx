@@ -216,7 +216,7 @@ export function TaskDetailSheet(props: Props) {
   return (
     <Modal
       sheet
-      className={props.saveOnClose ? 'pico-agenda-task-sheet' : undefined}
+      className={props.saveOnClose ? 'pico-agenda-task-sheet' : 'pico-task-sheet'}
       showHandle={false}
       title={task.data.text}
       titleIcon={
@@ -245,7 +245,14 @@ export function TaskDetailSheet(props: Props) {
               onClick={() => void openField(label)}
             >
               <span>{label}</span>
-              <strong className={!content ? 'is-empty' : ''}>{content || 'Не выбрано'}</strong>
+              <strong className={!content ? 'is-empty' : ''}>
+                {content ||
+                  (label === 'Дата'
+                    ? 'Не указана'
+                    : label === 'Время'
+                      ? 'Не указано'
+                      : 'Не выбран')}
+              </strong>
               <Icon name="chevron-right" size={16} />
             </button>
           ))}
@@ -269,7 +276,7 @@ export function TaskDetailSheet(props: Props) {
                 props.onClose();
               }}
             >
-              <Icon name="trash" size={18} />
+              <Icon name="task-delete" size={18} />
               Удалить
             </button>
             <button
@@ -280,7 +287,7 @@ export function TaskDetailSheet(props: Props) {
                 props.onClose();
               }}
             >
-              <Icon name="check" size={18} />
+              <Icon name="task-check" size={18} />
               Выполнено
             </button>
           </div>

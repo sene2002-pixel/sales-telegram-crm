@@ -22,6 +22,7 @@ import {
 import { api, ApiError, money, today } from './api';
 import { Field, Modal, RecordForm, TaskComposer, Chips, ClientPicker } from './forms';
 import { Icon } from './Icons';
+import { ClientTypeBadge } from './ClientTypeBadge';
 import { PickerRow } from './FormWidgets';
 export type NamedRecord = CrmRecord & { companyName: string; projectName?: string | null };
 type Common = {
@@ -242,7 +243,7 @@ function TaskAdvice({ id }: { id: string }) {
   return (
     <section className="pico-task-advice">
       <h3>
-        <Icon name="sparkles" size={16} /> Pico подсказывает
+        <Icon name="task-advice" size={16} /> Pico подсказывает
       </h3>
       {advice ? (
         <>
@@ -307,7 +308,8 @@ export function TaskList({
           const pending = taskActions.queue.find(({ task }) => task.id === t.id)?.action;
           const closed = t.data.done || t.data.deleted;
           const badge = quickComplete ? 'reminder' : t.data.type || 'reminder';
-          const closedLabel = t.data.deleted ? 'удалена' : 'выполнена';
+          const closedLabel =
+            quickComplete && closed ? (t.data.deleted ? 'удалена' : 'выполнена') : '';
           const row = (
             <article className={'pico-task-row task-row task-type-' + badge} key={t.id}>
               <button type="button" className="task-text" disabled={!!pending} onClick={open}>
@@ -327,29 +329,32 @@ export function TaskList({
                   >
                     {t.data.text}
                   </strong>
-                  <small>
-                    {quickComplete && closed && `${closedLabel} · `}
-                    {!closed && t.data.due && t.data.due < today() && (
-                      <span className="pico-agenda-overdue">Просрочено · </span>
-                    )}
-                    {props.projects.find((p) => p.id === t.projectId)?.data.name ||
-                      t.projectName ||
-                      companyDisplayName(t.companyName)}
-                    {t.data.due
-                      ? ' · ' +
-                        new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
-                          day: 'numeric',
-                          month: 'short',
-                        }) +
-                        ' · ' +
-                        (t.data.time || 'Без времени')
-                      : ' · Без срока'}
+                  <small className={closedLabel ? 'pico-task-closed-meta' : undefined}>
+                    <span>
+                      {!closed && t.data.due && t.data.due < today() && (
+                        <span className="pico-agenda-overdue">Просрочено · </span>
+                      )}
+                      {props.projects.find((p) => p.id === t.projectId)?.data.name ||
+                        t.projectName ||
+                        companyDisplayName(t.companyName)}
+                      {t.data.due
+                        ? ' · ' +
+                          new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
+                            day: 'numeric',
+                            month: 'short',
+                          })
+                        : ' · Без срока'}
+                      {t.data.due &&
+                        (t.data.time || !closedLabel) &&
+                        ` · ${t.data.time || 'Без времени'}`}
+                    </span>
+                    {closedLabel && <span>{` · ${closedLabel}`}</span>}
                   </small>
                 </span>
                 {quickComplete ? (
                   closed && (
                     <span className="pico-task-closed-icon" aria-hidden="true">
-                      <Icon name={t.data.deleted ? 'trash' : 'check'} size={20} />
+                      <Icon name={t.data.deleted ? 'action-trash' : 'task-check'} size={20} />
                     </span>
                   )
                 ) : (
@@ -369,7 +374,7 @@ export function TaskList({
                   disabled={!!pending}
                   onClick={() => taskActions.schedule(t, 'done')}
                 >
-                  <span>{pending === 'done' && <Icon name="check" size={16} />}</span>
+                  <span>{pending === 'done' && <Icon name="task-check" size={14} />}</span>
                 </button>
               )}
             </article>
@@ -559,9 +564,10 @@ export function TasksScreen(
       <div className="section-head">
         <h1>{props.calendarOnly ? 'Календарь' : 'Задачи'}</h1>
       </div>
-      <div className="pico-search">
-        <Icon name="search" />
+      <div className="pico-search pico-list-search">
+        <Icon name="list-search" size={18} />
         <input
+          type="search"
           aria-label="Поиск задач"
           placeholder="Поиск задач, проектов, клиентов"
           value={query}
@@ -612,7 +618,7 @@ export function TasksScreen(
       <div className="pico-calendar panel">
         <div className="section-head">
           <button aria-label="Предыдущий месяц" onClick={() => shift(-1)}>
-            <Icon name="chevron-left" />
+            <Icon name="chevron-left" size={18} />
           </button>
           <strong>
             {new Date(month + '-01T12:00:00').toLocaleDateString('ru-RU', {
@@ -621,7 +627,7 @@ export function TasksScreen(
             })}
           </strong>
           <button aria-label="Следующий месяц" onClick={() => shift(1)}>
-            <Icon name="chevron-right" />
+            <Icon name="chevron-right" size={18} />
           </button>
         </div>
         <input
@@ -655,7 +661,7 @@ export function TasksScreen(
                   }}
                 >
                   <span className="pico-calendar-day">
-                    <strong>{i + 1}</strong>
+                    {i + 1}
                     {count > 0 && (
                       <span className="pico-calendar-dots" aria-hidden="true">
                         {Array.from({ length: Math.min(count, 3) }, (_, index) => (
@@ -671,7 +677,7 @@ export function TasksScreen(
         </div>
       </div>
       <button className="pico-add-row" onClick={props.onCreate}>
-        <Icon name="plus" /> Добавить задачу <Icon name="chevron-right" size={16} />
+        <Icon name="list-add" size={18} /> Добавить задачу <Icon name="chevron-right" size={18} />
       </button>
       {filtersOpen && (
         <Modal title="Фильтры задач" onClose={() => setFiltersOpen(false)}>
@@ -830,7 +836,11 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
         {props.employeeId && <p className="pico-employee-context">Проекты клиентов сотрудника</p>}
       </div>
       {filtersOpen && (
-        <Modal title="Фильтры проектов" onClose={() => setFiltersOpen(false)}>
+        <Modal
+          className="pico-project-options"
+          title="Фильтры проектов"
+          onClose={() => setFiltersOpen(false)}
+        >
           <Chips
             label="Оборудование"
             options={primaryDivisions.filter((d) => d !== 'services')}
@@ -875,16 +885,17 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
           </div>
         </Modal>
       )}
-      <div className="pico-search">
-        <Icon name="search" />
+      <div className="pico-search pico-list-search">
+        <Icon name="list-search" size={18} />
         <input
+          type="search"
           aria-label="Поиск проектов"
           placeholder="Поиск проекта или клиента"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div className="tabs pico-chips pico-filter-chip-row">
+      <div className="tabs pico-chips pico-filter-chip-row pico-project-tabs">
         {[
           ['all', 'Все'],
           ['open', 'В работе'],
@@ -908,7 +919,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
         </button>
       </div>
       <button className="pico-add-row" onClick={props.onCreate}>
-        <Icon name="plus" /> Добавить проект <Icon name="chevron-right" size={16} />
+        <Icon name="list-add" size={18} /> Добавить проект <Icon name="chevron-right" size={18} />
       </button>
       {editing && (
         <Modal title="Изменить проект" onClose={() => setEditing(null)}>
@@ -949,29 +960,29 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
                   Сумма: <b title={fullMoney(p.data.amount)}>{compactMoney(p.data.amount)}</b>
                 </small>
               </span>
-              <Icon name="chevron-down" size={16} />
+              <Icon name="chevron-down-small" size={18} />
             </summary>
-            <button className="pico-add-row" onClick={() => setEditing(p)}>
-              <Icon name="edit" /> Изменить проект
-            </button>
-            <dl className="pico-detail-fields">
-              <dt>Стадия</dt>
-              <dd>{labels[p.data.stage]}</dd>
-              <dt>Срок реализации</dt>
-              <dd>{p.data.due || 'Не указан'}</dd>
-              <dt>Город</dt>
-              <dd>{p.data.city || 'Не указан'}</dd>
-              <dt>Тип объекта</dt>
+            <dl className="pico-detail-fields pico-project-facts">
+              <dt>
+                <Icon name="building" size={14} />
+                Тип объекта
+              </dt>
               <dd>{p.data.objectType || 'Не указан'}</dd>
-              <dt>Дата закупки</dt>
-              <dd>{p.data.purchaseDate || 'Не указана'}</dd>
-              <dt>Описание</dt>
-              <dd>{p.data.notes || 'Не указано'}</dd>
+              <dt>
+                <Icon name="project-location" size={14} />
+                Город
+              </dt>
+              <dd>{p.data.city || 'Не указан'}</dd>
+              <dt>
+                <Icon name="clock" size={14} />
+                Срок реализации
+              </dt>
+              <dd>{p.data.due || 'Не указан'}</dd>
             </dl>
             {p.data.equipment?.length > 0 && (
-              <section>
+              <section className="pico-project-equipment">
                 <h3>
-                  Оборудование ·{' '}
+                  <Icon name="cube" size={15} /> Оборудование ·{' '}
                   {money(
                     p.data.equipment.every((e: any) => e.amount !== null)
                       ? p.data.equipment.reduce((s: number, e: any) => s + e.amount, 0)
@@ -979,7 +990,8 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
                   )}
                 </h3>
                 {p.data.equipment.map((e: any, i: number) => (
-                  <div className="pico-potential-client" key={i}>
+                  <div className="pico-project-equipment-row" key={i}>
+                    <Icon name="cube" size={14} />
                     <span>{e.name || labels[e.division]}</span>
                     <strong>{money(e.amount)}</strong>
                   </div>
@@ -987,38 +999,62 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
               </section>
             )}
             {p.data.participants?.length > 0 && (
-              <section>
-                <h3>Участники проекта</h3>
-                {p.data.participants.map((member: any, i: number) => (
-                  <details key={i}>
-                    <summary>
-                      {companyDisplayName(
-                        props.companies.find((c) => c.id === member.companyId)?.name,
-                      ) || 'Клиент недоступен'}{' '}
-                      · {member.role}
-                    </summary>
-                    <dl className="pico-detail-fields">
-                      <dt>Контакт</dt>
-                      <dd>
-                        <ContactLabel companyId={member.companyId} contactId={member.contactId} />
-                      </dd>
-                      <dt>Текущая задача</dt>
-                      <dd>{member.currentTask || 'Не указана'}</dd>
-                      <dt>Следующий шаг</dt>
-                      <dd>{member.nextStep || 'Не указан'}</dd>
-                    </dl>
-                    <button
-                      onClick={() => {
-                        const c = props.companies.find((c) => c.id === member.companyId);
-                        if (c) props.onCompany(c);
-                      }}
-                    >
-                      Открыть участника
-                    </button>
-                  </details>
-                ))}
-              </section>
+              <details className="pico-project-members">
+                <summary>
+                  <Icon name="clients" size={15} />
+                  Участники проекта ({p.data.participants.length})
+                  <Icon name="chevron-down" size={16} />
+                </summary>
+                {p.data.participants.map((member: any) => {
+                  const company = props.companies.find((c) => c.id === member.companyId);
+                  const description = [company?.industry, company?.legalForm]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return (
+                    <details className="pico-project-member" key={member.companyId}>
+                      <summary>
+                        <ClientTypeBadge segment={company?.segment} industry={company?.industry} />
+                        <span>
+                          <strong>
+                            {companyDisplayName(company?.name, company?.country) ||
+                              'Клиент недоступен'}
+                          </strong>
+                          <small>{member.role}</small>
+                          {description && <small>{description}</small>}
+                        </span>
+                        <Icon name="chevron-right" size={16} />
+                      </summary>
+                      <dl className="pico-detail-fields">
+                        <dt>Контакт</dt>
+                        <dd>
+                          <ContactLabel companyId={member.companyId} contactId={member.contactId} />
+                        </dd>
+                        <dt>Текущая задача</dt>
+                        <dd>{member.currentTask || 'Не указана'}</dd>
+                        <dt>Следующий шаг</dt>
+                        <dd>{member.nextStep || 'Не указан'}</dd>
+                      </dl>
+                      {company && (
+                        <button className="text-button" onClick={() => props.onCompany(company)}>
+                          Открыть участника
+                        </button>
+                      )}
+                    </details>
+                  );
+                })}
+              </details>
             )}
+            <dl className="pico-detail-fields">
+              <dt>Стадия</dt>
+              <dd>{labels[p.data.stage]}</dd>
+              <dt>Дата закупки</dt>
+              <dd>{p.data.purchaseDate || 'Не указана'}</dd>
+              <dt>Описание</dt>
+              <dd>{p.data.notes || 'Не указано'}</dd>
+            </dl>
+            <button className="pico-add-row" onClick={() => setEditing(p)}>
+              <Icon name="edit" /> Изменить проект
+            </button>
             <button
               className="pico-add-row"
               onClick={() => {
@@ -1026,7 +1062,7 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
                 if (c) props.onCompany(c);
               }}
             >
-              Открыть клиента · {companyDisplayName(p.companyName)}
+              <span>Открыть клиента · {companyDisplayName(p.companyName)}</span>
               <Icon name="chevron-right" size={16} />
             </button>
             <h3>Задачи проекта</h3>
@@ -1037,8 +1073,12 @@ export function ProjectsScreen(props: Common & { onCreate: () => void; employeeI
       {!list.length && (
         <Empty
           icon="projects"
-          title="Проектов пока нет"
-          text="Добавьте новый проект: строительство, модернизация или расширение."
+          title={props.projects.length ? 'Проекты не найдены' : 'Проектов пока нет'}
+          text={
+            props.projects.length
+              ? 'Измените поиск или фильтры.'
+              : 'Добавьте новый проект: строительство, модернизация или расширение.'
+          }
         />
       )}
       {!props.projects.length && (

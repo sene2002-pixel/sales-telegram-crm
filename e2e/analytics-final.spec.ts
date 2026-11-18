@@ -105,14 +105,19 @@ test('Analytics uses all-period eight-point data, four comparisons and truthful 
   await expect(page.locator('.pico-client-funnel-legend')).not.toContainText('999');
   await expect(page.locator('.pico-metric-delta')).toHaveCount(0);
   await expect(metrics.filter({ hasText: 'Потенциал клиентов' })).toContainText('235');
-  await page.locator('.pico-score-explanation summary').click();
+  const scoreExplanation = page.locator('.pico-score-explanation summary');
+  const chevron = scoreExplanation.locator('svg');
+  await expect(chevron).toHaveCSS('width', '16px');
+  await expect(scoreExplanation).toHaveCSS('gap', '2px');
+  await scoreExplanation.click();
+  await expect(chevron).toHaveCSS('transform', 'matrix(0, 1, -1, 0, 0, 0)');
   await expect(page.locator('.pico-score-explanation')).toContainText(
     'пять баллов за базу и три за регулярность',
   );
   await expect(page.locator('.pico-score-explanation')).toContainText(
     'найденные ботом, не учитываются',
   );
-  await page.locator('.pico-score-explanation summary').click();
+  await scoreExplanation.click();
   await page.screenshot({ path: info.outputPath('analytics-all-390.png'), animations: 'disabled' });
   await page.getByRole('button', { name: 'Период аналитики' }).click();
   let dialog = page.getByRole('dialog', { name: 'Период', exact: true });
@@ -253,14 +258,9 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
       if (Math.abs(heading.y - period.y) < 20)
         expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
     }
-    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS(
-      'width',
-      width === 320 ? '138px' : '150px',
-    );
-    await expect(page.locator('.pico-client-funnel-content > svg')).toHaveCSS(
-      'height',
-      width === 320 ? '134.312px' : '146px',
-    );
+    const funnel = (await page.locator('.pico-client-funnel-content > svg').boundingBox())!;
+    expect(funnel.width).toBe(width === 320 ? 138 : 150);
+    expect(funnel.height).toBeCloseTo((funnel.width * 146) / 150, 1);
     expect(
       await page
         .locator('.pico-score-scale > div')
@@ -495,6 +495,11 @@ for (const count of [3, 4, 100]) {
       await expect(level.locator('li')).toHaveCount(count);
     }
     await expect(page.locator('.pico-level-empty')).toHaveCount(4);
+    const populatedCount = (await level.locator('summary strong').boundingBox())!;
+    const emptyCount = (await page.locator('.pico-level-empty strong').first().boundingBox())!;
+    expect(
+      Math.abs(populatedCount.x + populatedCount.width - emptyCount.x - emptyCount.width),
+    ).toBeLessThanOrEqual(1);
   });
 }
 test('Large level caps the inline list at 100, searches beyond the cap and clears on scope rejection', async ({

@@ -69,6 +69,18 @@ export const money = (n: number | null | undefined) => {
   return formatter.format(n) + ' ₽';
 };
 
+export function countedWord(count: number, one: string, few: string, many: string) {
+  const lastHundred = Math.abs(count) % 100;
+  const last = lastHundred % 10;
+  return lastHundred >= 11 && lastHundred <= 14
+    ? many
+    : last === 1
+      ? one
+      : last >= 2 && last <= 4
+        ? few
+        : many;
+}
+
 export const compactMoney = (n: number | null | undefined) =>
   n == null
     ? '—'

@@ -3,6 +3,7 @@ import { divisionLabels, labels, primaryDivisions, primarySegments } from '../sh
 import { ClientSort, clientSortLabels } from '../shared/client-filters';
 import { Modal } from './forms';
 import { Icon } from './Icons';
+import { countedWord } from './api';
 export function ClientFilters({
   city,
   cities,
@@ -37,8 +38,7 @@ export function ClientFilters({
   onClose: () => void;
 }) {
   const [menu, setMenu] = useState(false);
-  const [menuHeight, setMenuHeight] = useState(336);
-  const [menuAbove, setMenuAbove] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ above: false, height: 320, gap: 6 });
   const sortArea = useRef<HTMLDivElement>(null);
   const sortTrigger = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -105,19 +105,26 @@ export function ClientFilters({
                   const below = bottom - bounds.bottom - 12;
                   const above = bounds.top - top - 12;
                   const upwards = below < 180 && above > below;
-                  setMenuAbove(upwards);
-                  setMenuHeight(Math.max(40, Math.min(336, upwards ? above : below)));
+                  const gap = !upwards && below >= 370 ? 56 : 6;
+                  setMenuPosition({
+                    above: upwards,
+                    height: Math.max(44, Math.min(320, upwards ? above : below - gap)),
+                    gap,
+                  });
                 }
                 setMenu(!menu);
               }}
             >
-              <span>{clientSortLabels[sort]}</span>
+              <span>{sort === 'name' ? 'А–Я' : clientSortLabels[sort]}</span>
               <Icon name="chevron-down" size={16} />
             </button>
             {menu && (
               <div
-                className={'pico-client-sort-menu' + (menuAbove ? ' is-above' : '')}
-                style={{ maxHeight: menuHeight }}
+                className={'pico-client-sort-menu' + (menuPosition.above ? ' is-above' : '')}
+                style={{
+                  maxHeight: menuPosition.height,
+                  top: menuPosition.above ? undefined : `calc(100% + ${menuPosition.gap}px)`,
+                }}
                 role="menu"
                 aria-label="Сортировка клиентов"
                 onKeyDown={(event) => {
@@ -166,8 +173,10 @@ export function ClientFilters({
                       sortTrigger.current?.focus();
                     }}
                   >
-                    <span>{label}</span>
-                    {sort === key && <Icon name="check" size={16} />}
+                    <span aria-hidden="true">
+                      {sort === key && <Icon name="check" size={18} />}
+                    </span>
+                    {label}
                   </button>
                 ))}
               </div>
@@ -229,7 +238,7 @@ export function ClientFilters({
             aria-live="polite"
             onClick={onClose}
           >
-            Показать {count} клиентов
+            Показать {count} {countedWord(count, 'клиента', 'клиентов', 'клиентов')}
           </button>
         </div>
       </div>

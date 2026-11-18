@@ -1,11 +1,13 @@
 import { ReactNode } from 'react';
 const paths: Record<string, ReactNode> = {
-  restore: <path d="M4 5v6h6M4.5 11a8 8 0 1 0 3.1-5.3" />,
+  restore: <path d="M3.8 14.2A8.5 8.5 0 1 0 6.1 5.9L3.5 8.5M3.5 3.5v5h5" />,
+  'undo-close': <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
   'analytics-funnel': (
     <g strokeWidth="1.9">
       <path d="M3.5 4.5h17l-6 7.7v6.3L12 20l-2.5-1.5v-6.3z" />
     </g>
   ),
+  'chevron-down-small': <path d="m6 9 6 6 6-6" />,
   'analytics-client-potential': (
     <g strokeWidth="1.9">
       <rect x="3" y="6" width="18" height="13" rx="3" />
@@ -14,7 +16,9 @@ const paths: Record<string, ReactNode> = {
   ),
   'analytics-project-potential': (
     <g strokeWidth="1.9">
-      <path d="M3 8l9-5 9 5-9 5zM3 12.5l9 5 9-5M3 17l9 5 9-5" />
+      <path d="M3 8l9-5 9 5-9 5z" />
+      <path d="M3 12.5l9 5 9-5" />
+      <path d="M3 17l9 5 9-5" />
     </g>
   ),
   'analytics-equipment': (
@@ -22,15 +26,46 @@ const paths: Record<string, ReactNode> = {
       <path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5" />
     </g>
   ),
+  'equipment-breaker': (
+    <>
+      <rect x="7" y="7" width="10" height="10" rx="2" />
+      <path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3" />
+    </>
+  ),
+  'equipment-drive': (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <circle cx="12" cy="12" r="6.5" />
+      <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+    </>
+  ),
+  'equipment-cells': (
+    <>
+      <rect x="4" y="4" width="16" height="7" rx="2" />
+      <rect x="4" y="13" width="16" height="7" rx="2" />
+      <path d="M8 7.5h.01M8 16.5h.01" />
+    </>
+  ),
+  'equipment-heat': (
+    <path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 .3 1 1 1.6 1.8 1.8C11 8.5 11 5.5 12 3z" />
+  ),
+  'equipment-services': (
+    <>
+      <path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z" />
+      <path d="M14 7l3 3" />
+    </>
+  ),
   'analytics-growth': (
     <g strokeWidth="1.9">
-      <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
+      <path d="M3 17l6-6 4 4 8-8" />
+      <path d="M15 7h6v6" />
     </g>
   ),
   'analytics-active': (
     <g strokeWidth="1.9">
       <circle cx="9" cy="8" r="3.5" />
-      <path d="M2.5 19.5c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.8c1.6.8 2.6 2.4 3 4.7" />
+      <path d="M2.5 19.5c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5" />
+      <path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.8c1.6.8 2.6 2.4 3 4.7" />
     </g>
   ),
   notebook: (
@@ -55,6 +90,18 @@ const paths: Record<string, ReactNode> = {
       <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
       <path d="M8 3v4M16 3v4M3.5 10h17M8 14h3M13 14h3M8 17.2h3" />
     </g>
+  ),
+  'list-search': (
+    <g strokeWidth="2">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-4-4" />
+    </g>
+  ),
+  'project-location': (
+    <>
+      <path d="M19.5 10c0 5-7.5 11-7.5 11S4.5 15 4.5 10a7.5 7.5 0 1 1 15 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </>
   ),
   'project-factory': (
     <g strokeWidth="1.9">
@@ -106,9 +153,10 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   home: (
-    <>
-      <path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z" />
-    </>
+    <path
+      strokeWidth="1.9"
+      d="M3 11.2L12 3l9 8.2V20a1.5 1.5 0 0 1-1.5 1.5H15v-6h-6v6H4.5A1.5 1.5 0 0 1 3 20z"
+    />
   ),
   clients: (
     <g strokeWidth="1.9">
@@ -128,7 +176,7 @@ const paths: Record<string, ReactNode> = {
       <path d="M8 12.3l2.7 2.7 5.2-5.6" />
     </g>
   ),
-  analytics: <path d="M5 20v-8m7 8V4m7 16V8" />,
+  analytics: <path strokeWidth="1.9" d="M6 20v-6M12 20V6M18 20v-9" />,
   calendar: (
     <>
       <rect x="3" y="5" width="18" height="16" rx="3" />
@@ -175,13 +223,17 @@ const paths: Record<string, ReactNode> = {
     </g>
   ),
   plus: <path d="M12 4v16M4 12h16" />,
+  'list-add': <path d="M12 5v14M5 12h14" />,
   chevron: <path d="m9 5 7 7-7 7" />,
   check: <path d="m5 12 4 4L19 6" />,
-  backspace: (
-    <>
-      <path d="M9 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 12Z" />
-      <path d="m12 9 6 6m0-6-6 6" />
-    </>
+  'task-check': <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  'task-delete': <path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5M14 11v5" />,
+  'action-edit': <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" strokeWidth="2" />,
+  'action-trash': (
+    <path
+      d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+      strokeWidth="2"
+    />
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
   trash: (
@@ -217,6 +269,7 @@ const paths: Record<string, ReactNode> = {
       <path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z" />
     </>
   ),
+  'task-advice': <path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z" />,
   factory: (
     <>
       <path d="M3 21V9l6 4V9l6 4V3h5v18zM7 17h1m4 0h1m4 0h1" />
@@ -248,12 +301,6 @@ const paths: Record<string, ReactNode> = {
       <rect x="4" y="3" width="16" height="7" rx="2" />
       <rect x="4" y="14" width="16" height="7" rx="2" />
       <path d="M8 6h1m3 0h4M8 17h1m3 0h4" />
-    </>
-  ),
-  gear: (
-    <>
-      <path d="m10 3-1 3-3 1-3 3 2 2-1 4 3 2 3 3 2-2 4 1 2-3 3-3-2-2 1-4-3-2-3-3-2 2Z" />
-      <circle cx="12" cy="12" r="3" />
     </>
   ),
   cube: (
@@ -300,7 +347,6 @@ const paths: Record<string, ReactNode> = {
       <path d="M3 15 12 11l9 4-2 6H5zM6 13V7h12v6M9 7V4h6v3M2 23h20" />
     </>
   ),
-  tool: <path d="M14 3a6 6 0 0 0-6 8l-6 6 5 5 6-6a6 6 0 0 0 8-6l-5 3-4-4z" />,
   cart: (
     <>
       <path d="M2 3h3l3 13h12l2-9H6" />
@@ -357,12 +403,12 @@ export function industryIcon(industry: string, segment = ''): [string, string] {
   const value = industry.toLowerCase();
   if (/нефт|газ|хим/.test(value)) return ['oil', 'red'];
   if (/металл|горно|руд/.test(value)) return ['building', 'blue'];
-  if (/генерац|энергет|тэц|грэс/.test(value)) return ['factory', 'amber'];
   if (/сет|подстанц/.test(value)) return ['grid', 'teal'];
+  if (/генерац|энергет|тэц|грэс/.test(value)) return ['factory', 'amber'];
   if (/цод|телеком|майнинг/.test(value)) return ['server', 'purple'];
   if (/агро|ферм/.test(value)) return ['leaf', 'green'];
   if (/логист|ритейл|склад/.test(value)) return ['truck', 'orange'];
-  if (/вод|жкх/.test(value)) return ['water', 'cyan'];
+  if (/(?:^|[^а-яё])вод|жкх/.test(value)) return ['water', 'cyan'];
   if (/девелоп|строит/.test(value)) return ['crane', 'brown'];
   if (/транспорт|аэропорт/.test(value)) return ['plane', 'cyan'];
   if (/фарм/.test(value)) return ['pill', 'pink'];
@@ -370,12 +416,7 @@ export function industryIcon(industry: string, segment = ''): [string, string] {
   if (/судо/.test(value)) return ['ship', 'teal'];
   if (/пищ|материал/.test(value)) return ['cube', 'pink'];
   if (segment === 'general_contractor') return ['helmet', 'slate'];
-  if (segment === 'grid_company') return ['grid', 'teal'];
   if (segment === 'commercial') return ['cart', 'green'];
-  if (segment === 'integrator') return ['server', 'blue'];
-  if (segment === 'oem') return ['gear', 'purple'];
-  if (segment === 'contractor') return ['tool', 'slate'];
-  if (segment === 'design_institute') return ['edit', 'purple'];
   if (segment === 'shchitovik') return ['server', 'blue'];
   return ['building', 'blue'];
 }

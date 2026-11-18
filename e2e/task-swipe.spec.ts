@@ -25,7 +25,7 @@ async function setup(page: Page, width: number) {
   });
   await action(page, 'Обновить');
   await navigate(page, 'Задачи');
-  await page.getByRole('textbox', { name: 'Поиск задач', exact: true }).fill(title);
+  await page.getByRole('searchbox', { name: 'Поиск задач', exact: true }).fill(title);
   const swipe = page.getByRole('group', { name: `Действия: задачу «${title}»`, exact: true });
   await expect(swipe).toBeVisible();
   return {
@@ -59,6 +59,10 @@ for (const width of [320, 390, 1440]) {
   }, info) => {
     test.skip(width === 1440 && info.project.name === 'mobile', 'Portrait-only mobile app');
     const { swipe, title } = await setup(page, width);
+    await expect(page.getByRole('button', { name: 'Закрытые', exact: true })).toHaveCSS(
+      'color',
+      'rgb(107, 115, 137)',
+    );
     const edit = swipe.getByRole('button', {
       name: `Редактировать задачу «${title}»`,
       exact: true,
@@ -75,6 +79,10 @@ for (const width of [320, 390, 1440]) {
       'matrix(1, 0, 0, 1, -112, 0)',
     );
     expect(Math.round(before.x - (await icon.boundingBox())!.x)).toBe(112);
+    if (width <= 760) {
+      const actionBounds = (await remove.boundingBox())!;
+      expect(actionBounds.x + actionBounds.width).toBe(width);
+    }
     for (const button of [edit, remove]) {
       await expect(button).toBeVisible();
       await expect(button).toHaveCSS('width', '56px');
@@ -146,7 +154,7 @@ test('Swipe deletion has no confirmation, supports undo, then retains the task i
   await expect(row.locator('small')).toContainText('удалена');
   await expect(row.getByRole('checkbox')).toHaveCount(0);
   await expect(row.locator('.pico-task-closed-icon svg')).toHaveCSS('color', 'rgb(163, 171, 191)');
-  await expect(row.locator('.checkbox')).toHaveCSS('color', 'rgb(231, 134, 50)');
+  await expect(row.locator('.checkbox')).toHaveCSS('color', 'rgb(240, 122, 26)');
   await expect(row.locator('xpath=..')).not.toHaveClass(/cc-swipe-content/);
   expect((await stored()).data).toMatchObject({
     text: title,

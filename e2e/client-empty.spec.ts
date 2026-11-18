@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Locator, test } from '@playwright/test';
 import { clients, prepareDemoAuth } from './helpers';
 
 test('New manager can read the empty client card and start adding a client', async ({
@@ -65,10 +65,12 @@ test('New manager can read the empty client card and start adding a client', asy
   await expect(page.getByRole('button', { name: 'Дополнительное меню' })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const footer = page.getByRole('navigation', { name: 'Основная навигация' });
-  const [nav, card] = await Promise.all([footer.boundingBox(), guide.boundingBox()]);
-  const gap = nav!.y - card!.y - card!.height;
-  expect(gap).toBeGreaterThanOrEqual(16);
-  expect(gap).toBeLessThanOrEqual(32);
+  await expect(async () => {
+    const [nav, card] = await Promise.all([footer.boundingBox(), guide.boundingBox()]);
+    const gap = nav!.y - card!.y - card!.height;
+    expect(gap).toBeGreaterThanOrEqual(16);
+    expect(gap).toBeLessThanOrEqual(32);
+  }).toPass();
   await expect(search.locator('..')).toHaveCSS('height', '40px');
   await expect(page.getByRole('button', { name: 'Закрытые', exact: true })).toHaveCSS(
     'height',
@@ -91,6 +93,9 @@ test('New manager can read the empty client card and start adding a client', asy
   await page.screenshot({ path: info.outputPath('clients-empty-390.png') });
 
   if (mobile) {
+    await page.evaluate(() => {
+      Object.assign(window.Telegram!.WebApp!.safeAreaInset!, { left: 12, right: 18 });
+    });
     await page.setViewportSize({ width: 320, height: 568 });
     const last = guide.getByText('Итоги встреч и договорённости', { exact: true });
     await last.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
@@ -109,7 +114,22 @@ test('New manager can read the empty client card and start adding a client', asy
   await expect(empty).toBeVisible();
   await expect(guide).toBeVisible();
   await add.click();
-  await expect(
-    page.getByRole('dialog', { name: 'Новый клиент' }).getByLabel('Название', { exact: true }),
-  ).toBeVisible();
+  const sheet = page.getByRole('dialog', { name: 'Новый клиент' });
+  await expect(sheet.getByLabel('Название', { exact: true })).toBeVisible();
+  if (mobile) {
+    const viewport = page.viewportSize()!;
+    const expectInsideSafeArea = async (control: Locator) => {
+      await expect(control).toBeInViewport();
+      const button = (await control.boundingBox())!;
+      expect(button.x).toBeGreaterThanOrEqual(12);
+      expect(button.x + button.width).toBeLessThanOrEqual(viewport.width - 18);
+      expect(button.y + button.height).toBeLessThanOrEqual(viewport.height - 34);
+    };
+    await expectInsideSafeArea(sheet.getByRole('button', { name: 'Сохранить клиента' }));
+    await expectInsideSafeArea(sheet.getByRole('button', { name: 'Закрыть', exact: true }));
+    await sheet.getByText('Потенциал', { exact: true }).click();
+    await sheet.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).click();
+    const keypad = page.getByRole('region', { name: 'Клавиатура Pico' });
+    await expectInsideSafeArea(keypad.getByRole('button', { name: 'Готово', exact: true }));
+  }
 });

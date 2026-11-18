@@ -2,7 +2,8 @@
   min-width: 0;
 }
 .new-holding-members h3 {
-  margin: 4px 0 8px;
+  margin: 2px 0 8px;
+  line-height: 18px;
   font-size: 14px;
   font-weight: 800;
   color: #2b3258;
@@ -19,21 +20,12 @@
   padding: 0;
 }
 .new-holding-list li {
-  min-height: 48px;
+  min-height: 49px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-inline: 10px 2px;
+  gap: 10px;
+  padding-inline: 12px 0;
   border-bottom: 1px solid #eef2f8;
-}
-.new-holding-icon {
-  flex: 0 0 30px;
-  height: 30px;
-  border-radius: 10px;
-  background: #e4effd;
-  color: #1f7aea;
-  display: grid;
-  place-items: center;
 }
 .new-holding-summary {
   min-width: 0;

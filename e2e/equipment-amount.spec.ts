@@ -77,7 +77,18 @@ for (const width of [320, 390]) {
     await expect
       .poll(() => input.evaluate((element) => (element as HTMLInputElement).selectionStart))
       .toBe(12);
-    await input.fill('2,5');
+    // Select the number after React applies the key and before the next paint.
+    const selected = await erase.evaluate(async (button: HTMLButtonElement) => {
+      button.click();
+      await Promise.resolve();
+      const field = document.activeElement as HTMLInputElement;
+      field.select();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      return field.value.slice(field.selectionStart!, field.selectionEnd!);
+    });
+    expect(selected).toBe('999999,9999');
+    await page.keyboard.insertText('2,5');
+    await expect(input).toHaveValue('2,5');
     await page
       .getByRole('region', { name: 'Клавиатура Pico', exact: true })
       .getByRole('button', { name: 'Готово', exact: true })

@@ -19,11 +19,12 @@ import {
 } from '../shared/contracts';
 import { ClientScore, displayedClientPotential } from '../shared/analytics';
 import { loadClientScores, invalidateClientScores } from './client-scores';
-import { api, ApiError, download, money, compactMoney, fullMoney } from './api';
+import { api, ApiError, download, money, compactMoney, countedWord, fullMoney } from './api';
 import { millionValue } from './FormWidgets';
 import { HoldingMembers } from './HoldingMembers';
 import { FileUpload } from './FileUpload';
-import { Icon, industryIcon } from './Icons';
+import { Icon } from './Icons';
+import { ClientTypeBadge } from './ClientTypeBadge';
 import { CompanyForm, Modal } from './forms';
 import { InlineValue, SwipeAction } from './ClientCardWidgets';
 import { InlineAmount } from './InlineAmount';
@@ -203,7 +204,6 @@ export function ClientRow({
   }
   const potential = displayedClientPotential(view, visibleMembers);
   const currentDetail = detail && applyCommittedRecord(detail, clientUndo.committedRecord);
-  const [icon, color] = industryIcon(c.industry, c.segment);
   async function read() {
     const seq = ++sequence.current;
     const d = applyCommittedRecord(
@@ -373,9 +373,7 @@ export function ClientRow({
         onDelete={canArchive ? async () => clientUndo.setArchived(c, refreshUndoDetail) : undefined}
       >
         <button className="pico-client-row" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <span className={`icon-badge badge-${color}`}>
-            <Icon name={icon} />
-          </span>
+          <ClientTypeBadge large segment={c.segment} industry={c.industry} />
           <span className="pico-client-copy">
             <strong className="pico-two-lines">{companyDisplayName(c.name, c.country)}</strong>
             <small className="pico-client-metadata">
@@ -387,7 +385,7 @@ export function ClientRow({
             <small>Потенциал</small>
             <strong title={fullMoney(potential)}>{compactMoney(potential)}</strong>
           </span>
-          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
+          <Icon name="chevron-down-small" size={18} />
         </button>
         {open && !companyPending && (
           <div className="cc-body">
@@ -422,7 +420,11 @@ export function ClientRow({
                       ? 'Уровень недоступен'
                       : 'Загрузка уровня…'}
                 </strong>
-                <span>{score ? `${score.score} баллов из 8` : ''}</span>
+                <span>
+                  {score
+                    ? `${score.score} ${countedWord(score.score, 'балл', 'балла', 'баллов')} из 8`
+                    : ''}
+                </span>
               </div>
               <div className="cc-segments">
                 {levels.map(([key, label, tone], i) => (
@@ -445,9 +447,9 @@ export function ClientRow({
                     <span>
                       {potential === null ? 'Не указан' : `${millionValue(potential)} млн ₽`}
                     </span>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
-                  <div className="cc-section-body">
+                  <div className="cc-section-body cc-potential-equipment">
                     {isHolding ? (
                       <>
                         <p className="muted">Суммарный потенциал заказчиков холдинга</p>
@@ -520,7 +522,7 @@ export function ClientRow({
                             className="cc-add"
                             onClick={() => setNewEquipment(structuredClone(c))}
                           >
-                            <Icon name="plus" size={14} />
+                            <Icon name="plus" size={16} />
                             Добавить оборудование
                           </button>
                         )}
@@ -531,7 +533,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Контакты <span>{contacts.length}</span>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {contacts.map((r) => (
@@ -602,7 +604,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Файлы <span>{files.length}</span>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     {files.map((f) => (
@@ -658,7 +660,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Заметки
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body">
                     <InlineValue
@@ -672,7 +674,7 @@ export function ClientRow({
                 <details className="cc-section">
                   <summary>
                     Данные
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   <div className="cc-section-body cc-data">
                     {[

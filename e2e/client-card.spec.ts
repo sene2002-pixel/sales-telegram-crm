@@ -171,7 +171,7 @@ test('company and contact sheets keep their headers and save reachable; contact 
   const companySheet = page.getByRole('dialog', { name: 'Редактирование карточки', exact: true });
   await companySheet.getByRole('textbox', { name: 'Город', exact: true }).fill('Казань');
   await companySheet.getByText('Дополнительные поля', { exact: true }).click();
-  const companySave = companySheet.getByRole('button', { name: 'Сохранить клиента', exact: true });
+  const companySave = companySheet.getByRole('button', { name: 'Сохранить', exact: true });
   // Telegram can report a smaller usable viewport while layout viewport stays tall.
   await page.evaluate(() => {
     const style = document.documentElement.style;
