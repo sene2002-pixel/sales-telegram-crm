@@ -75,6 +75,7 @@
 }
 
 .team-stats {
+  scroll-margin-block-start: calc(var(--pico-safe-top, 0px) + 12px);
   width: 100%;
   border-collapse: collapse;
   text-align: left;
@@ -176,5 +177,119 @@
   .team-stats td {
     min-width: 0;
     font-weight: 700;
+  }
+}
+
+.team-metrics-filters,
+.team-metrics-footer,
+.team-page-controls,
+.team-page-size,
+.team-metrics-direction {
+  display: flex;
+  align-items: center;
+}
+
+.team-metrics-filters {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.team-metrics-search {
+  position: relative;
+  flex: 2 1 13rem;
+  min-width: 0;
+}
+
+.team-metrics-search svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
+}
+
+.team-metrics-search input {
+  padding-inline-start: 38px;
+  font-size: 1rem;
+}
+
+.team-metrics-filters .field {
+  flex: 1 1 8.5rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.team-metrics-filters .field > span {
+  font-size: 0.75rem;
+}
+
+.team-metrics-filters :is(input, select, button),
+.team-metrics-footer :is(select, button),
+.team-metrics-empty button {
+  min-height: 44px;
+}
+
+.team-metrics-filters select,
+.team-metrics-direction,
+.team-page-size select {
+  font-size: 0.875rem;
+}
+
+.team-metrics-direction {
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.team-metrics-footer {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  color: #586681;
+  font-size: 0.8125rem;
+}
+
+.team-page-size,
+.team-page-controls {
+  gap: 8px;
+}
+
+.team-page-size select {
+  width: auto;
+}
+
+.team-page-controls {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.team-page-controls button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+}
+
+.team-page-controls button:disabled {
+  cursor: default;
+}
+
+.team-metrics-empty {
+  border-top: 1px solid var(--line);
+  padding: 16px;
+}
+
+.team-metrics-empty p {
+  margin: 0 0 8px;
+}
+
+@container (max-width: 40rem) {
+  .team-metrics-search {
+    flex-basis: 100%;
   }
 }

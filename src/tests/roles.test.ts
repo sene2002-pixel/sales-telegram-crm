@@ -288,6 +288,70 @@ test('CSV download: leaders only, authenticated creation, strict parameters', as
   }
 });
 
+test('CSV export: all matching staff in metric order via download, link and bot', async (t) => {
+  const names = ['Анна', 'Вера', 'Галина', 'Дарья', 'Ирина', 'Яна'];
+  for (const [index, first] of names.entries()) {
+    const employee = await s.auth.saveUser(actors.admin, {
+      telegramId: '7000' + index,
+      name: first + ' Орлова',
+      role: 'manager',
+      active: true,
+    });
+    if (first === 'Яна') await s.crm.create(actors.admin, input, employee.id);
+  }
+  await s.auth.saveUser(actors.admin, {
+    telegramId: '71111',
+    name: 'Анна Орлова',
+    role: 'supervisor',
+    active: true,
+  });
+  const body = {
+    from: '2026-09-01',
+    to: '2026-09-15',
+    q: 'ОРЛОВ',
+    role: 'manager',
+    sort: 'companies',
+    direction: 'desc',
+  };
+  const direct = await api(actors.supervisor, 'get', '/dashboard/export')
+    .query({ ...body, _: 'cache-key', page: 2, pageSize: 5 })
+    .expect(200);
+  const [header, ...rows] = direct.text.split('\r\n');
+  assert.ok(header);
+  assert.match(header, /;"Роль"$/);
+  assert.equal(rows.length, 6);
+  assert.ok(rows.every((row: string) => row.endsWith(';"Менеджер"')));
+  assert.deepEqual(
+    rows.map((row: string) => row.split(';')[0]),
+    ['"Яна Орлова"', ...names.slice(0, 5).map((first) => '"' + first + ' Орлова"')],
+  );
+  const issued = await api(actors.supervisor, 'post', '/dashboard/export-link', body).expect(201);
+  const file = await request(server).get(new URL(issued.body.url).pathname).expect(200);
+  assert.equal(file.text, direct.text);
+  const send = t.mock.method(s.telegram, 'sendDocument', async () => undefined);
+  await api(actors.supervisor, 'post', '/dashboard/export-bot', body).expect(201);
+  assert.deepEqual(send.mock.calls[0]?.arguments, [
+    actors.supervisor.telegramId,
+    direct.text,
+    issued.body.filename,
+  ]);
+  await api(actors.manager, 'get', '/dashboard/export').query(body).expect(403);
+  const empty = await api(actors.admin, 'get', '/dashboard/export')
+    .query({ ...body, q: 'Нет совпадений' })
+    .expect(200);
+  assert.equal(empty.text, header);
+  for (const invalid of [
+    { role: 'owner' },
+    { sort: 'name' },
+    { direction: 'down' },
+    { q: 'а'.repeat(201) },
+  ]) {
+    await api(actors.admin, 'get', '/dashboard/export')
+      .query({ ...body, ...invalid })
+      .expect(400);
+  }
+});
+
 test('CSV download: stable snapshot, expiry, random tickets and revoked permissions', async () => {
   const file = await s.exports.issue(actors.supervisor, '2026-09-01', '2026-09-15');
   const path = new URL(file.url).pathname;

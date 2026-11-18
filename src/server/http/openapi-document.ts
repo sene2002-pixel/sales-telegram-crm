@@ -1,3 +1,4 @@
+import { teamExportSchema } from '../../shared/team-metrics';
 import { ideaInputSchema, ideaTopics } from '../../shared/pico-ideas';
 import { z } from 'zod';
 import {
@@ -1421,7 +1422,7 @@ add(
       'Объёмы confirmed/in_work/potential отдельно от конкретных results; неподтверждённые/непривязанные объёмы не становятся выручкой, текущий no_potential/unassigned исключается. Только чтение.',
   },
 );
-const periodBody = jsonBody(jsonSchema(z.object({ from: dateSchema, to: dateSchema }).strict()));
+const teamExportBody = jsonBody(jsonSchema(teamExportSchema));
 add(
   'get',
   '/dashboard/export',
@@ -1431,10 +1432,24 @@ add(
   binary,
   {
     roles: ['supervisor', 'admin'],
-    queries: periodQueries,
+    queries: [
+      ...periodQueries,
+      query(
+        'q',
+        jsonSchema(teamExportSchema.shape.q.unwrap()),
+        'Поиск по имени, фамилии и названию роли.',
+      ),
+      query('role', jsonSchema(teamExportSchema.shape.role.unwrap()), 'Роль сотрудника.'),
+      query('sort', jsonSchema(teamExportSchema.shape.sort.unwrap()), 'Показатель для сортировки.'),
+      query(
+        'direction',
+        jsonSchema(teamExportSchema.shape.direction.unwrap()),
+        'Направление сортировки. Для выбранного показателя по умолчанию desc.',
+      ),
+    ],
     media: 'text/csv',
     description:
-      'UTF-8 BOM, attachment team-report.csv; CSV-формулы экранируются. Нет employeeId-фильтра.',
+      'UTF-8 BOM, attachment team-report.csv; CSV-формулы экранируются. CSV содержит всех сотрудников, подходящих под фильтры, в выбранном порядке.',
   },
 );
 add(
@@ -1446,7 +1461,7 @@ add(
   ref('CsvLink'),
   {
     roles: ['supervisor', 'admin'],
-    body: periodBody,
+    body: teamExportBody,
     description:
       'Снимок текущего периода, 5 минут, максимум5 ссылок на сотрудника. При скачивании роль и активность перепроверяются.',
   },
@@ -1460,7 +1475,7 @@ add(
   object({ sent: { const: true } }),
   {
     roles: ['supervisor', 'admin'],
-    body: periodBody,
+    body: teamExportBody,
     errors: [400, 401, 403, 429, 502, 503, 500],
     description:
       'Только реальный числовой Telegram ID текущей авторизованной сессии (не dev actor). Отправляет пользователю, не другому сотруднику; требуется настроенный бот. В Swagger UI выполнение отключено.',

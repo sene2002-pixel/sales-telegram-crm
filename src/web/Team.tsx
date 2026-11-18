@@ -2,25 +2,13 @@ import { TeamInvitations } from './TeamInvitations';
 import { companyDisplayName } from '../shared/company-display-name';
 import { useEffect, useRef, useState } from 'react';
 import { Actor, labels } from '../shared/contracts';
-import { api, download, today } from './api';
+import { api, today } from './api';
 import { TeamEmployeeForm } from './TeamEmployeeForm';
 import { Icon } from './Icons';
 import './team-employees.css';
 import { CommercialReport } from './CommercialReport';
-import './team-overview.css';
-
-const teamMetrics = [
-  ['companies', 'Компании'],
-  ['openTasks', 'Открыто'],
-  ['overdue', 'Просрочено'],
-  ['completed', 'Выполнено'],
-  ['interactions', 'Контакты'],
-] as const;
-
-type TeamStats = Pick<Actor, 'id' | 'role' | 'name' | 'active'> &
-  Record<(typeof teamMetrics)[number][0], number> & {
-    inactiveCompanies: { id: string; name: string }[];
-  };
+import { TeamOverview } from './TeamOverview';
+import type { TeamStats } from '../shared/team-metrics';
 
 export function Team({
   user,
@@ -76,57 +64,6 @@ export function Team({
         }}
       />
     );
-  }
-  const [exportBusy, setExportBusy] = useState(false);
-  const [exportStatus, setExportStatus] = useState('');
-  const [exportError, setExportError] = useState('');
-  async function exportCsv(inBot = false) {
-    setExportBusy(true);
-    setExportError('');
-    setExportStatus('');
-    try {
-      if (inBot) {
-        await api('/dashboard/export-bot', 'POST', { from, to });
-        setExportStatus(
-          'CSV отправлен в ваш личный чат с ботом. Откройте чат и сохраните документ.',
-        );
-      } else {
-        const telegram = window.Telegram?.WebApp;
-        if (telegram?.initData) {
-          if (!telegram.downloadFile || !telegram.isVersionAtLeast?.('8.0')) {
-            setExportStatus(
-              'В этой версии Telegram скачивание недоступно. Нажмите «Получить CSV в боте».',
-            );
-            return;
-          }
-          const file = await api<{ url: string; filename: string }>(
-            '/dashboard/export-link',
-            'POST',
-            { from, to },
-          );
-          setExportStatus(
-            'Подтвердите скачивание в Telegram. Если файл не появился, получите его в боте.',
-          );
-          telegram.downloadFile({ url: file.url, file_name: file.filename }, (accepted) => {
-            setExportStatus(
-              accepted
-                ? 'Telegram принял запрос на скачивание. Если файл не появился, получите его в боте.'
-                : 'Скачивание отменено. Можно повторить или получить CSV в боте.',
-            );
-          });
-        } else {
-          await download(
-            `/dashboard/export?from=${from}&to=${to}`,
-            `team-report-${from}-${to}.csv`,
-          );
-          setExportStatus('Файл передан браузеру для скачивания.');
-        }
-      }
-    } catch (e) {
-      setExportError((e as Error).message);
-    } finally {
-      setExportBusy(false);
-    }
   }
   useEffect(() => {
     let active = true;
@@ -228,90 +165,7 @@ export function Team({
           </section>
         )}
       </div>
-      <section className="team-overview" aria-labelledby="team-overview-title">
-        <div className="team-overview-head">
-          <div>
-            <h2 id="team-overview-title">Показатели команды</h2>
-            <p>Текущий месяц · по сегодня</p>
-          </div>
-          <div className="team-export">
-            <button disabled={exportBusy} onClick={() => void exportCsv()}>
-              Экспорт CSV
-            </button>
-            {!user.telegramId.startsWith('dev-') && (
-              <button disabled={exportBusy} onClick={() => void exportCsv(true)}>
-                Получить CSV в боте
-              </button>
-            )}
-          </div>
-        </div>
-        {exportStatus && (
-          <p className="team-overview-note" role="status">
-            {exportStatus}
-          </p>
-        )}
-        {exportError && (
-          <p className="team-overview-note error" role="alert">
-            {exportError}
-          </p>
-        )}
-        {statsError ? (
-          <p className="team-overview-note error" role="alert">
-            {statsError}
-          </p>
-        ) : !stats ? (
-          <p className="team-overview-note" role="status">
-            Загружаем показатели…
-          </p>
-        ) : stats.length === 0 ? (
-          <p className="team-overview-note">Пока нет данных по сотрудникам.</p>
-        ) : (
-          <>
-            <p className="team-overview-note">
-              Выполненные задачи и контакты — с начала месяца. Остальные показатели — на сегодня.
-            </p>
-            <table role="table" aria-labelledby="team-overview-title" className="team-stats">
-              <thead role="rowgroup">
-                <tr role="row">
-                  <th scope="col" role="columnheader">
-                    Сотрудник
-                  </th>
-                  {teamMetrics.map(([key, label]) => (
-                    <th key={key} scope="col" role="columnheader">
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody role="rowgroup">
-                {stats.map((s) => (
-                  <tr key={s.id} role="row">
-                    <th scope="row" role="rowheader">
-                      <strong>{s.name}</strong>
-                      <small>
-                        {labels[s.role]}
-                        {!s.active && ' · Заблокирован'}
-                      </small>
-                    </th>
-                    {teamMetrics.map(([key, label]) => (
-                      <td
-                        key={key}
-                        role="cell"
-                        className={key === 'overdue' && s.overdue ? 'danger' : undefined}
-                      >
-                        <span className="team-metric-label" aria-hidden="true">
-                          {label}
-                        </span>
-                        {s[key]}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </section>
+      <TeamOverview user={user} stats={stats} statsError={statsError} from={from} to={to} />
       {stats && (
         <section className="panel pico-team-inactive">
           <h3>Нет контакта 14 дней</h3>

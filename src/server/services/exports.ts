@@ -1,3 +1,4 @@
+import { TeamMetricsFilter } from '../../shared/team-metrics';
 import { createHash, randomBytes } from 'node:crypto';
 import { Actor } from '../../shared/contracts';
 import { Config } from '../config';
@@ -14,17 +15,17 @@ export class ExportService {
     private telegram: TelegramAdapter,
     private config: Config,
   ) {}
-  private async snapshot(actor: Actor, from: string, to: string) {
-    const content = await this.dashboard.csv(actor, from, to);
+  private async snapshot(actor: Actor, from: string, to: string, filter: TeamMetricsFilter) {
+    const content = await this.dashboard.csv(actor, from, to, filter);
     return { content, filename: `team-report-${from}-${to}.csv` };
   }
-  async issue(actor: Actor, from: string, to: string) {
+  async issue(actor: Actor, from: string, to: string, filter: TeamMetricsFilter = {}) {
     requireCondition(
       this.config.publicUrl.startsWith('https://'),
       503,
       'Для скачивания в Telegram нужен HTTPS',
     );
-    const snapshot = await this.snapshot(actor, from, to);
+    const snapshot = await this.snapshot(actor, from, to, filter);
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 5 * 60_000);
     await this.db.transaction(async (tx) => {
@@ -60,14 +61,14 @@ export class ExportService {
     // Restore the CSV BOM explicitly: embedded SQL text decoding may strip it.
     return { filename: row.filename, content: '\uFEFF' + row.content.replace(/^\uFEFF/, '') };
   }
-  async sendToBot(actor: Actor, from: string, to: string) {
+  async sendToBot(actor: Actor, from: string, to: string, filter: TeamMetricsFilter = {}) {
     requireCondition(isLeader(actor), 403, 'Отчёт доступен руководителю');
     requireCondition(
       /^[1-9]\d+$/.test(actor.telegramId),
       400,
       'Отправка доступна после входа через Telegram',
     );
-    const snapshot = await this.snapshot(actor, from, to);
+    const snapshot = await this.snapshot(actor, from, to, filter);
     const current = await activeActor(this.db, actor.id);
     requireCondition(isLeader(current), 403, 'Отчёт доступен руководителю');
     await this.telegram.sendDocument(current.telegramId, snapshot.content, snapshot.filename);
