@@ -287,7 +287,11 @@ function Empty({ icon, title, text }: { icon: string; title: string; text: strin
     </div>
   );
 }
-export function TaskList({ list, ...props }: Common & { list: NamedRecord[] }) {
+export function TaskList({
+  list,
+  quickComplete = false,
+  ...props
+}: Common & { list: NamedRecord[]; quickComplete?: boolean }) {
   const taskActions = useTaskActions();
   const [selected, setSelected] = useState<NamedRecord | null>(null);
   return (
@@ -295,69 +299,77 @@ export function TaskList({ list, ...props }: Common & { list: NamedRecord[] }) {
       <div className="pico-compact-list pico-task-list">
         {taskActions.project(list).map((t) => {
           const open = () => setSelected(t);
+          const pending = taskActions.queue.find(({ task }) => task.id === t.id)?.action;
+          const closed = t.data.done || t.data.deleted;
+          const badge = quickComplete ? 'reminder' : t.data.type || 'reminder';
+          const closedLabel = t.data.deleted ? 'удалена' : 'выполнена';
           const row = (
-            <article
-              className={'pico-task-row task-row task-type-' + (t.data.type || 'reminder')}
-              key={t.id}
-            >
-              <span
-                className={
-                  'checkbox task-type-' +
-                  (t.data.type || 'reminder') +
-                  ' ' +
-                  (t.data.done ? 'checked' : '')
-                }
-                aria-hidden="true"
-              >
-                <Icon
-                  name={
-                    t.data.deleted ? 'trash' : t.data.done ? 'check' : t.data.type || 'reminder'
-                  }
-                  size={21}
-                />
-              </span>
-              <button
-                className="task-text"
-                disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
-                onClick={open}
-              >
-                <strong
-                  className={
-                    'pico-two-lines' +
-                    (t.data.done ||
-                    taskActions.queue.some(
-                      (pending) => pending.task.id === t.id && pending.action === 'done',
-                    )
-                      ? ' done'
-                      : '')
-                  }
-                  title={t.data.text}
+            <article className={'pico-task-row task-row task-type-' + badge} key={t.id}>
+              <button type="button" className="task-text" disabled={!!pending} onClick={open}>
+                <span
+                  className={'checkbox' + (!quickComplete && closed ? ' checked' : '')}
+                  aria-hidden="true"
                 >
-                  {t.data.text}
-                </strong>
-                <small>
-                  {props.projects.find((p) => p.id === t.projectId)?.data.name ||
-                    t.projectName ||
-                    companyDisplayName(t.companyName)}
-                  {t.data.due
-                    ? ' · ' +
-                      new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
-                        day: 'numeric',
-                        month: 'short',
-                      }) +
-                      ' · ' +
-                      (t.data.time || 'Без времени')
-                    : ' · Без срока'}
-                </small>
+                  <Icon
+                    name={!quickComplete && closed ? (t.data.deleted ? 'trash' : 'check') : badge}
+                    size={21}
+                  />
+                </span>
+                <span className="pico-task-copy">
+                  <strong
+                    className={'pico-two-lines' + (closed || pending === 'done' ? ' done' : '')}
+                    title={t.data.text}
+                  >
+                    {t.data.text}
+                  </strong>
+                  <small>
+                    {quickComplete && closed && `${closedLabel} · `}
+                    {!closed && t.data.due && t.data.due < today() && (
+                      <span className="pico-agenda-overdue">Просрочено · </span>
+                    )}
+                    {props.projects.find((p) => p.id === t.projectId)?.data.name ||
+                      t.projectName ||
+                      companyDisplayName(t.companyName)}
+                    {t.data.due
+                      ? ' · ' +
+                        new Date(t.data.due + 'T12:00:00').toLocaleDateString('ru-RU', {
+                          day: 'numeric',
+                          month: 'short',
+                        }) +
+                        ' · ' +
+                        (t.data.time || 'Без времени')
+                      : ' · Без срока'}
+                  </small>
+                </span>
+                {quickComplete ? (
+                  closed && (
+                    <span className="pico-task-closed-icon" aria-hidden="true">
+                      <Icon name={t.data.deleted ? 'trash' : 'check'} size={20} />
+                    </span>
+                  )
+                ) : (
+                  <>
+                    {t.data.deleted && <span className="status">Удалена</span>}
+                    <Icon name="chevron-right" size={16} />
+                  </>
+                )}
               </button>
-              {!t.data.done && t.data.due && t.data.due < today() && (
-                <span className="status failed">Просрочено</span>
+              {quickComplete && !closed && (
+                <button
+                  type="button"
+                  className="pico-task-complete"
+                  role="checkbox"
+                  aria-label={`Выполнено: ${t.data.text}`}
+                  aria-checked={pending === 'done'}
+                  disabled={!!pending}
+                  onClick={() => taskActions.schedule(t, 'done')}
+                >
+                  <span>{pending === 'done' && <Icon name="check" size={16} />}</span>
+                </button>
               )}
-              {t.data.deleted && <span className="status">Удалена</span>}
-              <Icon name="chevron-right" size={16} />
             </article>
           );
-          return t.data.done || t.data.deleted ? (
+          return closed ? (
             row
           ) : (
             <SwipeAction
@@ -366,7 +378,7 @@ export function TaskList({ list, ...props }: Common & { list: NamedRecord[] }) {
               onEdit={open}
               onDelete={async () => taskActions.schedule(t, 'deleted')}
               confirmDelete={false}
-              disabled={taskActions.queue.some((pending) => pending.task.id === t.id)}
+              disabled={!!pending}
             >
               {row}
             </SwipeAction>
@@ -551,40 +563,28 @@ export function TasksScreen(
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div className="tabs pico-chips pico-filter-chip-row">
+      <div className="tabs pico-chips pico-filter-chip-row pico-task-tabs">
         <button
-          aria-pressed={!byDate}
-          className={!byDate ? 'active' : ''}
-          onClick={() => setByDate(false)}
+          aria-pressed={filter !== 'done' && !byDate}
+          className={filter !== 'done' && !byDate ? 'active' : ''}
+          onClick={() => {
+            if (filter === 'done') setFilter('open');
+            setByDate(false);
+          }}
         >
           Все даты
         </button>
         <button
-          aria-pressed={byDate && date === today()}
-          className={byDate && date === today() ? 'active' : ''}
+          aria-pressed={filter !== 'done' && byDate && date === today()}
+          className={filter !== 'done' && byDate && date === today() ? 'active' : ''}
           onClick={() => {
+            if (filter === 'done') setFilter('open');
             setDate(today());
             setMonth(today().slice(0, 7));
             setByDate(true);
           }}
         >
           Сегодня
-        </button>
-        <button
-          className="pico-filter-chip"
-          aria-label="Фильтры задач"
-          onClick={() => setFiltersOpen(true)}
-        >
-          <Icon name="filter" size={16} />
-        </button>
-      </div>
-      <div className="tabs pico-chips pico-task-state-tabs">
-        <button
-          aria-pressed={filter !== 'done'}
-          className={filter !== 'done' ? 'active' : ''}
-          onClick={() => setFilter('open')}
-        >
-          В работе
         </button>
         <button
           aria-pressed={filter === 'done'}
@@ -595,6 +595,13 @@ export function TasksScreen(
           }}
         >
           Закрытые
+        </button>
+        <button
+          className="pico-filter-chip"
+          aria-label="Фильтры задач"
+          onClick={() => setFiltersOpen(true)}
+        >
+          <Icon name="filter" size={16} />
         </button>
       </div>
       <div className="pico-calendar panel">
@@ -732,8 +739,14 @@ export function TasksScreen(
         </span>
       )}
       {list.length ? (
-        <TaskList {...props} list={list} />
-      ) : byDate && !tasks.some((t) => !t.data.done && t.data.due === date) ? (
+        <TaskList {...props} list={list} quickComplete={!props.calendarOnly} />
+      ) : filter === 'done' && !byDate && !type && !query ? (
+        <Empty
+          icon="calendar"
+          title="Закрытых задач пока нет"
+          text="Здесь появятся выполненные и удалённые задачи."
+        />
+      ) : filter !== 'done' && byDate && !tasks.some((t) => !t.data.done && t.data.due === date) ? (
         <Empty
           icon="task-empty-calendar"
           title="Этот день пока свободен"

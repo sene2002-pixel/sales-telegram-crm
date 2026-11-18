@@ -3675,16 +3675,10 @@ select.pico-filter-sort {
   margin-top: 2px;
 }
 .pico-task-row .checkbox {
-  position: relative;
   width: 40px;
   height: 40px;
   min-height: 40px;
   border-radius: 13px;
-}
-.pico-task-row .checkbox::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
 }
 .pico-task-row .checkbox > svg {
   width: 21px;
@@ -4404,8 +4398,7 @@ textarea.pico-growing-textarea {
   resize: none;
 }
 .pico-client-row > .company-money,
-.pico-project-row > summary > svg,
-.pico-task-row > .checkbox {
+.pico-project-row > summary > svg {
   flex-shrink: 0;
 }
 .pico-task-row .task-text small,
@@ -4971,8 +4964,81 @@ body:has(.pico-client-filters) .pico-bottom-nav {
   background: transparent;
 }
 .pico-task-list .pico-task-row.task-row {
-  border: 1px solid var(--line);
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 1px solid #e6ebf3;
   border-radius: 16px;
+  background: #fff;
+}
+.pico-task-list .task-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: inherit;
+}
+.pico-task-list .task-text:has(+ .pico-task-complete) {
+  padding-right: 60px;
+}
+.pico-task-copy {
+  flex: 1;
+  min-width: 0;
+}
+.pico-task-list .task-text:disabled,
+.pico-task-complete:disabled {
+  opacity: 1;
+}
+.pico-task-list .task-text strong.done,
+.pico-task-closed-icon {
+  color: #a3abbf;
+}
+.pico-task-closed-icon,
+.pico-task-complete {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+}
+.pico-task-closed-icon {
+  flex-shrink: 0;
+  margin-right: -8px;
+}
+.pico-task-complete {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+.pico-task-complete > span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #c3cad8;
+  border-radius: 50%;
+}
+.pico-task-complete[aria-checked='true'] > span {
+  border-color: #1f7aea;
+  background: #1f7aea;
+  color: #fff;
+}
+.pico-task-list button:focus-visible {
+  outline: 2px solid #1f7aea;
+  outline-offset: -2px;
+}
+@media (max-width: 380px) {
+  .pico-task-tabs.tabs {
+    gap: 4px;
+  }
+  .workspace .pico-task-tabs > button:not(.pico-filter-chip) {
+    padding: 0 8px;
+  }
 }
 .pico-task-list > .cc-swipe {
   border-radius: 16px;

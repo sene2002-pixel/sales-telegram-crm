@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 import { action, navigate, prepareDemoAuth } from './helpers';
 
 for (const width of [320, 390, 1440]) {
-  test(`Task type badges cannot complete tasks at ${width}`, async ({ page }, info) => {
+  test(`Task rows keep details, completion and restoration independent at ${width}`, async ({
+    page,
+  }, info) => {
     await page.setViewportSize({ width, height: width === 320 ? 568 : 900 });
     if (width === 1440 && info.project.name === 'mobile') {
       await page.addInitScript(() => {
@@ -103,6 +105,8 @@ for (const width of [320, 390, 1440]) {
       await expect(badge).toHaveAttribute('aria-hidden', 'true');
       await expect(badge).toHaveJSProperty('tabIndex', -1);
       await badge.click();
+      await expect(page.getByRole('dialog')).toContainText(`Проверить ${type}`);
+      await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
       await expect(row.locator('.task-text strong')).not.toHaveClass(/done/);
     }
     expect(patches).toHaveLength(0);
@@ -114,6 +118,21 @@ for (const width of [320, 390, 1440]) {
       animations: 'disabled',
     });
     const call = page.locator('.task-row').filter({ hasText: 'Проверить call ' });
+    const complete = call.getByRole('checkbox', { name: /Выполнено: Проверить call / });
+    await expect(complete).toHaveCSS('width', '44px');
+    await expect(complete).toHaveCSS('height', '44px');
+    await expect(complete.locator('span')).toHaveCSS('width', '24px');
+    await expect(complete.locator('span')).toHaveCSS('border', '2px solid rgb(195, 202, 216)');
+    await complete.focus();
+    await page.keyboard.press('Space');
+    await expect(complete).toBeChecked();
+    await expect(complete.locator('span')).toHaveCSS('background-color', 'rgb(31, 122, 234)');
+    await expect(call.locator('.task-text strong')).toHaveCSS('color', 'rgb(163, 171, 191)');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('.pico-undo-toast')).toContainText('Задача выполнена');
+    await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await expect(complete).not.toBeChecked();
+    expect(patches).toHaveLength(0);
     await call.locator('.task-text').focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog');
@@ -155,8 +174,7 @@ for (const width of [320, 390, 1440]) {
 
     await action(page, 'Обновить');
     await expect(call).toContainText('16:00');
-    await call.locator('.task-text').click();
-    await dialog.getByRole('button', { name: 'Выполнено', exact: true }).click();
+    await complete.click();
     await expect(dialog).toHaveCount(0);
     await page.clock.runFor(3001);
     await expect.poll(() => patches.length).toBe(3);
@@ -170,12 +188,20 @@ for (const width of [320, 390, 1440]) {
       contactId: null,
       type: 'call',
     });
-    await page.getByRole('button', { name: 'Фильтры задач' }).click();
-    const filters = page.getByRole('dialog', { name: 'Фильтры задач' });
-    await filters.getByRole('button', { name: 'Выполненные', exact: true }).click();
-    await filters.getByRole('button', { name: /^Показать/ }).click();
-    await expect(call.locator('.checkbox')).toHaveClass(/checked/);
-    await call.locator('.checkbox').click();
+    const closed = page.getByRole('button', { name: 'Закрытые', exact: true });
+    const today = page.getByRole('button', { name: 'Сегодня', exact: true });
+    expect((await closed.boundingBox())!.y).toBe((await today.boundingBox())!.y);
+    expect((await closed.boundingBox())!.x).toBeGreaterThan((await today.boundingBox())!.x);
+    await closed.click();
+    await expect(closed).toHaveAttribute('aria-pressed', 'true');
+    await expect(call.getByRole('checkbox')).toHaveCount(0);
+    await expect(call.locator('.pico-task-closed-icon svg')).toHaveCSS('width', '20px');
+    await expect(call.locator('.pico-task-closed-icon svg')).toHaveCSS(
+      'color',
+      'rgb(163, 171, 191)',
+    );
+    await expect(call.locator('.checkbox')).toHaveCSS('color', 'rgb(231, 134, 50)');
+    await expect(call.locator('small')).toContainText('выполнена');
     expect(patches).toHaveLength(3);
     await page.screenshot({
       path: `/tmp/task-completion-done-${width}-${info.project.name}.png`,
@@ -185,7 +211,14 @@ for (const width of [320, 390, 1440]) {
     await page.keyboard.press('Space');
     await dialog.getByRole('button', { name: 'Вернуть задачу', exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    await expect(call).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Закрытых задач пока нет' })).toBeVisible();
+    await expect(page.locator('.pico-undo-toast')).toContainText('Задача снова в работе');
+    await page.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await expect(call.locator('small')).toContainText('выполнена');
     expect(patches).toHaveLength(3);
+    await call.locator('.task-text').click();
+    await dialog.getByRole('button', { name: 'Вернуть задачу', exact: true }).click();
     await page.clock.runFor(3001);
     await expect.poll(() => patches.length).toBe(4);
     expect(patches[3]).toEqual({
