@@ -108,6 +108,9 @@ test('New manager can read the empty client card and start adding a client', asy
       Object.assign(window.Telegram!.WebApp!.safeAreaInset!, { left: 12, right: 18 });
     });
     await page.setViewportSize({ width: 320, height: 568 });
+    // Telegram updates the layout insets on the resize event.
+    await expect(page.locator('.workspace')).toHaveCSS('padding-left', '28px');
+    await expect(page.locator('.workspace')).toHaveCSS('padding-right', '34px');
     const last = guide.getByText('Итоги встреч и договорённости', { exact: true });
     await last.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
     const bounds = (await last.boundingBox())!;
