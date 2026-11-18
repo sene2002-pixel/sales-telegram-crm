@@ -511,7 +511,7 @@ test('UI audit gaps: remove direction, refresh menu, project client handoff and 
     .getByRole('region', { name: 'Клавиатура Pico', exact: true })
     .getByRole('button', { name: 'Готово', exact: true })
     .click();
-  await dialog.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.reload();
   const saved = (await api(page, `/companies/${company.id}`, undefined, 'GET')).company;
   expect(saved.divisions).toEqual({ mv: 20_000_000 });

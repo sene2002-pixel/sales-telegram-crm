@@ -30,7 +30,7 @@ async function loginAndSeed(page: Page) {
   const headers = { Authorization: `Bearer ${token}` };
   const prefix = `Высота${Date.now()}`;
   const data = [
-    { name: 'ЭЛЕКТРООПТИМА', city: 'Москва', industry: 'Энергетика' },
+    { name: 'ЭЛЕКТРООПТИМА', city: 'Москва', industry: 'Энергетика — сети' },
     { name: 'ЯРОСЛАВСКИЙ БРОЙЛЕР', city: 'Ярославль', industry: 'Производство пищевых продуктов' },
     {
       name: 'Федеральная гидрогенерирующая компания с очень длинным названием для проверки переноса и обрезания текста',
@@ -43,7 +43,7 @@ async function loginAndSeed(page: Page) {
       industry: 'ОтрасльБезПробелов'.repeat(5),
     },
     { name: 'АСПР Групп', city: '', industry: '' },
-    { name: 'Луч', city: 'Москва', industry: 'Энергетика' },
+    { name: 'Луч', city: 'Москва', industry: 'Производство электроники' },
   ];
   const created = [];
   for (const item of data) {
@@ -65,6 +65,11 @@ function card(page: Page, name: string) {
     .first();
 }
 async function verifyRows(page: Page, items: { name: string }[]) {
+  for (const item of [items[0]!, items[5]!]) {
+    const badge = card(page, item.name).locator('.pico-client-type-badge');
+    await expect(badge).toHaveAttribute('data-client-type', 'end_client');
+    await expect(badge).toHaveCSS('color', 'rgb(31, 122, 234)');
+  }
   const metrics = [];
   for (const item of items) {
     const row = card(page, item.name).locator('.pico-client-row');

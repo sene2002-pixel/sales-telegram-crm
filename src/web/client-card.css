@@ -2,7 +2,8 @@
   overflow: hidden;
 }
 .cc-body {
-  padding: 8px 14px 14px;
+  --cc-body-gutter: 15px;
+  padding: 8px var(--cc-body-gutter) 14px;
 }
 .cc-card details.cc-section {
   background: transparent;
@@ -32,6 +33,7 @@
 .cc-section > summary > svg {
   margin-left: auto;
   flex-shrink: 0;
+  color: #7a8299;
   transition: transform 0.15s;
 }
 .cc-section > summary > span + svg {
@@ -44,6 +46,18 @@
   padding-bottom: 12px;
   display: grid;
   gap: 8px;
+}
+.cc-potential-equipment {
+  gap: 4px;
+}
+.cc-section-body:has(> .cc-add:last-child) {
+  padding-bottom: 0;
+}
+.cc-section-body > .cc-swipe + .cc-add {
+  margin-top: -8px;
+}
+.cc-potential-equipment > .cc-swipe + .cc-add {
+  margin-top: -4px;
 }
 .cc-field {
   min-width: 0;
@@ -135,7 +149,10 @@
   gap: 6px;
   background: none !important;
   border: 0 !important;
-  color: #4d75db !important;
+  color: #1f7aea !important;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0;
   min-height: 40px;
   justify-self: start;
 }
@@ -386,6 +403,9 @@
   align-items: start;
   gap: 10px;
 }
+.cc-data > .cc-field {
+  gap: 4px;
+}
 .cc-data > .cc-field,
 .cc-data > .cc-inline-editor {
   grid-column: 1 / -1;
@@ -395,6 +415,7 @@
 }
 .cc-data > .cc-field > span {
   font-size: 12px;
+  line-height: 16px;
   font-weight: 700;
   color: #7a8299;
 }
@@ -406,7 +427,9 @@
   border: 1px solid #e6ebf3;
   padding: 9px 12px;
   background: #fff;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
   white-space: normal;
 }
 .cc-data > .cc-field > button > span {
@@ -620,7 +643,7 @@
 .cc-contact-columns > div {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 0;
   padding: 4px 12px 5px;
   overflow-wrap: anywhere;
 }
@@ -629,7 +652,7 @@
 }
 .cc-contact-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
 }
 .cc-contact-columns > div {
   align-content: start;
@@ -641,16 +664,18 @@
 .cc-contact-email > span:first-child,
 .cc-contact-columns > div > span:first-child {
   font-size: 10.5px;
-  line-height: 14px;
+  line-height: 12px;
   font-weight: 600;
   color: #7a8299;
 }
 .cc-contact-name > strong {
+  line-height: 18px;
   font-size: 14px;
   font-weight: 800;
 }
 .cc-contact-columns > div > span:last-child,
 .cc-contact-email > span:last-child {
+  line-height: 18px;
   font-size: 13px;
   font-weight: 600;
 }
@@ -665,15 +690,22 @@
 }
 .cc-contact-form.cc-inline-editor {
   background: white;
-  padding: 12px 0 0;
+  padding: 0 0 max(28px, env(safe-area-inset-bottom));
   gap: 12px;
 }
 .cc-contact-form label {
+  gap: 6px;
+  line-height: 18px;
   color: #2b3258;
   font-size: 14px;
   font-weight: 800;
 }
+.modal.client-sheet .cc-contact-form .cc-editor-actions {
+  padding-top: 6px;
+}
 .cc-contact-form .cc-editor-actions > .primary {
+  font-size: 15px;
+  font-weight: 800;
   flex: 1;
   height: 48px;
   border-radius: 14px;
@@ -887,8 +919,24 @@ button.cc-amount-value small {
   top: 0;
   bottom: 0;
   height: 100%;
-  justify-content: flex-end;
+  justify-content: center;
   background: transparent;
+}
+/* Extend only the open rail into the card gutter; the moving surface keeps its width. */
+.cc-section-body > .cc-swipe.cc-revealed {
+  /* The card's one-pixel inset border stays visible beside the rail. */
+  margin-inline: calc(1px - var(--cc-body-gutter));
+}
+.cc-section-body > .cc-swipe.cc-revealed > .cc-swipe-content {
+  margin-inline: calc(var(--cc-body-gutter) - 1px);
+}
+@media (max-width: 760px) {
+  .pico-client-list > .cc-card:has(> .cc-swipe.cc-revealed) {
+    margin-inline: -16px;
+  }
+  .pico-client-list > .cc-card > .cc-swipe.cc-revealed > .cc-swipe-content {
+    margin-inline: 16px;
+  }
 }
 .cc-swipe-actions > button.cc-trash,
 .cc-swipe-actions > button.cc-swipe-edit {
@@ -926,6 +974,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
 }
 .cc-equipment-sheet fieldset {
   margin: 0;
@@ -937,6 +986,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
 .cc-equipment-potential > span:first-child {
   padding: 0;
   margin-bottom: 8px;
+  line-height: 18px;
   font-size: 14px;
   font-weight: 800;
   color: #2b3258;
@@ -951,10 +1001,11 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   min-height: 36px;
   padding: 0 12px;
   border-radius: 10px;
-  border: 1px solid #cdd5e3;
+  border: 1px solid #dde4f0;
   background: #fff;
   color: #4a5370;
   font-size: 13px;
+  font-weight: 600;
   box-shadow: none;
 }
 .cc-equipment-types > button[aria-pressed='true'] {
@@ -966,7 +1017,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
 .cc-equipment-types > button:disabled {
   background: #f3f6fb;
   color: #a3abbf;
-  border-color: #cdd5e3;
+  border-color: #f3f6fb;
   opacity: 1;
 }
 .cc-equipment-potential {
@@ -980,7 +1031,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   height: 48px;
   border: 1.5px solid #1f7aea;
   border-radius: 12px;
-  padding: 0 12px;
+  padding: 0 14px;
 }
 .cc-equipment-sheet .cc-equipment-amount-field > input {
   width: 100%;
@@ -1005,11 +1056,13 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
   flex: none;
   color: #7a8299;
   font-size: 14px;
+  font-weight: 600;
 }
 .cc-equipment-sheet .pico-number-keys {
-  margin-top: -8px;
+  margin-top: -10px;
 }
 .cc-equipment-sheet > .cc-equipment-submit {
+  margin-top: -4px;
   width: 100%;
   height: 48px;
   min-height: 48px;
@@ -1042,7 +1095,7 @@ body:has(.cc-equipment-sheet) .pico-bottom-nav {
 /* The selected contact remains visible above its editing sheet. */
 .cc-contact[role='button'] {
   cursor: pointer;
-  border: 1.5px solid transparent;
+  border: 1.5px solid #e6ebf3;
 }
 .cc-contact.cc-contact-selected {
   border-color: #1f7aea;
@@ -1055,10 +1108,17 @@ body:has(.cc-contact-form) .workspace {
 }
 .modal .cc-contact-form textarea.pico-growing-textarea {
   min-height: 40px;
-  padding: 9px 12px;
-  font-size: 16px;
+  padding: 9px 14px;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 20px;
   border: 1px solid #e6ebf3;
   border-radius: 12px;
   background: #f3f6fb;
+}
+
+@media (pointer: coarse) {
+  .modal .cc-contact-form textarea.pico-growing-textarea:focus {
+    font-size: 16px;
+  }
 }

@@ -147,13 +147,13 @@ for (const { width, role } of [
       'QA Person',
     );
     await sheet.getByRole('textbox', { name: 'Город', exact: true }).fill('Казань');
-    await sheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(sheet.getByRole('alert')).toContainText('Карточка или контакты изменились');
     await expect(sheet.getByRole('textbox', { name: 'Название', exact: true })).toHaveValue(
       'QA Swipe',
     );
     await expect(sheet.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Казань');
-    await sheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(sheet.getByRole('alert')).toContainText('Карточка или контакты изменились');
     expect(saved).toBe(0);
     await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
@@ -161,7 +161,7 @@ for (const { width, role } of [
     await edit.click();
     await expect(sheet.getByRole('textbox', { name: 'Город', exact: true })).toHaveValue('Москва');
     await sheet.getByRole('textbox', { name: 'Город', exact: true }).fill('Казань');
-    await sheet.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(sheet).toBeHidden();
     expect(saved).toBe(1);
     if ((await card.locator('.pico-client-row').getAttribute('aria-expanded')) === 'false')

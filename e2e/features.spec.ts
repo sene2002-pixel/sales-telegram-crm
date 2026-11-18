@@ -276,11 +276,7 @@ test('[UI-04] task filters, completion/reopening and calendar with undated tasks
     .click();
   await navigate(page, 'Календарь');
   await page.getByLabel('Месяц', { exact: true }).fill('2000-01');
-  await page
-    .locator('.calendar')
-    .getByRole('button')
-    .filter({ has: page.locator('strong', { hasText: /^1$/ }) })
-    .click();
+  await page.getByRole('button', { name: /^2000-01-01(?:,|$)/ }).click();
   await expect(page.locator('.task-row').filter({ hasText: title + ' просрочено' })).toBeVisible();
   await expect(page.locator('.task-row').filter({ hasText: title + ' без срока' })).toBeVisible();
 });

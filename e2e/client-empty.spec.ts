@@ -65,10 +65,12 @@ test('New manager can read the empty client card and start adding a client', asy
   await expect(page.getByRole('button', { name: 'Дополнительное меню' })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const footer = page.getByRole('navigation', { name: 'Основная навигация' });
-  const [nav, card] = await Promise.all([footer.boundingBox(), guide.boundingBox()]);
-  const gap = nav!.y - card!.y - card!.height;
-  expect(gap).toBeGreaterThanOrEqual(16);
-  expect(gap).toBeLessThanOrEqual(32);
+  await expect(async () => {
+    const [nav, card] = await Promise.all([footer.boundingBox(), guide.boundingBox()]);
+    const gap = nav!.y - card!.y - card!.height;
+    expect(gap).toBeGreaterThanOrEqual(16);
+    expect(gap).toBeLessThanOrEqual(32);
+  }).toPass();
   await expect(search.locator('..')).toHaveCSS('height', '40px');
   await expect(page.getByRole('button', { name: 'Закрытые', exact: true })).toHaveCSS(
     'height',

@@ -200,8 +200,16 @@ for (const width of [320, 390, 1440]) {
       'color',
       'rgb(163, 171, 191)',
     );
-    await expect(call.locator('.checkbox')).toHaveCSS('color', 'rgb(231, 134, 50)');
-    await expect(call.locator('small')).toContainText('выполнена');
+    await expect(call.locator('.checkbox')).toHaveCSS('color', 'rgb(240, 122, 26)');
+    const closedMetadata = call.locator('small');
+    await expect(closedMetadata).toContainText('выполнена');
+    const metadataBounds = (await closedMetadata.boundingBox())!;
+    const statusBounds = (await closedMetadata
+      .getByText('· выполнена', { exact: true })
+      .boundingBox())!;
+    expect(statusBounds.x + statusBounds.width).toBeLessThanOrEqual(
+      metadataBounds.x + metadataBounds.width + 1,
+    );
     expect(patches).toHaveLength(3);
     await page.screenshot({
       path: `/tmp/task-completion-done-${width}-${info.project.name}.png`,

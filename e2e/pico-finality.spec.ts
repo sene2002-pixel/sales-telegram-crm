@@ -173,7 +173,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   await expect(page.locator('.pico-client-copy > strong').first()).toHaveCSS('font-weight', '800');
   for (const [selector, weight] of [
     ['.pico-client-metadata > span', '500'],
-    ['.company-money > small', '400'],
+    ['.company-money > small', '600'],
   ]) {
     await expect(page.locator(selector).first()).toHaveCSS('font-weight', weight);
     const textNode = await cdp.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector });
@@ -346,6 +346,12 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   await page.reload();
   await navigate(page, 'Задачи');
   await page.getByRole('textbox', { name: 'Месяц', exact: true }).fill(month);
+  const weekday = page.locator('.pico-calendar .calendar > small').first();
+  await expect(weekday).toHaveCSS('height', '16px');
+  await expect(weekday).toHaveCSS('font-weight', '600');
+  const previousMonth = page.getByRole('button', { name: 'Предыдущий месяц' });
+  await expect(previousMonth.locator('svg')).toHaveCSS('width', '18px');
+  expect((await previousMonth.boundingBox())!.width).toBeGreaterThanOrEqual(44);
   for (const count of [1, 2, 3, 4]) {
     const day = `${month}-${String(count + 1).padStart(2, '0')}`;
     await expect(

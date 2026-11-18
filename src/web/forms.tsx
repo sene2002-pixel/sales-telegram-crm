@@ -297,6 +297,8 @@ export type InitialCompanyContact = {
 };
 export type CompanyFormCloseState = { dirty: boolean; busy: boolean };
 export type CompanyFormCloseGuard = (() => CompanyFormCloseState) | null;
+const companyEquipmentLabels: Record<string, string> = { ...divisionLabels, cells: 'КСО (КРУ)' };
+
 export function CompanyForm({
   initial,
   initialContacts,
@@ -514,7 +516,7 @@ export function CompanyForm({
               singleLine
               aria-label="Название"
               value={data.name}
-              placeholder="ООО «Компания»"
+              placeholder="Компания"
               aria-invalid={!!fieldErrors.name}
               aria-describedby={fieldErrors.name ? 'company-error-name' : undefined}
               onChange={(e) => update('name', e.target.value)}
@@ -522,7 +524,11 @@ export function CompanyForm({
             {inputError('name')}
           </Field>
           <Field label="Город">
-            <input value={data.city} onChange={(e) => update('city', e.target.value)} />
+            <input
+              placeholder="Город"
+              value={data.city}
+              onChange={(e) => update('city', e.target.value)}
+            />
             {inputError('city')}
           </Field>
         </div>
@@ -588,9 +594,11 @@ export function CompanyForm({
         <details className="company-form-accordion">
           <summary>
             <span>Потенциал</span>
-            <strong>
-              {savedPotential === null ? 'Не указан' : `${millionValue(total)} млн ₽`}
-            </strong>
+            {(savedPotential !== null || initial) && (
+              <strong>
+                {savedPotential === null ? 'Не указан' : `${millionValue(total)} млн ₽`}
+              </strong>
+            )}
             <Icon name="chevron-down" size={18} />
           </summary>
           <div className="company-equipment">
@@ -606,10 +614,10 @@ export function CompanyForm({
                 className={`company-equipment-row ${data.divisions[division] ? 'is-filled' : ''}`}
                 key={division}
               >
-                <span>{divisionLabels[division] || labels[division]}</span>
+                <span>{companyEquipmentLabels[division]}</span>
                 <PicoNumberInput
                   placeholder="0"
-                  label={divisionLabels[division] || labels[division]}
+                  label={companyEquipmentLabels[division]}
                   invalid={!!fieldErrors.divisions}
                   describedBy={fieldErrors.divisions ? 'company-error-divisions' : undefined}
                   value={
@@ -667,6 +675,7 @@ export function CompanyForm({
                           <GrowingTextarea
                             singleLine
                             aria-label={key === 'name' ? 'Контакт' : 'Должность'}
+                            placeholder={key === 'name' ? 'ФИО' : 'Должность'}
                             value={contact[key]}
                             aria-invalid={!!fieldErrors[`contact-${index}-${key}`]}
                             aria-describedby={
@@ -687,7 +696,8 @@ export function CompanyForm({
                         ) : (
                           <input
                             type="text"
-                            inputMode={key === 'phone' ? 'tel' : key === 'email' ? 'email' : 'text'}
+                            inputMode={key === 'phone' ? 'tel' : 'email'}
+                            placeholder={key === 'phone' ? '+7' : 'name@company.ru'}
                             value={contact[key]}
                             aria-invalid={!!fieldErrors[`contact-${index}-${key}`]}
                             aria-describedby={
@@ -709,19 +719,20 @@ export function CompanyForm({
                         {inputError(`contact-${index}-${key}`)}
                       </Field>
                     ))}
-                    {!contact.id && (
-                      <button
-                        type="button"
-                        className="company-remove-contact"
-                        onClick={() =>
-                          setContacts((current) =>
-                            current.filter((_, entryIndex) => entryIndex !== index),
-                          )
-                        }
-                      >
-                        Удалить контакт
-                      </button>
-                    )}
+                    {!contact.id &&
+                      (contacts.length > 1 || Object.values(contact).some(Boolean)) && (
+                        <button
+                          type="button"
+                          className="company-remove-contact"
+                          onClick={() =>
+                            setContacts((current) =>
+                              current.filter((_, entryIndex) => entryIndex !== index),
+                            )
+                          }
+                        >
+                          Удалить контакт
+                        </button>
+                      )}
                   </fieldset>
                 ))}
                 <button
@@ -743,6 +754,7 @@ export function CompanyForm({
             <Field label="Комментарий">
               <GrowingTextarea
                 aria-label="Комментарий"
+                className="company-comment"
                 rows={3}
                 value={data.notes}
                 onChange={(e) => update('notes', e.target.value)}
@@ -758,7 +770,7 @@ export function CompanyForm({
           </p>
         )}
         <button type="submit" className="primary" disabled={busy}>
-          {busy ? 'Сохраняем…' : 'Сохранить клиента'}
+          {busy ? 'Сохраняем…' : initial ? 'Сохранить' : 'Сохранить клиента'}
         </button>
       </div>
     </form>
@@ -1093,7 +1105,7 @@ function EquipmentEditor({
     ...initial.filter((e) => e.division === 'drives').map((e) => e.division),
   ];
   return (
-    <Modal title="Оборудование" onClose={onClose}>
+    <Modal className="pico-project-options" title="Оборудование" onClose={onClose}>
       <div className="pico-compact-form">
         <Chips
           label="Направление"
@@ -1590,6 +1602,7 @@ export function RecordForm({
       )}
       {kind === 'project' && participantOpen && (
         <Modal
+          className="pico-project-options"
           title={participantIndex === null ? 'Новый участник' : 'Редактировать участника'}
           onClose={() => setParticipantOpen(false)}
         >

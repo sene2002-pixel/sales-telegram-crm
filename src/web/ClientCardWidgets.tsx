@@ -374,7 +374,7 @@ export function SwipeAction({
                     onEdit();
                   }}
                 >
-                  <Icon name="edit" size={22} />
+                  <Icon name="action-edit" size={22} />
                 </button>
               )}
               {onDelete && (
@@ -393,7 +393,7 @@ export function SwipeAction({
                     }
                   }}
                 >
-                  <Icon name="trash" size={22} />
+                  <Icon name="action-trash" size={22} />
                 </button>
               )}
             </div>

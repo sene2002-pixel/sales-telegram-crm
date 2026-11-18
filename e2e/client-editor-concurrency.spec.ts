@@ -95,7 +95,7 @@ for (const mode of ['legacy', 'row', 'contact'] as const)
       'PATCH',
     );
     const save = dialog.getByRole('button', {
-      name: mode === 'contact' ? 'Сохранить' : 'Сохранить клиента',
+      name: 'Сохранить',
       exact: true,
     });
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -174,7 +174,7 @@ test('Legacy company editor saves with 21 contacts without dropping unchanged co
   const saved = page.waitForResponse(
     (r) => r.url().endsWith(`/companies/${company.id}/editor`) && r.request().method() === 'PATCH',
   );
-  await dialog.getByRole('button', { name: 'Сохранить клиента', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
   expect((await saved).ok()).toBeTruthy();
   const after = await api(`/companies/${company.id}`);
   expect(after.company.city).toBe('Москва');

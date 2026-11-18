@@ -25,6 +25,24 @@ async function transparentActions(row: Locator) {
     await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   }
 }
+async function verifyRail(row: Locator, edge: number) {
+  const rail = row.locator(':scope > .cc-trash-track > .cc-swipe-actions');
+  const buttons = await rail.getByRole('button').all();
+  const railBox = (await rail.boundingBox())!;
+  expect(railBox.x + railBox.width).toBe(edge);
+  const centers: number[] = [];
+  for (const button of buttons) {
+    const box = (await button.boundingBox())!;
+    const svg = button.locator('svg');
+    const icon = (await svg.boundingBox())!;
+    expect(box.width).toBe(56);
+    expect(icon.width).toBe(22);
+    expect(icon.x + icon.width / 2).toBe(box.x + box.width / 2);
+    await expect(svg.locator('path')).toHaveCSS('stroke-width', '2px');
+    centers.push(icon.x + icon.width / 2);
+  }
+  expect(centers).toEqual(buttons.length === 2 ? [edge - 84, edge - 28] : [edge - 32]);
+}
 async function close(row: Locator) {
   await row.focus();
   await row.press('Escape');
@@ -100,12 +118,12 @@ for (const width of [320, 390]) {
     const buttons = row.locator(':scope > .cc-trash-track button');
     await expect(buttons).toHaveCount(2);
     for (const button of await buttons.all()) {
-      await expect(button).toHaveCSS('width', '56px');
       await expect(button).toHaveCSS('color', 'rgb(107, 115, 144)');
       await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
       await button.hover();
       await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     }
+    await verifyRail(row, width);
     const after = await surface.boundingBox();
     expect(after!.width).toBe(before!.width);
     expect(after!.x).toBeCloseTo(before!.x - 112, 0);
@@ -118,6 +136,7 @@ for (const width of [320, 390]) {
     await expect(card.locator('.cc-section')).toHaveCount(5);
     await reveal(row);
     await expect(surface).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -112, 0)');
+    await verifyRail(row, width);
     await page.screenshot({
       path: `/tmp/pico-swipe-evidence/expanded-${width}-${info.project.name}.png`,
     });
@@ -132,6 +151,7 @@ for (const width of [320, 390]) {
       .last();
     await reveal(contact);
     await transparentActions(contact);
+    await verifyRail(contact, before!.x + before!.width - 1);
     await expect(contact.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
       'matrix(1, 0, 0, 1, -112, 0)',
@@ -148,13 +168,12 @@ for (const width of [320, 390]) {
       .last();
     await reveal(equipment);
     await transparentActions(equipment);
+    await verifyRail(equipment, before!.x + before!.width - 1);
     await expect(equipment.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
       'matrix(1, 0, 0, 1, -112, 0)',
     );
     await expect(equipment.locator(':scope > .cc-trash-track button')).toHaveCount(2);
-    for (const button of await equipment.locator(':scope > .cc-trash-track button').all())
-      await expect(button).toHaveCSS('width', '56px');
     await page.screenshot({
       path: `/tmp/pico-swipe-evidence/equipment-${width}-${info.project.name}.png`,
     });
@@ -170,11 +189,11 @@ for (const width of [320, 390]) {
       .last();
     await reveal(file);
     await transparentActions(file);
+    await verifyRail(file, before!.x + before!.width - 1);
     await expect(file.locator(':scope > .cc-swipe-content')).toHaveCSS(
       'transform',
       'matrix(1, 0, 0, 1, -64, 0)',
     );
-    await expect(file.locator(':scope > .cc-trash-track button')).toHaveCSS('width', '56px');
     await page.screenshot({
       path: `/tmp/pico-swipe-evidence/file-${width}-${info.project.name}.png`,
     });
@@ -203,6 +222,7 @@ for (const width of [320, 390]) {
     await reveal(row);
     await expect(surface).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -112, 0)');
     await expect(card).toHaveCSS('box-shadow', 'none');
+    await verifyRail(row, width);
     await page.screenshot({
       path: `/tmp/pico-swipe-evidence/closed-${width}-${info.project.name}.png`,
     });

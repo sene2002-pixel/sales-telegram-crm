@@ -12,6 +12,7 @@ import {
   EmployeeFilterOption,
   Company,
   CrmRecord,
+  divisionLabels,
   labels,
   roles,
 } from '../shared/contracts';
@@ -147,6 +148,7 @@ function App() {
     [clientSegments, setClientSegments] = useState<string[]>([]),
     [clientDivisions, setClientDivisions] = useState<string[]>([]);
   const [confirmDiscardClient, setConfirmDiscardClient] = useState(false);
+  const clientFiltersButton = useRef<HTMLButtonElement>(null);
   const newClientCloseGuard = useRef<CompanyFormCloseGuard>(null);
   const continueClientDraftRef = useRef<HTMLButtonElement>(null);
   const registerClientCloseGuard = useCallback((guard: CompanyFormCloseGuard) => {
@@ -671,6 +673,7 @@ function App() {
   };
   const application = (
     <div
+      data-section={tab}
       className={`app-shell${window.Telegram?.WebApp?.initData ? ' telegram-native-header' : ''}`}
     >
       <aside>
@@ -883,6 +886,21 @@ function App() {
                     projectClientUndo(company, pending),
                   );
                   const companyById = new Map(companies.map((company) => [company.id, company]));
+                  const selectedFilters = [
+                    ...(city ? [{ key: 'city', label: city, remove: () => setCity('') }] : []),
+                    ...clientSegments.map((segment) => ({
+                      key: 'segment-' + segment,
+                      label: labels[segment],
+                      remove: () =>
+                        setClientSegments((items) => items.filter((item) => item !== segment)),
+                    })),
+                    ...clientDivisions.map((division) => ({
+                      key: 'division-' + division,
+                      label: divisionLabels[division],
+                      remove: () =>
+                        setClientDivisions((items) => items.filter((item) => item !== division)),
+                    })),
+                  ];
                   const visible = projectedCompanies.filter(
                     (c) =>
                       (clientStatus === 'closed'
@@ -909,8 +927,8 @@ function App() {
                       <div className="section-head">
                         <h1>Клиенты</h1>
                       </div>
-                      <div className="pico-search pico-client-list-search">
-                        <Icon name="search" />
+                      <div className="pico-search pico-list-search pico-client-list-search">
+                        <Icon name="list-search" size={18} />
                         <input
                           aria-label="Поиск компаний"
                           enterKeyHint="done"
@@ -945,16 +963,56 @@ function App() {
                           </button>
                         ))}
                         <button
-                          className="pico-filter-chip"
+                          ref={clientFiltersButton}
+                          className="pico-filter-chip pico-client-filter-trigger"
+                          aria-describedby={
+                            selectedFilters.length ? 'client-filter-count' : undefined
+                          }
                           aria-label="Фильтры клиентов"
                           onClick={() => setFiltersOpen(true)}
                         >
                           <Icon name="filter" size={16} />
+                          {selectedFilters.length > 0 && (
+                            <span id="client-filter-count">
+                              <span className="pico-visually-hidden">Выбрано фильтров </span>
+                              {selectedFilters.length}
+                            </span>
+                          )}
                         </button>
                       </div>
+                      {selectedFilters.length > 0 && (
+                        <div
+                          className="pico-selected-client-filters"
+                          role="group"
+                          aria-label="Применённые фильтры"
+                        >
+                          {selectedFilters.map((filter) => (
+                            <button
+                              key={filter.key}
+                              onClick={(event) => {
+                                const chip = event.currentTarget;
+                                if (document.activeElement === chip) {
+                                  const adjacent =
+                                    chip.nextElementSibling ?? chip.previousElementSibling;
+                                  const target =
+                                    adjacent instanceof HTMLButtonElement
+                                      ? adjacent
+                                      : clientFiltersButton.current;
+                                  target?.focus({ preventScroll: true });
+                                }
+                                filter.remove();
+                              }}
+                              aria-label={`Снять фильтр «${filter.label}»`}
+                            >
+                              {filter.label}
+                              <Icon name="close" size={12} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <button className="pico-add-row" onClick={() => setCreate(true)}>
-                        <Icon name="plus" /> Добавить клиента{' '}
-                        <Icon name="chevron-right" size={16} />
+                        <Icon name="list-add" size={18} /> Добавить клиента{' '}
+                        <Icon name="chevron-right" size={18} />
                       </button>
                       {filtersOpen && (
                         <ClientFilters

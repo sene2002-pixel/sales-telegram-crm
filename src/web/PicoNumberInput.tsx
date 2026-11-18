@@ -7,7 +7,6 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Icon } from './Icons';
 
 export function appendPicoNumberKey(current: string, value: string) {
   return value === 'erase'
@@ -28,7 +27,7 @@ export function PicoNumberKeys({
 }) {
   return (
     <div className="pico-number-keys" role="group" aria-label="Клавиатура Pico">
-      {['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'erase'].map((digit) => (
+      {['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'erase'].map((digit) =>
         integerOnly && digit === ',' ? (
           <span key={digit} aria-hidden="true" />
         ) : (
@@ -40,10 +39,26 @@ export function PicoNumberKeys({
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => onKey(digit)}
           >
-            {digit === 'erase' ? <Icon name="backspace" size={22} /> : digit}
+            {digit === 'erase' ? (
+              <svg
+                width="28"
+                height="22"
+                viewBox="0 0 26 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M8 2h15a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 23 18H8l-6.5-8z" />
+                <path d="M12 7l6 6M18 7l-6 6" strokeLinecap="round" />
+              </svg>
+            ) : (
+              digit
+            )}
           </button>
-        )
-      ))}
+        ),
+      )}
     </div>
   );
 }
@@ -217,7 +232,9 @@ export const PicoNumberInput = forwardRef<
           readOnly={!open || busy}
           value={open ? draft : value}
           className="pico-number-input"
-          style={{ width: `${Math.max(1, (open ? draft : value).length) + 0.5}ch` }}
+          style={{
+            width: `calc(${Math.max(1, (open ? draft : value).length) + 0.5}ch + var(--pico-number-inset, 0px))`,
+          }}
           onPointerDown={(event) => {
             if (!open) event.preventDefault();
           }}

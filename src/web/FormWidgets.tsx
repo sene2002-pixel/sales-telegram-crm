@@ -1,7 +1,8 @@
 import { companyDisplayName } from '../shared/company-display-name';
 import { ReactNode, useState } from 'react';
 import { Company, labels, divisionLabels } from '../shared/contracts';
-import { Icon, industryIcon } from './Icons';
+import { Icon } from './Icons';
+import { ClientTypeBadge } from './ClientTypeBadge';
 export function Chips({
   label,
   options,
@@ -85,30 +86,23 @@ export function ClientPicker({
       <div className="pico-picker-list">
         {list
           .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-          .map((c) => {
-            const [icon, color] = industryIcon(c.industry, c.segment);
-            return (
-              <button
-                type="button"
-                key={c.id}
-                aria-pressed={value === c.id}
-                onClick={() => onChange(c.id)}
-              >
-                <span className={'icon-badge badge-' + color}>
-                  <Icon name={icon} size={16} />
-                </span>
-                <span>
-                  <strong>{companyDisplayName(c.name, c.country)}</strong>
-                  <small>
-                    {[labels[c.segment], c.city, c.industry].filter(Boolean).join(' · ')}
-                  </small>
-                </span>
-                <span className={'pico-radio ' + (value === c.id ? 'checked' : '')}>
-                  {value === c.id && <Icon name="check" size={12} />}
-                </span>
-              </button>
-            );
-          })}
+          .map((c) => (
+            <button
+              type="button"
+              key={c.id}
+              aria-pressed={value === c.id}
+              onClick={() => onChange(c.id)}
+            >
+              <ClientTypeBadge segment={c.segment} industry={c.industry} />
+              <span>
+                <strong>{companyDisplayName(c.name, c.country)}</strong>
+                <small>{[labels[c.segment], c.city, c.industry].filter(Boolean).join(' · ')}</small>
+              </span>
+              <span className={'pico-radio ' + (value === c.id ? 'checked' : '')}>
+                {value === c.id && <Icon name="check" size={12} />}
+              </span>
+            </button>
+          ))}
         {!list.length && <p className="muted">Клиенты не найдены</p>}
       </div>
     </div>

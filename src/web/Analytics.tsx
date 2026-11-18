@@ -171,7 +171,7 @@ function LevelClients({ clients, label }: { clients: Company[]; label: string })
               ? 'Показать до 100'
               : `Показать всех, ${clients.length}`}
           </span>
-          <Icon name="chevron-down" size={16} />
+          <Icon name="chevron-down-small" size={16} />
         </button>
       )}
     </div>
@@ -232,7 +232,7 @@ function Funnel({ data, companies }: { data: ClientAnalytics; companies: Company
       </div>
       <details className="pico-levels">
         <summary>
-          Клиенты по уровням <Icon name="chevron-down" size={18} />
+          Клиенты по уровням <Icon name="chevron-down-small" size={18} />
         </summary>
         {levels.map((level) => {
           const ids = new Set(data.clients.filter((c) => c.level === level.key).map((c) => c.id));
@@ -248,7 +248,7 @@ function Funnel({ data, companies }: { data: ClientAnalytics; companies: Company
             <details className="pico-level" key={level.key}>
               <summary>
                 {heading}
-                <Icon name="chevron-down" size={18} />
+                <Icon name="chevron-down-small" size={18} />
               </summary>
               <LevelClients clients={clients} label={level.label} />
             </details>
@@ -282,7 +282,9 @@ function ScorePath({ settings }: { settings: AnalyticsSettings }) {
         и клиент придёт в зелёную зону.
       </p>
       <details className="pico-score-explanation">
-        <summary>Как считаются баллы</summary>
+        <summary>
+          Как считаются баллы <Icon name="chevron-right" size={16} />
+        </summary>
         <p>
           Максимум 8: пять баллов за базу и три за регулярность. Это уровень работы с клиентом, а не
           шестибалльная оценка сделки.
@@ -380,14 +382,14 @@ export function AnalyticsScreen({
   };
   const equipmentIcon = (key: string) =>
     key === 'heat'
-      ? 'heat'
+      ? 'equipment-heat'
       : key === 'services'
-        ? 'edit'
+        ? 'equipment-services'
         : key === 'cells'
-          ? 'server'
+          ? 'equipment-cells'
           : key.startsWith('drives')
-            ? 'gear'
-            : 'chip';
+            ? 'equipment-drive'
+            : 'equipment-breaker';
   return (
     <div className="pico-analytics-final">
       <div className="section-head pico-analytics-heading">
@@ -403,7 +405,7 @@ export function AnalyticsScreen({
           }}
         >
           {periods.find(([key]) => key === period)?.[1]}
-          <Icon name="chevron-down" size={16} />
+          <Icon name="chevron-down-small" size={16} />
         </button>
       </div>
       {periodOpen && (
@@ -566,7 +568,7 @@ export function AnalyticsScreen({
                     <strong title={list.length ? fullMoney(amount) : undefined}>
                       {list.length ? compactMoney(amount) : '—'}
                     </strong>
-                    <Icon name="chevron-down" size={18} />
+                    <Icon name="chevron-down-small" size={18} />
                   </summary>
                   {list.map((c) => (
                     <div className="pico-potential-client" key={c.id}>

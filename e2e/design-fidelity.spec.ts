@@ -77,8 +77,8 @@ test('Design fidelity: task rows use the reminder badge and client money is comp
   await navigate(page, 'Задачи');
   for (const type of ['call', 'meeting', 'email', 'reminder']) {
     const row = page.locator('.task-row').filter({ hasText: `${type} ${suffix}` });
-    await expect(row.locator('.checkbox')).toHaveCSS('color', 'rgb(231, 134, 50)');
-    await expect(row.locator('.checkbox')).toHaveCSS('background-color', 'rgb(255, 236, 222)');
+    await expect(row.locator('.checkbox')).toHaveCSS('color', 'rgb(240, 122, 26)');
+    await expect(row.locator('.checkbox')).toHaveCSS('background-color', 'rgb(255, 235, 221)');
     await expect(row.getByRole('checkbox')).not.toBeChecked();
   }
   await screenshot(page, 'task-row-reminders');
@@ -319,6 +319,24 @@ test('Design fidelity: project supplies, services and participant edit/order per
   );
   expect(saved.data.participants.map((p: any) => p.companyId)).toEqual([second.id, company.id]);
   expect(saved.data.participants[0].nextStep).toBe('Прислать согласованный график');
+  await navigate(page, 'Проекты');
+  const search = page.getByLabel('Поиск проектов');
+  await search.fill('Несуществующий проект ' + suffix);
+  await expect(page.getByRole('heading', { name: 'Проекты не найдены' })).toBeVisible();
+  await search.fill(legacy.data.name);
+  await row.locator(':scope > summary').click();
+  const members = row.locator('.pico-project-members');
+  const disclosure = members.locator(':scope > summary');
+  const firstMember = members.locator('.pico-project-member').first();
+  await expect(disclosure).toHaveText('Участники проекта (2)');
+  await expect(firstMember).toBeHidden();
+  await disclosure.focus();
+  await page.keyboard.press('Enter');
+  await firstMember.locator('summary').click();
+  await expect(firstMember).toContainText(second.name);
+  await expect(firstMember.getByText('Прислать согласованный график')).toBeVisible();
+  await disclosure.click();
+  await expect(firstMember).toBeHidden();
 });
 
 test('Design fidelity: crown opens compact users and admission shows the real Telegram ID', async ({

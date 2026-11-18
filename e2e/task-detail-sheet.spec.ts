@@ -36,7 +36,7 @@ async function setup(page: Page, width = 390) {
   });
   await action(page, 'Обновить');
   await navigate(page, 'Задачи');
-  await page.getByRole('textbox', { name: 'Поиск задач', exact: true }).fill(title);
+  await page.getByRole('searchbox', { name: 'Поиск задач', exact: true }).fill(title);
   const row = page.locator('.task-row').filter({ hasText: title });
   await expect(row).toBeVisible();
   const open = async () => {
@@ -90,6 +90,12 @@ for (const width of [320, 390, 1440]) {
       await expect(field).toBeVisible();
       expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
+    expect((await sheet.locator('.pico-task-field-group').boundingBox())!.height).toBe(316);
+    const close = sheet.getByRole('button', { name: 'Закрыть', exact: true });
+    const closeBox = (await close.boundingBox())!;
+    const cross = (await close.locator('svg').boundingBox())!;
+    expect(cross.width).toBe(14);
+    expect(cross.y + cross.height / 2).toBe(closeBox.y + closeBox.height / 2);
     await expect(sheet.getByRole('button', { name: 'Отложить', exact: true })).toHaveCount(0);
     const remove = sheet.getByRole('button', { name: 'Удалить', exact: true });
     const done = sheet.getByRole('button', { name: 'Выполнено', exact: true });

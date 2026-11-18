@@ -26,8 +26,8 @@ const taskLabels: Record<ActionKind, string> = {
   restore: 'Задача снова в работе',
 };
 const actionIcons: Record<ActionKind, string> = {
-  done: 'check',
-  deleted: 'close',
+  done: 'task-check',
+  deleted: 'undo-close',
   restore: 'restore',
 };
 
@@ -228,7 +228,12 @@ export function TaskActionsProvider({
         createPortal(
           <>
             {visibleAction && (
-              <div className="pico-undo-toast" key={visibleAction.key} role="status">
+              <div
+                className="pico-undo-toast"
+                data-action={visibleAction.kind}
+                key={visibleAction.key}
+                role="status"
+              >
                 <span
                   className="pico-undo-fill"
                   aria-hidden="true"
