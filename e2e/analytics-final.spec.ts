@@ -167,7 +167,6 @@ test('Analytics settings are versioned, reload on conflict and never expose admi
     return route.fulfill({ json: current });
   });
   await login(page);
-  await navigate(page, 'Аналитика');
   await page.getByRole('button', { name: 'Дополнительное меню' }).click();
   await page.getByRole('button', { name: 'Настройки аналитики', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Настройки аналитики', exact: true });
@@ -250,14 +249,9 @@ test('Analytics matches native-frame geometry at 360, 390 and 1440 and exposes t
       .getByRole('heading', { name: 'Аналитика', exact: true })
       .boundingBox())!;
     const period = (await page.getByRole('button', { name: 'Период аналитики' }).boundingBox())!;
-    if (width < 761) {
-      const gear = (await page
-        .getByRole('button', { name: 'Дополнительное меню', exact: true })
-        .boundingBox())!;
-      expect(period.x + period.width).toBeLessThanOrEqual(gear.x);
-      if (Math.abs(heading.y - period.y) < 20)
-        expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
-    }
+    await expect(page.getByRole('button', { name: 'Дополнительное меню' })).toHaveCount(0);
+    expect(heading.x + heading.width).toBeLessThanOrEqual(period.x);
+    expect(period.x + period.width).toBeLessThanOrEqual(width - 16);
     const funnel = (await page.locator('.pico-client-funnel-content > svg').boundingBox())!;
     expect(funnel.width).toBe(width === 320 ? 138 : 150);
     expect(funnel.height).toBeCloseTo((funnel.width * 146) / 150, 1);

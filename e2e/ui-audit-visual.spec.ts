@@ -548,6 +548,7 @@ test('UI audit gaps: remove direction, refresh menu, project client handoff and 
   expect(detail.records.find((r: any) => r.data.text === 'Контекстная ' + suffix).projectId).toBe(
     project.id,
   );
+  if (info.project.name === 'mobile') await navigate(page, 'Главная');
   const refreshed = page.waitForResponse(
     (r) => new URL(r.url()).pathname === '/api/companies' && r.request().method() === 'GET',
   );

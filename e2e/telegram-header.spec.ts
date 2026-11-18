@@ -120,8 +120,12 @@ test('Telegram header: authenticated mobile requests fullscreen and preserves me
     await screenshot(page, 'native-header-' + viewportWidth);
     for (const tab of ['Клиенты', 'Проекты', 'Задачи', 'Аналитика', 'Главная']) {
       await navigate(page, tab);
-      await expect(gear).toBeVisible();
-      expect(await gear.boundingBox(), tab).toEqual(menu);
+      if (tab === 'Клиенты' || tab === 'Главная') {
+        await expect(gear).toBeVisible();
+        expect(await gear.boundingBox(), tab).toEqual(menu);
+      } else {
+        await expect(gear).toHaveCount(0);
+      }
       if (tab === 'Клиенты') {
         const filter = page.getByRole('button', { name: 'Фильтры клиентов', exact: true });
         const box = (await filter.boundingBox())!;

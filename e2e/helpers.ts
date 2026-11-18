@@ -31,7 +31,9 @@ export async function navigate(page: Page, name: string) {
       .getByRole('button', { name, exact: true })
       .click();
   else {
-    await page.getByRole('button', { name: 'Дополнительное меню', exact: true }).click();
+    const menu = page.getByRole('button', { name: 'Дополнительное меню', exact: true });
+    if (!(await menu.isVisible())) await navigate(page, 'Главная');
+    await menu.click();
     await page.locator('.pico-more-menu').getByRole('button', { name, exact: true }).click();
   }
 }

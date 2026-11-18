@@ -634,6 +634,7 @@ function App() {
     ...(user.role !== 'manager' ? [['team', 'Команда']] : []),
     ...(user.role === 'admin' ? [['users', 'Пользователи']] : []),
   ];
+  const showSettingsMenu = !['projects', 'tasks', 'analytics'].includes(tab);
   const scopeScreen = !['profile', 'users', 'team'].includes(tab);
   const showClientGuide =
     tab === 'companies' &&
@@ -690,6 +691,7 @@ function App() {
               className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
               onClick={() => {
                 setTab(key!);
+                setMore(false);
                 setError('');
               }}
             >
@@ -730,16 +732,18 @@ function App() {
               Права и помощь
             </button>
           </div>
-          <button
-            ref={moreButtonRef}
-            className="pico-more-button"
-            aria-label="Дополнительное меню"
-            aria-expanded={more}
-            onClick={() => setMore(!more)}
-          >
-            <Icon name="settings" size={26} />
-          </button>
-          {more && (
+          {showSettingsMenu && (
+            <button
+              ref={moreButtonRef}
+              className="pico-more-button"
+              aria-label="Дополнительное меню"
+              aria-expanded={more}
+              onClick={() => setMore(!more)}
+            >
+              <Icon name="settings" size={26} />
+            </button>
+          )}
+          {showSettingsMenu && more && (
             <div ref={moreMenuRef} className="pico-more-menu">
               <button
                 onClick={() => {
@@ -1225,6 +1229,7 @@ function App() {
             className={tab === key || (tab === 'calendar' && key === 'tasks') ? 'active' : ''}
             onClick={() => {
               setTab(key!);
+              setMore(false);
               setError('');
             }}
           >

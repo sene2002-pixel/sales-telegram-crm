@@ -4331,9 +4331,6 @@ select.pico-filter-sort {
   .telegram-native-header .pico-analytics-final {
     padding-top: 4px;
   }
-  .telegram-native-header .pico-analytics-heading {
-    padding-right: calc(44px + var(--pico-settings-offset));
-  }
 }
 @media (max-width: 760px) {
   :root {
@@ -4426,7 +4423,10 @@ select.pico-filter-sort {
     right: var(--pico-settings-offset);
     z-index: 7;
   }
-  .telegram-native-header .pico-scoped-content > .section-head:has(> h1) {
+  .telegram-native-header
+    .workspace:has(> header > .pico-more-button)
+    .pico-scoped-content
+    > .section-head:has(> h1) {
     padding-right: calc(44px + var(--pico-settings-offset));
   }
   .telegram-native-header .pico-client-list-heading {
