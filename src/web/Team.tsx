@@ -1,5 +1,6 @@
 import { TeamInvitations } from './TeamInvitations';
-import { companyDisplayName } from '../shared/company-display-name';
+import { InactiveCompanies } from './InactiveCompanies';
+import './team-overview.css';
 import { useEffect, useRef, useState } from 'react';
 import { Actor, labels } from '../shared/contracts';
 import { api, today } from './api';
@@ -166,21 +167,7 @@ export function Team({
         )}
       </div>
       <TeamOverview user={user} stats={stats} statsError={statsError} from={from} to={to} />
-      {stats && (
-        <section className="panel pico-team-inactive">
-          <h3>Нет контакта 14 дней</h3>
-          {stats.flatMap((s) =>
-            s.inactiveCompanies.map((c) => (
-              <p key={c.id}>
-                {companyDisplayName(c.name)} <span className="muted">· {s.name}</span>
-              </p>
-            )),
-          )}
-          {!stats.some((s) => s.inactiveCompanies.length) && (
-            <p className="muted">Таких компаний нет.</p>
-          )}
-        </section>
-      )}
+      {stats && <InactiveCompanies stats={stats} />}
       {user.role === 'admin' && (
         <section className="panel pico-team-access">
           <h3>Доступ сотрудников</h3>

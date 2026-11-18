@@ -37,7 +37,7 @@
 .team-overview-head p,
 .team-overview .team-overview-note,
 .team-stats small,
-.team-stats thead th,
+.team-table thead th,
 .team-metric-label {
   color: #586681;
 }
@@ -74,7 +74,7 @@
   color: #a63632;
 }
 
-.team-stats {
+.team-table {
   scroll-margin-block-start: calc(var(--pico-safe-top, 0px) + 12px);
   width: 100%;
   border-collapse: collapse;
@@ -82,7 +82,7 @@
   line-height: 1.45;
 }
 
-.team-stats :is(th, td) {
+.team-table :is(th, td) {
   padding: 12px 10px;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -90,35 +90,43 @@
   border-top: 1px solid var(--line);
 }
 
-.team-stats :is(th, td):where(:first-child) {
+.team-table :is(th, td):where(:first-child) {
   padding-inline-start: 16px;
 }
 
-.team-stats thead th {
+.team-table thead th {
   font-size: 0.75rem;
   font-weight: 600;
 }
 
-.team-stats tbody th {
+.team-table tbody th {
   max-width: 24ch;
   background: transparent;
   color: inherit;
   font-size: 0.875rem;
 }
 
-.team-stats small {
+.team-table small {
   display: block;
   font-size: 0.75rem;
   font-weight: 500;
 }
 
-.team-stats td {
+.team-table td {
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
 }
 
 .team-metric-label {
   display: none;
+}
+
+.team-inactive-table {
+  table-layout: fixed;
+}
+
+.team-inactive-table tbody th {
+  font-weight: 600;
 }
 
 @container (max-width: 40rem) {

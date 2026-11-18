@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Actor, labels, roles } from '../shared/contracts';
 import {
   TeamStats,
@@ -9,7 +9,7 @@ import {
 import { api, download } from './api';
 import { Field } from './forms';
 import { Icon } from './Icons';
-import './team-overview.css';
+import { TeamTablePagination, useTeamTablePage } from './TeamTablePagination';
 
 export function TeamOverview({
   user,
@@ -25,30 +25,11 @@ export function TeamOverview({
   to: string;
 }) {
   const [filter, setFilter] = useState<TeamMetricsFilter>({});
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(5);
-  const tableRef = useRef<HTMLTableElement>(null);
   const rows = stats ? selectTeamMetrics(stats, filter) : [];
-  const currentPage = Math.min(page, Math.max(0, Math.ceil(rows.length / pageSize) - 1));
-  const offset = currentPage * pageSize;
-  function goToPage(nextPage: number, nextSize = pageSize) {
-    setPageSize(nextSize);
-    setPage(nextPage);
-    requestAnimationFrame(() => {
-      const table = tableRef.current;
-      if (!table) return;
-      const visibleTop =
-        (window.visualViewport?.offsetTop ?? 0) +
-        parseFloat(getComputedStyle(table).scrollMarginTop);
-      if (table.getBoundingClientRect().top < visibleTop) {
-        table.focus({ preventScroll: true });
-        table.scrollIntoView({ block: 'start' });
-      }
-    });
-  }
+  const { tableRef, visibleRows, resetPage, pagination } = useTeamTablePage(rows);
   function updateFilter(change: TeamMetricsFilter) {
     setFilter({ ...filter, ...change });
-    setPage(0);
+    resetPage();
   }
   const [exportBusy, setExportBusy] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
@@ -226,7 +207,7 @@ export function TeamOverview({
                 tabIndex={-1}
                 role="table"
                 aria-labelledby="team-overview-title"
-                className="team-stats"
+                className="team-table team-stats"
               >
                 <thead role="rowgroup">
                   <tr role="row">
@@ -252,7 +233,7 @@ export function TeamOverview({
                   </tr>
                 </thead>
                 <tbody role="rowgroup">
-                  {rows.slice(offset, offset + pageSize).map((s) => (
+                  {visibleRows.map((s) => (
                     <tr key={s.id} role="row">
                       <th scope="row" role="rowheader">
                         <strong>{s.name}</strong>
@@ -277,46 +258,7 @@ export function TeamOverview({
                   ))}
                 </tbody>
               </table>
-              <div className="team-metrics-footer">
-                <label className="team-page-size">
-                  Строк на странице
-                  <select
-                    value={pageSize}
-                    onChange={(event) => goToPage(0, Number(event.target.value))}
-                  >
-                    {[5, 10, 25, 50].map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="team-page-controls">
-                  <span aria-live="polite">
-                    {offset + 1}–{Math.min(offset + pageSize, rows.length)} из {rows.length}
-                  </span>
-                  {rows.length > pageSize && (
-                    <>
-                      <button
-                        type="button"
-                        aria-label="Предыдущая страница"
-                        disabled={currentPage === 0}
-                        onClick={() => goToPage(currentPage - 1)}
-                      >
-                        <Icon name="chevron-left" size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Следующая страница"
-                        disabled={offset + pageSize >= rows.length}
-                        onClick={() => goToPage(currentPage + 1)}
-                      >
-                        <Icon name="chevron-right" size={18} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
+              <TeamTablePagination {...pagination} />
             </>
           )}
         </>

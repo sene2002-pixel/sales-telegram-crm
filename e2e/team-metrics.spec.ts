@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { navigate, prepareDemoAuth } from './helpers';
 
+const longCompany = 'Североуральская электротехническая компания промышленного оборудования';
+const companyNames = Array.from(
+  { length: 52 },
+  (_, i) => ['ООО «Север»', longCompany][i] ?? 'Партнёр ' + String(i + 1).padStart(2, '0'),
+);
 const rows = Array.from({ length: 52 }, (_, index) => ({
   id: String(index + 1),
   name: (index % 2 ? 'Денис Громов ' : 'Марина Лесная ') + String(index + 1).padStart(2, '0'),
@@ -11,7 +16,9 @@ const rows = Array.from({ length: 52 }, (_, index) => ({
   overdue: index % 11,
   completed: index + 2,
   interactions: index % 7,
-  inactiveCompanies: index === 51 ? [{ id: 'sample', name: 'Север' }] : [],
+  inactiveCompanies: companyNames
+    .slice(index * 2, index * 2 + 2)
+    .map((name, i) => ({ id: `company-${index}-${i}`, name })),
 }));
 
 test.beforeEach(async ({ page }) => {
@@ -59,7 +66,9 @@ test('Team metrics paginate, filter and sort the complete roster', async ({ page
   );
   await region.getByRole('combobox', { name: 'Роль сотрудника' }).selectOption('supervisor');
   await expect(people).toHaveCount(0);
-  await expect(page.getByText('Север', { exact: false }).last()).toBeVisible();
+  await expect(
+    page.getByRole('table', { name: 'Нет контакта 14 дней' }).getByText('Север', { exact: true }),
+  ).toBeVisible();
   await search.fill('');
   await region.getByRole('combobox', { name: 'Роль сотрудника' }).selectOption('');
   await size.selectOption('5');
@@ -124,4 +133,70 @@ test('Team CSV uses the same criteria in the browser, Telegram download and bot'
   const botRequest = page.waitForRequest('**/api/dashboard/export-bot');
   await region.getByRole('button', { name: 'Получить CSV в боте' }).click();
   expect((await botRequest).postDataJSON()).toEqual(Object.fromEntries(parameters));
+});
+
+test('Inactive companies have independent pages of 5, 10, 25 or 50 companies', async ({
+  page,
+}, info) => {
+  const inactive = page.getByRole('region', { name: 'Нет контакта 14 дней', exact: true });
+  const table = inactive.getByRole('table', { name: 'Нет контакта 14 дней' });
+  const companies = table.locator('tbody').getByRole('row');
+  const size = inactive.getByRole('combobox', { name: 'Строк на странице' });
+  const previous = inactive.getByRole('button', { name: 'Предыдущая страница' });
+  const next = inactive.getByRole('button', { name: 'Следующая страница' });
+  const metrics = page.getByRole('region', { name: 'Показатели команды' });
+
+  if (info.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 740 });
+  await expect(table.getByRole('columnheader')).toHaveText(['Компания', 'Ответственный']);
+  await expect(size).toHaveValue('5');
+  await expect(companies).toHaveCount(5);
+  await expect(companies.first()).toContainText('Север');
+  await expect(companies.first()).toContainText(rows[0].name);
+  await expect(companies.nth(1)).toContainText(longCompany);
+  await expect(previous).toBeDisabled();
+  if (info.project.name === 'mobile')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      320,
+    );
+  await inactive.screenshot({ path: info.outputPath('inactive-companies.png') });
+
+  await metrics.getByRole('button', { name: 'Следующая страница' }).click();
+  const firstEmployee = metrics.getByRole('rowheader').first();
+  await expect(firstEmployee).toContainText(rows[5].name);
+  await next.click();
+  await expect(companies.first()).toContainText(companyNames[5]);
+  await expect(companies.first()).toContainText(rows[2].name);
+  await previous.click();
+  await expect(companies.first()).toContainText('Север');
+  for (const count of [10, 25, 50]) {
+    await size.selectOption(String(count));
+    await expect(companies).toHaveCount(count);
+    await expect(previous).toBeDisabled();
+    await next.click();
+    await expect(companies.first()).toContainText(companyNames[count]);
+    if (info.project.name === 'mobile')
+      await expect(companies.first()).toBeInViewport({ ratio: 0.75 });
+  }
+  await expect(companies).toHaveCount(2);
+  await expect(next).toBeDisabled();
+  await expect(inactive.getByText('51–52 из 52')).toBeVisible();
+  await expect(firstEmployee).toContainText(rows[5].name);
+
+  await metrics.getByRole('searchbox').fill('Нет такого сотрудника');
+  await expect(metrics.getByText('Сотрудники не найдены')).toBeVisible();
+  await expect(companies).toHaveCount(2);
+  await expect(companies.last()).toContainText(companyNames[51]);
+  await expect(companies.last()).toContainText(rows[25].name);
+});
+
+test('Inactive companies show an empty state without page controls', async ({ page }) => {
+  await navigate(page, 'Главная');
+  await page.route('**/api/dashboard?*', (route) =>
+    route.fulfill({ json: rows.map((employee) => ({ ...employee, inactiveCompanies: [] })) }),
+  );
+  await navigate(page, 'Команда');
+  const inactive = page.getByRole('region', { name: 'Нет контакта 14 дней', exact: true });
+  await expect(inactive.getByText('Таких компаний нет.')).toBeVisible();
+  await expect(inactive.getByRole('button')).toHaveCount(0);
+  await expect(inactive.getByRole('combobox')).toHaveCount(0);
 });
