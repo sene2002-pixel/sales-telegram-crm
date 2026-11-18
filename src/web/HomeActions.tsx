@@ -1,8 +1,9 @@
+import { InvitationTeamSelect } from './InvitationTeamSelect';
 import { useEffect, useRef, useState } from 'react';
 import type { Actor } from '../shared/contracts';
 import picoAvatar from '../../public/brand/pico-avatar.png';
 import { api } from './api';
-import { Field, Modal } from './forms';
+import { Modal } from './forms';
 import { Icon } from './Icons';
 import './home-actions.css';
 
@@ -189,19 +190,16 @@ function ShareSheet({
   getLink: (supervisorId: string) => Promise<string>;
   onClose: () => void;
 }) {
-  const [supervisorId, setSupervisorId] = useState('');
+  const [supervisorId, setSupervisorId] = useState(user.id);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const operation = useRef(false);
   const copyTimer = useRef<number | undefined>(undefined);
-  const supervisors = users.filter((person) => person.active && person.role === 'supervisor');
-  const isAdmin = user.role === 'admin';
-  const hasTeam = !isAdmin || supervisors.some((person) => person.id === supervisorId);
   useEffect(() => () => window.clearTimeout(copyTimer.current), []);
 
   async function share(method: 'copy' | 'send') {
-    if (operation.current || !hasTeam) return;
+    if (operation.current) return;
     operation.current = true;
     setBusy(true);
     window.clearTimeout(copyTimer.current);
@@ -264,24 +262,17 @@ function ShareSheet({
     >
       <div className="pico-share-sheet">
         <p className="pico-share-intro">{shareDescription}</p>
-        {isAdmin && (
-          <Field label="Команда руководителя">
-            <select
-              value={supervisorId}
-              onChange={(event) => setSupervisorId(event.target.value)}
-              disabled={busy || !supervisors.length}
-            >
-              <option value="">
-                {supervisors.length ? 'Выберите руководителя' : 'Нет активных руководителей'}
-              </option>
-              {supervisors.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
+        <InvitationTeamSelect
+          user={user}
+          users={users}
+          value={supervisorId}
+          disabled={busy}
+          onChange={(id) => {
+            setSupervisorId(id);
+            setCopied(false);
+            setError('');
+          }}
+        />
         <div className="pico-share-preview">
           <label htmlFor="pico-share-message">Коллега получит</label>
           <textarea
@@ -311,7 +302,6 @@ function ShareSheet({
           type="button"
           className="pico-share-copy"
           data-copied={copied || undefined}
-          disabled={!hasTeam}
           aria-disabled={busy || undefined}
           onClick={() => void share('copy')}
         >
@@ -321,7 +311,6 @@ function ShareSheet({
         <button
           type="button"
           className="primary pico-share-send"
-          disabled={!hasTeam}
           aria-disabled={busy || undefined}
           onClick={() => void share('send')}
         >

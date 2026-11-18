@@ -1,5 +1,7 @@
+import { activeActor, readAsActor } from './auth';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, writeFile, rm, unlink } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { storeCompanyFile } from './file-storage';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -105,16 +107,18 @@ export class LetterService {
     return this.diagnostics ? this.diagnostics.span(event, details, fn) : fn();
   }
   async signature(actor: Actor) {
-    const [row] = await this.crm.db.query('SELECT data FROM letter_signatures WHERE user_id=$1', [
-      actor.id,
-    ]);
-    return row?.data || null;
+    return readAsActor(this.crm.db, actor, async (tx, current) => {
+      const [row] = await tx.query('SELECT data FROM letter_signatures WHERE user_id=$1', [
+        current.id,
+      ]);
+      return row?.data || null;
+    });
   }
   async saveSignature(actor: Actor, raw: unknown) {
     const data = signatureSchema.parse(raw);
     // Compatibility with clients that still know only one signature.
     await this.crm.db.transaction(async (tx) => {
-      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      await activeActor(tx, actor.id, true);
       const rows = await tx.query('SELECT id FROM letter_signatures WHERE user_id=$1', [actor.id]);
       requireCondition(rows.length <= 1, 409, 'Выберите подпись в обновлённом приложении');
       if (rows.length)
@@ -132,16 +136,18 @@ export class LetterService {
     return data;
   }
   async signatures(actor: Actor): Promise<SavedSignature[]> {
-    const rows = await this.crm.db.query(
-      'SELECT id,data,is_default FROM letter_signatures WHERE user_id=$1 ORDER BY id',
-      [actor.id],
-    );
-    return rows.map((row) => ({ ...row.data, id: row.id, isDefault: row.is_default }));
+    return readAsActor(this.crm.db, actor, async (tx, current) => {
+      const rows = await tx.query(
+        'SELECT id,data,is_default FROM letter_signatures WHERE user_id=$1 ORDER BY id',
+        [current.id],
+      );
+      return rows.map((row) => ({ ...row.data, id: row.id, isDefault: row.is_default }));
+    });
   }
   async setDefault(actor: Actor, id: string) {
     idSchema.parse(id);
     await this.crm.db.transaction(async (tx) => {
-      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      await activeActor(tx, actor.id, true);
       const rows = await tx.query('SELECT id FROM letter_signatures WHERE id=$1 AND user_id=$2', [
         id,
         actor.id,
@@ -156,7 +162,7 @@ export class LetterService {
     const data = signatureSchema.parse(raw);
     if (id) idSchema.parse(id);
     return this.crm.db.transaction(async (tx) => {
-      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      await activeActor(tx, actor.id, true);
       if (id) {
         const rows = await tx.query(
           'UPDATE letter_signatures SET data=$1 WHERE id=$2 AND user_id=$3 RETURNING id',
@@ -186,7 +192,7 @@ export class LetterService {
   async deleteSignature(actor: Actor, id: string) {
     idSchema.parse(id);
     return this.crm.db.transaction(async (tx) => {
-      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [actor.id]);
+      await activeActor(tx, actor.id, true);
       const rows = await tx.query(
         'DELETE FROM letter_signatures WHERE id=$1 AND user_id=$2 RETURNING id',
         [id, actor.id],
@@ -227,7 +233,15 @@ export class LetterService {
                   : ''),
             ),
             input,
-            ...(search ? { tools: [{ type: 'web_search' }], tool_choice: 'required' } : {}),
+            ...(search
+              ? {
+                  tools: [{ type: 'web_search' }],
+                  tool_choice: 'required',
+                  ...(this.config.aiBudget.enabled
+                    ? { max_tool_calls: this.config.aiBudget.webSearchCalls }
+                    : {}),
+                }
+              : {}),
             ...(verifySearchSources ? { include: ['web_search_call.action.sources'] } : {}),
             text: {
               format: {
@@ -478,6 +492,7 @@ export class LetterService {
     );
     this.active.add(activeKey);
     let temp = '';
+    let reservedNumber: number | undefined;
     try {
       await this.diagnostics?.record('letter.create.validated', {
         companyId,
@@ -576,6 +591,7 @@ export class LetterService {
         [actor.id],
       );
       requireCondition(reserved, 409, 'Не удалось выделить исходящий номер. Повторите попытку');
+      reservedNumber = reserved.number;
       await this.diagnostics?.record('letter.number.reserved');
       const date = new Intl.DateTimeFormat('en-CA', {
         timeZone: this.config.timezone,
@@ -658,17 +674,14 @@ export class LetterService {
       }
       requireCondition(rendered, 422, 'Письмо не помещается на одной странице');
       const content = await readFile(join(temp, 'letter.pdf'));
-      const folder = join(this.config.dataDir, 'files'),
-        key = randomUUID();
-      await mkdir(folder, { recursive: true });
-      await writeFile(join(folder, key), content, { flag: 'wx', mode: 0o600 });
-      await this.diagnostics?.record('letter.file.written', { sizeBytes: content.length });
-      try {
-        const storeStartedAt = Date.now();
-        await this.diagnostics?.record('letter.store.started', { companyId });
-        const record = await this.crm.db.transaction(async (tx) => {
-          // All CRM writers acquire the hierarchy lock before actor/company row locks.
-          await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      const storeStartedAt = Date.now();
+      await this.diagnostics?.record('letter.store.started', { companyId });
+      const record = await storeCompanyFile(
+        this.crm.db,
+        this.config,
+        { authorId: actor.id, companyId },
+        content,
+        async (tx, key) => {
           const [author] = await tx.query('SELECT active,role FROM users WHERE id=$1 FOR UPDATE', [
             actor.id,
           ]);
@@ -847,24 +860,26 @@ export class LetterService {
               [fileRecord.id, discovered.jobId],
             );
           return fileRecord;
-        });
-        await this.diagnostics?.record('letter.store.completed', {
-          companyId,
-          fileId: record.id,
-          durationMs: Date.now() - storeStartedAt,
-        });
-        await this.diagnostics?.record('letter.create.completed', {
-          companyId,
-          fileId: record.id,
-          durationMs: Date.now() - startedAt,
-        });
-        return { record, sources: prepared.sources, referenceWarning };
-      } catch (e) {
-        await unlink(join(folder, key));
-        await this.diagnostics?.record('letter.file.removed_after_failure', { companyId });
-        throw e;
-      }
+        },
+      );
+      await this.diagnostics?.record('letter.store.completed', {
+        companyId,
+        fileId: record.id,
+        durationMs: Date.now() - storeStartedAt,
+      });
+      await this.diagnostics?.record('letter.create.completed', {
+        companyId,
+        fileId: record.id,
+        durationMs: Date.now() - startedAt,
+      });
+      return { record, sources: prepared.sources, referenceWarning };
     } catch (error) {
+      // A storage rejection rolls back the PDF and must not consume a scarce outgoing number.
+      if (reservedNumber !== undefined && error instanceof DomainError && error.status === 507)
+        await this.crm.db.query('DELETE FROM letter_numbers WHERE user_id=$1 AND number=$2', [
+          actor.id,
+          reservedNumber,
+        ]);
       await this.diagnostics?.record('letter.create.failed', {
         companyId,
         durationMs: Date.now() - startedAt,

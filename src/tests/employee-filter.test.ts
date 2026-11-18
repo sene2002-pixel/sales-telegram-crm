@@ -299,3 +299,41 @@ test('task creation can assign the acting employee without changing the default 
     assignToSelf: true,
   }).expect(400);
 });
+
+test('current permissions govern list, detail, report, dashboard and export snapshots', async () => {
+  const actor: Actor = { ...admin, id: randomUUID(), telegramId: '920099' };
+  await db.query('INSERT INTO users(id,telegram_id,name,role) VALUES ($1,$2,$3,$4)', [
+    actor.id,
+    actor.telegramId,
+    actor.name,
+    actor.role,
+  ]);
+  const report = await s.reports.enqueue(manager, {
+    text: 'Проверка доступа',
+    sourceKey: 'scope-snapshot',
+  });
+  const from = '2025-01-01',
+    to = '2025-02-01';
+  const reads = [
+    () => s.crm.list(actor),
+    () => s.crm.records(actor, 'project'),
+    () => s.crm.detail(actor, own.id),
+    () => s.reports.list(actor),
+    () => s.dashboard.analyticsSettings(actor),
+    () => s.dashboard.analytics(actor, from, to),
+    () => s.dashboard.summary(actor, from, to),
+    () => s.dashboard.csv(actor, from, to),
+    () => s.commercial.generate(actor, from, to),
+  ];
+  assert.equal((await s.reports.get(actor, report.id)).id, report.id);
+  for (const read of reads) await read();
+  await db.query("UPDATE users SET role='manager' WHERE id=$1", [actor.id]);
+  for (const read of reads) await assert.rejects(read(), /Доступ изменён/);
+  await assert.rejects(s.reports.get(actor, report.id), /Отчёт не найден/);
+  const current: Actor = { ...actor, role: 'manager' };
+  assert.deepEqual(await s.crm.list(current), []);
+  await assert.rejects(s.crm.detail(current, own.id), /Компания не найдена/);
+  await assert.rejects(s.dashboard.csv(current, from, to), /руководителю/);
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actor.id]);
+  await assert.rejects(s.crm.records(current, 'task'), /Доступ изменён/);
+});

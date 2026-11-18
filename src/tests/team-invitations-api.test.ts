@@ -94,8 +94,9 @@ test('HTTP creation resolves current bot; teams are scoped and metadata never re
   await api(supervisor, 'post', '/team-invitations', { role: 'admin' }).expect(400);
   await api(admin, 'post', `/team-invitations/${made.body.id}/revoke`, {}).expect(201);
 });
-test('admin chooses active supervisor, no default team and no arbitrary role', async () => {
-  await api(admin, 'post', '/team-invitations', {}).expect(400);
+test('admin defaults to own team and can choose another active team leader', async () => {
+  const own = await api(admin, 'post', '/team-invitations', {}).expect(201);
+  assert.equal(own.body.supervisorId, admin.id);
   const made = await api(admin, 'post', '/team-invitations', { supervisorId: other.id }).expect(
     201,
   );

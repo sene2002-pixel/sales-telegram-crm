@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SabyRegistry, cachedRegistry } from '../server/services/company-registry';
+import {
+  SabyRegistry,
+  cachedRegistry,
+  registryCompanyByName,
+} from '../server/services/company-registry';
 const inn = '7707083893';
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -233,4 +237,92 @@ test('caller budget aborts auth and body reads and prevents retries or subsequen
   });
   assert.equal(await body.lookup(inn, bodyBudget.signal), null);
   assert.equal(calls, 1);
+});
+
+test('search confirms business identity against full requisites and caches both endpoints per import', async () => {
+  const calls: URL[] = [];
+  const registry = cachedRegistry(
+    new SabyRegistry({
+      accessToken: 'synthetic',
+      fetch: (async (input) => {
+        const url = new URL(String(input));
+        calls.push(url);
+        assert.equal(url.origin, 'https://api.sbis.ru');
+        if (url.pathname.endsWith('/search')) {
+          assert.equal(url.searchParams.get('requisites'), 'Пример Москва');
+          assert.equal(url.searchParams.get('limit'), '5');
+          return json([[{ inn }, { inn }]]);
+        }
+        return json([record]);
+      }) as typeof fetch,
+    }),
+  );
+  const input = { name: 'Пример', city: 'Мск', legalForm: 'ООО' };
+  const [a, b] = await Promise.all([
+    registryCompanyByName(registry, input),
+    registryCompanyByName(registry, input),
+  ]);
+  assert.equal(a?.inn, inn);
+  assert.deepEqual(b, a);
+  assert.equal((await registry.lookup(inn))?.name, record.company_short_name);
+  assert.equal(calls.length, 2);
+});
+
+test('incomplete, ambiguous, different-city and unverified candidate lists do not supply an identity', async () => {
+  const other = '7736050003';
+  const cases = [
+    { search: Array(5).fill({ inn }), details: () => [record] },
+    { search: [Array(5).fill({ inn })], details: () => [record] },
+    { search: [[{ inn }], [{ inn: other }]], details: () => [record] },
+    { search: [{ inn: 'bad' }], details: () => [record] },
+    { search: [{ inn }], details: () => [{ ...record, address_legal: 'г. Казань' }] },
+    {
+      search: [{ inn }],
+      details: () => [{ ...record, company_short_name: 'ПАО Пример', company_name: 'Пример, ПАО' }],
+    },
+    { search: [{ inn }, { inn: other }], details: (id: string) => [{ ...record, inn: id }] },
+    { search: [{ inn }, { inn: other }], details: (id: string) => (id === other ? [] : [record]) },
+    {
+      search: [{ inn }, { inn: other }],
+      details: (id: string) =>
+        id === other ? [{ ...record, inn: id, address_legal: undefined }] : [record],
+    },
+  ];
+  for (const scenario of cases) {
+    const registry = new SabyRegistry({
+      accessToken: 'test',
+      fetch: (async (input) => {
+        const url = new URL(String(input));
+        return json(
+          url.pathname.endsWith('/search')
+            ? scenario.search
+            : scenario.details(url.searchParams.get('inn') || ''),
+        );
+      }) as typeof fetch,
+    });
+    assert.equal(
+      await registryCompanyByName(registry, { name: 'Пример', city: 'Москва', legalForm: 'ООО' }),
+      null,
+    );
+  }
+});
+
+test('without configuration or with insufficient or private search terms, enrichment makes no requests', async () => {
+  let calls = 0;
+  const http = (async () => {
+    calls++;
+    return json([]);
+  }) as typeof fetch;
+  const disabled = new SabyRegistry({ fetch: http });
+  const enabled = new SabyRegistry({ accessToken: 'test', fetch: http });
+  assert.equal(await registryCompanyByName(disabled, { name: 'Пример', city: 'Москва' }), null);
+  for (const input of [
+    { name: 'Пример' },
+    { name: 'Пример', city: 'Москва', legalForm: 'ИП' },
+    { name: 'private@example.test', city: 'Москва' },
+    { name: 'Пример', city: '+79000000000' },
+    { name: 'АБ', prefix: 'АБ' },
+  ])
+    assert.equal(await registryCompanyByName(enabled, input), null);
+  assert.equal(calls, 0);
 });

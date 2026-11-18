@@ -1,6 +1,9 @@
+import { recordAiUsage } from './ai-usage';
+import type { Sql } from './database';
+import { AiBudget } from './ai-budget';
 import { Extraction, extractionSchema } from '../../shared/contracts';
 import { Config } from '../config';
-import { requireCondition } from '../domain/errors';
+import { DomainError, requireCondition } from '../domain/errors';
 import { z } from 'zod';
 import { DiagnosticLog } from './diagnostic-log';
 import { protectedInstructions } from '../services/pico-security';
@@ -8,6 +11,19 @@ import { redactSystemPayload } from './system-confidentiality';
 import { salesInstructions } from '../../shared/sales';
 import { salesSupplementInstructions } from '../../shared/sales-instructions';
 
+export class AiRegionUnavailable extends DomainError {
+  constructor() {
+    super(503, 'Провайдер ИИ недоступен в регионе сервиса');
+  }
+}
+export class UncertainAiResult extends DomainError {
+  constructor() {
+    super(
+      503,
+      'Не удалось подтвердить результат запроса ИИ. Перед повтором проверьте состояние операции',
+    );
+  }
+}
 export interface SpeechToText {
   transcribe(audio: Uint8Array): Promise<string>;
 }
@@ -18,9 +34,13 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
   constructor(
     private config: Config,
     private diagnostics?: DiagnosticLog,
+    private budget?: AiBudget,
+    private usageDb?: Sql,
   ) {}
   async request(path: string, body: BodyInit, multipart = false) {
-    const send = () => this.sendRequest(path, body, multipart);
+    const request = () => this.sendRequest(path, body, multipart);
+    const send = () =>
+      this.budget ? this.budget.run(this.diagnostics?.context?.actorId, request) : request();
     return this.diagnostics
       ? this.diagnostics.span('openai.http', { operation: path, multipart }, send)
       : send();
@@ -31,8 +51,15 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
       503,
       'Не настроен OPENAI_API_KEY. Обратитесь к администратору',
     );
-    if (!multipart && typeof body === 'string')
-      body = JSON.stringify(redactSystemPayload(JSON.parse(body), this.config, false, true));
+    if (!multipart && typeof body === 'string') {
+      const payload = JSON.parse(body);
+      if (this.config.aiBudget.enabled && path === 'responses')
+        payload.max_output_tokens = Math.min(
+          payload.max_output_tokens ?? this.config.aiBudget.outputTokens,
+          this.config.aiBudget.outputTokens,
+        );
+      body = JSON.stringify(redactSystemPayload(payload, this.config, false, true));
+    }
     const response = await fetch(`https://api.openai.com/v1/${path}`, {
       method: 'POST',
       headers: {
@@ -41,6 +68,8 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
       },
       body,
       signal: AbortSignal.timeout(90_000),
+    }).catch(() => {
+      throw new UncertainAiResult();
     });
     await this.diagnostics?.record('openai.http_response', {
       operation: path,
@@ -58,6 +87,8 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
         code,
         param,
       });
+      if (response.status === 403 && code === 'unsupported_country_region_territory')
+        throw new AiRegionUnavailable();
       const reason =
         code === 'invalid_json_schema' ||
         (typeof param === 'string' && param.startsWith('text.format'))
@@ -71,7 +102,26 @@ export class OpenAiAdapter implements SpeechToText, ReportExtractor {
                 : 'Сервис ИИ недоступен';
       requireCondition(false, 502, `${reason} (HTTP ${response.status})`);
     }
-    const result: any = await response.json();
+    const result: any = await response.json().catch(() => {
+      throw new UncertainAiResult();
+    });
+    const actorId = this.diagnostics?.context?.actorId;
+    if (this.config.aiUsageMetrics && this.usageDb && actorId) {
+      const model =
+        multipart && body instanceof FormData
+          ? body.get('model')
+          : typeof body === 'string'
+            ? JSON.parse(body).model
+            : null;
+      if (typeof model === 'string') {
+        try {
+          await recordAiUsage(this.usageDb, actorId, model, path, result);
+        } catch {
+          // The provider has already processed this call. A metering failure must not repeat it.
+          console.warn(JSON.stringify({ event: 'ai.usage_unavailable' }));
+        }
+      }
+    }
     await this.diagnostics?.record('openai.result', {
       operation: path,
       responseId: result?.id,

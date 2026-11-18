@@ -92,6 +92,7 @@ before(async () => {
   const built = await createApp(config, db);
   app = built.app;
   s = built.services;
+  await app.listen(0, '127.0.0.1');
   server = app.getHttpServer();
   const a = await s.auth.dev('admin', '127.0.0.1'),
     m = await s.auth.dev('manager', '127.0.0.1');
@@ -394,6 +395,38 @@ test('file uploads and downloads are persistent and protected', async () => {
     .expect(404);
   await request(server).get(fresh.body.path).expect(404);
 });
+test('concurrent uploads from distinct companies share the last system slot', async () => {
+  const companies = await Promise.all([
+    s.crm.create(manager, { name: 'Квота параллельной загрузки 1' }),
+    s.crm.create(other, { name: 'Квота параллельной загрузки 2' }),
+  ]);
+  const [usage] = await db.query("SELECT count(*) AS files FROM records WHERE kind='file'");
+  const limits = { ...config.fileQuotas };
+  try {
+    Object.assign(config.fileQuotas, { enabled: true, systemFiles: Number(usage.files) + 1 });
+    const responses = await Promise.all(
+      companies.map((company, index) =>
+        request(server)
+          .post(`/api/companies/${company.id}/files`)
+          .set('Authorization', 'Bearer ' + [managerToken, otherToken][index])
+          .attach('file', Buffer.from('x'), 'quota.txt'),
+      ),
+    );
+    assert.deepEqual(responses.map((r) => r.status).sort(), [201, 507]);
+    assert.equal(
+      (
+        await db.query(
+          "SELECT id FROM records WHERE kind='file' AND company_id IN ($1,$2)",
+          companies.map((company) => company.id),
+        )
+      ).length,
+      1,
+    );
+  } finally {
+    Object.assign(config.fileQuotas, limits);
+  }
+});
+
 test('dashboard is supervisor-only and CSV neutralizes formula names', async () => {
   await request(server)
     .get('/api/dashboard?from=2026-09-01&to=2026-09-30')

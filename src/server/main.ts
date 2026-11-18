@@ -1,10 +1,12 @@
 import { makeConfig } from './config';
 import { createApp } from './http/app';
+import { startFileQuotaMonitor } from './services/file-quota-monitor';
 async function main() {
   const config = makeConfig();
   const { app, services, db } = await createApp(config);
   await app.listen(config.port, config.host);
   services.errors.start();
+  const stopFileQuotaMonitor = startFileQuotaMonitor(db, config);
   await services.diagnostics.record('server.diagnostics_started', {
     until: new Date(config.diagnosticUntil).toISOString(),
     workerEnabled: config.worker,
@@ -27,6 +29,7 @@ async function main() {
     await services.letterBot.stop();
     await services.errors.stop();
     await app.close();
+    await stopFileQuotaMonitor();
     await db.close();
   };
   process.on('SIGTERM', () => void stop());

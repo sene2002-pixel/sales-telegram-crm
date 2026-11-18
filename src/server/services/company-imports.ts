@@ -1,8 +1,15 @@
+import {
+  deduplicatedColumnModel,
+  ImportColumnModel,
+  withImportColumnModel,
+} from './import-column-mapping';
+import { AiBudgetLimit } from '../infra/ai-budget';
+import { contactPhone } from '../../shared/contact-phone';
 import { randomUUID, createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { classifyHoldingMention } from '../../shared/holding-catalog';
 import { companyDisplayName } from '../../shared/company-display-name';
-import { Registry, cachedRegistry } from './company-registry';
+import { Registry, cachedRegistry, registryCompanyByName } from './company-registry';
 import {
   normalizedCompanyName,
   importedLegalForm,
@@ -27,6 +34,7 @@ import {
   ImportPrivacyGuard,
   fetchPublicGoogleImport,
   parseCompanyImport,
+  parseCompanyTable,
   parseBusinessContacts,
 } from './company-import-parser';
 
@@ -266,6 +274,7 @@ export class CompanyImports {
     private crm: CrmService,
     private privacy: ImportPrivacyGuard,
     private registry?: Registry,
+    private columnModel?: ImportColumnModel,
   ) {}
   private async actor(actor: Actor, tx: Sql): Promise<Actor> {
     // Match all CRM writers: hierarchy lock precedes actor and company row locks.
@@ -625,7 +634,8 @@ export class CompanyImports {
               ]
             : []),
           ...(row.contacts || []).map(
-            (c) => `Контакт: ${c.name}; ${c.role}; ${c.phone}; ${c.email}`,
+            (c) =>
+              `Контакт: ${c.name}; ${c.role}; ${contactPhone(c.phone, c.extension)}; ${c.email}`,
           ),
           ...(row.projects || []).flatMap((p) => [
             `Проект: ${p.data.name}; ${p.data.amount ?? '—'} ₽; срок: ${p.data.due || 'не указан'}`,
@@ -733,12 +743,10 @@ export class CompanyImports {
   }
   async prepare(
     actor: Actor,
-    input: {
-      sourceKey: string;
-      bytes: Uint8Array;
-      format: 'xlsx' | 'csv' | 'txt' | 'docx' | 'ods';
-      sourceDate?: string;
-    },
+    input: { sourceKey: string; bytes: Uint8Array; sourceDate?: string } & (
+      | { format: 'xlsx' | 'csv' | 'txt' | 'docx' | 'ods' }
+      | { format: 'photo'; readRows: () => Promise<string[][]> }
+    ),
   ): Promise<CompanyImportPreview> {
     requireCondition(/^[\w:-]{1,150}$/.test(input.sourceKey), 400, 'Некорректный источник импорта');
     const contentHash = createHash('sha256').update(input.bytes).digest('hex');
@@ -763,12 +771,33 @@ export class CompanyImports {
       return same;
     });
     if (existing) return this.preview(existing);
-    const imported: ImportedCompany[] = await parseCompanyImport(
-      input.bytes,
-      input.format,
-      this.privacy,
-      input.sourceDate,
-    );
+    const columnModel =
+      this.columnModel &&
+      deduplicatedColumnModel(this.db, actor.id, input.sourceKey, contentHash, this.columnModel);
+    let imported: ImportedCompany[];
+    if (input.format === 'photo') {
+      const rows = await input.readRows();
+      imported = await withImportColumnModel(
+        async (choose) =>
+          parseCompanyTable(
+            rows,
+            'Фото таблицы',
+            this.privacy,
+            undefined,
+            input.sourceDate,
+            choose,
+          ),
+        columnModel,
+      );
+    } else {
+      imported = await parseCompanyImport(
+        input.bytes,
+        input.format,
+        this.privacy,
+        input.sourceDate,
+        columnModel,
+      );
+    }
     for (const row of imported)
       for (const project of row.projects || []) {
         if (project.customerCountry && countryKey(project.customerCountry) !== 'россия')
@@ -791,22 +820,41 @@ export class CompanyImports {
     const enrich = async () => {
       while (nextRow < imported.length && !registryBudget.aborted) {
         const row = imported[nextRow++]!;
+        const prefix = row.registryPrefix;
+        delete row.registryPrefix;
         if (
           !registry ||
-          (row.data.country && !/^(?:россия|рф|ru|russia)$/iu.test(row.data.country)) ||
-          row.data.segment === 'holding' ||
-          !row.data.inn ||
-          !validInn(row.data.inn)
+          countryKey(row.data.country) !== 'россия' ||
+          row.data.segment === 'holding'
         )
           continue;
-        const found = await registry.lookup(row.data.inn, registryBudget).catch(() => null);
+        const byName = !row.data.inn
+          ? await registryCompanyByName(
+              registry,
+              {
+                name: row.data.name,
+                city: row.data.city,
+                legalForm: row.legalForm || row.data.legalForm,
+                prefix,
+              },
+              registryBudget,
+            ).catch(() => null)
+          : null;
+        const found =
+          byName ||
+          (row.data.inn
+            ? await registry.lookup(row.data.inn, registryBudget).catch(() => null)
+            : null);
         if (!found) continue;
-        row.registryFields = union(row.registryFields, [
-          'name',
-          'legalForm',
-          'registrationCity',
-          'okved',
-        ]);
+        row.registryFields = union(row.registryFields, ['name']);
+        if (byName) {
+          row.data.inn = byName.inn;
+          row.warnings = row.warnings.filter(
+            (warning) => warning !== 'ИНН не указан или некорректен: импорт без ИНН',
+          );
+          row.warnings.push('ИНН найден по реестру. Проверьте реквизиты перед подтверждением.');
+          row.missing = row.missing.filter((field) => field !== 'ИНН');
+        }
         const name = normalizedCompanyName(found.name);
         if (name && name !== row.data.name) {
           const names = [...new Set([...(row.data.alternativeNames || []), row.data.name])].slice(
@@ -819,14 +867,20 @@ export class CompanyImports {
         }
         const city = found.registrationCity || found.city;
         if (city) {
+          row.registryFields.push('registrationCity');
           row.data.registrationCity = city;
           if (!row.data.city) {
             row.data.city = city;
+            row.missing = row.missing.filter((field) => field !== 'Город');
             row.warnings.push('Город найден автоматически');
           }
         }
-        if (found.okved && found.okved.length <= 50) row.data.okved = found.okved;
+        if (found.okved && found.okved.length <= 50) {
+          row.registryFields.push('okved');
+          row.data.okved = found.okved;
+        }
         if (found.legalForm && found.legalForm.length <= 50) {
+          row.registryFields.push('legalForm');
           row.legalForm = found.legalForm;
           row.data.legalForm = found.legalForm;
         }
@@ -898,32 +952,88 @@ export class CompanyImports {
           randomUUID(),
           actor.id,
           input.sourceKey,
-          { xlsx: 'XLSX', csv: 'CSV', txt: 'Документ', docx: 'Google Docs', ods: 'ODS' }[
-            input.format
-          ],
+          {
+            xlsx: 'XLSX',
+            csv: 'CSV',
+            txt: 'Документ',
+            docx: 'Google Docs',
+            ods: 'ODS',
+            photo: 'Фото таблицы',
+          }[input.format],
           JSON.stringify({ rows, contentHash }),
         ],
       );
       return this.preview(record);
     });
   }
-  async prepareGoogle(actor: Actor, input: { sourceKey: string; url: string }) {
-    const existing = await this.db.transaction(async (tx) => {
+  private async priorSource(actor: Actor, sourceKey: string, claimPhoto = false) {
+    requireCondition(/^[\w:-]{1,150}$/.test(sourceKey), 400, 'Некорректный источник импорта');
+    return this.db.transaction(async (tx) => {
       await this.actor(actor, tx);
-      const [r] = await tx.query('SELECT * FROM company_imports WHERE source_key=$1', [
-        input.sourceKey,
-      ]);
+      const [r] = await tx.query('SELECT * FROM company_imports WHERE source_key=$1', [sourceKey]);
       if (r) {
         requireCondition(
           r.author_id === actor.id &&
-            r.status === 'pending' &&
-            new Date(r.expires_at).getTime() > Date.now(),
+            ((r.status === 'pending' && new Date(r.expires_at).getTime() > Date.now()) ||
+              (claimPhoto && r.status === 'saved')),
           409,
           'Импорт недоступен или завершён',
         );
       }
+      if (!r && claimPhoto) {
+        const receipt = await tx.query(
+          'INSERT INTO import_photo_requests(source_key,author_id) VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING source_key',
+          [sourceKey, actor.id],
+        );
+        requireCondition(
+          receipt.length,
+          409,
+          'Запрос на распознавание уже принят. Если предпросмотр не появился, отправьте исходную таблицу в формате CSV или XLSX.',
+        );
+      }
       return r;
     });
+  }
+  async preparePhoto(
+    actor: Actor,
+    sourceKey: string,
+    download: () => Promise<Uint8Array>,
+    recognize: (bytes: Uint8Array) => Promise<string[][]>,
+  ) {
+    const existing = await this.priorSource(actor, sourceKey, true);
+    if (existing) return this.preview(existing);
+    const release = () =>
+      this.db.query('DELETE FROM import_photo_requests WHERE source_key=$1 AND author_id=$2', [
+        sourceKey,
+        actor.id,
+      ]);
+    let started = false;
+    try {
+      const bytes = await download();
+      const preview = await this.prepare(actor, {
+        sourceKey,
+        bytes,
+        format: 'photo',
+        readRows: async () => {
+          started = true;
+          try {
+            return await recognize(bytes);
+          } catch (error) {
+            if (error instanceof AiBudgetLimit) started = false;
+            throw error;
+          }
+        },
+      });
+      if (!started) await release();
+      return preview;
+    } catch (error) {
+      // An uncertain response may have incurred a charge. Retain its receipt across restarts.
+      if (!started) await release();
+      throw error;
+    }
+  }
+  async prepareGoogle(actor: Actor, input: { sourceKey: string; url: string }) {
+    const existing = await this.priorSource(actor, input.sourceKey);
     if (existing) return this.preview(existing);
     const downloaded = await fetchPublicGoogleImport(input.url);
     return this.prepare(actor, {

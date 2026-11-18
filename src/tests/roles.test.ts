@@ -8,12 +8,16 @@ import { Pool } from 'pg';
 import request from 'supertest';
 import { makeConfig } from '../server/config';
 import { Database } from '../server/infra/database';
+import { AiBudgetLimit } from '../server/infra/ai-budget';
 import { createApp, Services } from '../server/http/app';
 import { Actor, Company, Extraction, Role, companySchema, roles } from '../shared/contracts';
+import { CompanyImports } from '../server/services/company-imports';
+import { assertImportPrivacy } from '../server/services/company-import-parser';
 import { BotService } from '../server/services/bot';
 import { TelegramAdapter } from '../server/infra/telegram';
 import { ReportWorker } from '../server/services/worker';
 import { DomainError } from '../server/domain/errors';
+import { readAsActor } from '../server/services/auth';
 import { ExportService } from '../server/services/exports';
 import { readFile } from 'node:fs/promises';
 
@@ -427,6 +431,7 @@ before(async () => {
   const context = await createApp(config, db);
   app = context.app;
   s = context.services;
+  await app.listen(0, '127.0.0.1');
   server = app.getHttpServer();
 });
 beforeEach(async () => {
@@ -1419,3 +1424,165 @@ test('[QUEUE-02] outbox retries delivery and stops after five failures', async (
   assert.equal(calls, 6);
   assert.equal((await db.query('SELECT sent FROM outbox'))[0].sent, true);
 });
+
+test(
+  'an active read snapshot does not block a role change and the next read sees it',
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const reader = { ...actors.admin, id: randomUUID(), telegramId: randomUUID() };
+    await db.query("INSERT INTO users (id,telegram_id,name,role) VALUES ($1,$2,'Reader','admin')", [
+      reader.id,
+      reader.telegramId,
+    ]);
+    let started!: () => void, resume!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const changed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const reading = readAsActor(db, reader, async (tx, current) => {
+      started();
+      await changed;
+      const [role] = await tx.query('SELECT role FROM users WHERE id=$1', [reader.id]);
+      assert.equal(role.role, current.role);
+    });
+    await opened;
+    try {
+      await db.query("UPDATE users SET role='manager' WHERE id=$1", [reader.id]);
+    } finally {
+      resume();
+      await reading;
+    }
+    await assert.rejects(s.crm.list(reader), /Доступ изменён/);
+  },
+);
+
+test('employee directory and personal signatures use the current role and active status', async () => {
+  const actor = actors.supervisor;
+  const allowed = await s.auth.users(actor);
+  assert.ok(allowed.length > 1);
+  await db.query("UPDATE users SET role='manager' WHERE id=$1", [actor.id]);
+  const denied = (error: unknown) => error instanceof DomainError && error.status === 403;
+  await assert.rejects(s.auth.users(actor), denied);
+  const current = { ...actor, role: 'manager' as const };
+  assert.deepEqual(
+    (await s.auth.users(current)).map((u) => u.id),
+    [actor.id],
+  );
+  await db.query('UPDATE users SET active=false WHERE id=$1', [actor.id]);
+  for (const read of [
+    () => s.auth.users(current),
+    () => s.letters.signature(current),
+    () => s.letters.signatures(current),
+  ])
+    await assert.rejects(read(), denied);
+});
+
+test(
+  'two Telegram replicas and a restarted process reuse photo admission and preview',
+  { skip: !process.env.TEST_DATABASE_URL },
+  async (t) => {
+    const replicaDb = new Database(config);
+    await replicaDb.init({ migrate: false });
+    t.after(() => replicaDb.close());
+    const replica = new Services(replicaDb, config);
+    const primaryImports = new CompanyImports(db, s.crm, assertImportPrivacy);
+    const replicaImports = new CompanyImports(replicaDb, replica.crm, assertImportPrivacy);
+    const source = 'telegram:' + randomUUID();
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ2kAAAAASUVORK5CYII=',
+      'base64',
+    );
+    let start!: () => void, finish!: () => void;
+    const started = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let calls = 0;
+    const recognize = async () => {
+      calls++;
+      start();
+      await release;
+      return [
+        ['Название', 'Город'],
+        ['Тестовая компания', 'Самара'],
+      ];
+    };
+    const first = primaryImports.preparePhoto(actors.manager, source, async () => png, recognize);
+    try {
+      await Promise.race([
+        started,
+        first.then(() => {
+          throw new Error('No recognition call');
+        }),
+      ]);
+      await assert.rejects(
+        replicaImports.preparePhoto(actors.manager, source, async () => png, recognize),
+        /уже принят/,
+      );
+    } finally {
+      finish();
+    }
+    const result = await first;
+    const replay = await replicaImports.preparePhoto(
+      actors.manager,
+      source,
+      async () => png,
+      recognize,
+    );
+    assert.equal(replay.id, result.id);
+    assert.equal(calls, 1);
+    const lost = 'telegram:' + randomUUID();
+    // A terminated process leaves only its committed receipt and no recognized rows.
+    await db.query('INSERT INTO import_photo_requests(source_key,author_id) VALUES ($1,$2)', [
+      lost,
+      actors.manager.id,
+    ]);
+    await assert.rejects(
+      replicaImports.preparePhoto(actors.manager, lost, async () => png, recognize),
+      /уже принят/,
+    );
+    assert.equal(calls, 1);
+    assert.equal(
+      (await replicaDb.query('SELECT id FROM company_imports WHERE source_key=$1', [lost])).length,
+      0,
+    );
+  },
+);
+
+test(
+  'report and letter replicas compete for the final paid queue slot',
+  { skip: !process.env.TEST_DATABASE_URL },
+  async (t) => {
+    const limited = {
+      ...config,
+      aiBudget: { ...config.aiBudget, enabled: true, userQueue: 1, systemQueue: 1 },
+    };
+    const replicaDb = new Database(limited);
+    await replicaDb.init({ migrate: false });
+    t.after(() => replicaDb.close());
+    const primary = new Services(db, limited);
+    const replica = new Services(replicaDb, limited);
+    await replica.letters.writeSignature(other, {
+      lastName: 'Петров',
+      firstName: 'Иван',
+      patronymic: '',
+      workPhone: '',
+      mobilePhone: '',
+      email: '',
+    });
+    const results = await Promise.allSettled([
+      primary.reports.enqueue(actors.manager, { sourceKey: 'queue:report', text: 'Отчёт' }),
+      replica.letterBot.enqueue(other, 'queue:letter', 'Учебная организация'),
+    ]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.ok(results.some((r) => r.status === 'rejected' && r.reason instanceof AiBudgetLimit));
+    const [{ total }] = await db.query(
+      "SELECT ((SELECT count(*) FROM reports WHERE status='queued') + (SELECT count(*) FROM letter_jobs WHERE status='queued'))::int AS total",
+    );
+    assert.equal(total, 1);
+  },
+);

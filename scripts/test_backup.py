@@ -54,6 +54,39 @@ class BackupTests(unittest.TestCase):
             backup.backup(self.archive)
         self.assertEqual(self.archive.read_bytes(), b"existing")
 
+    def test_unfinished_archive_is_private_and_cleaned_up(self):
+        def inspect(*args, **kwargs):
+            staged, = self.root.glob(".crm-backup-*")
+            self.assertEqual(staged.stat().st_mode & 0o777, 0o600)
+            self.assertFalse(self.archive.exists())
+            raise OSError("simulated write failure")
+
+        with patch.object(tarfile.TarFile, "addfile", side_effect=inspect):
+            with self.assertRaisesRegex(OSError, "write failure"):
+                backup.backup(self.archive)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_backup_refuses_dangling_destination_symlink(self):
+        target = self.root / "elsewhere"
+        self.archive.symlink_to(target)
+        with self.assertRaisesRegex(SystemExit, "already exists"):
+            backup.backup(self.archive)
+        self.assertTrue(self.archive.is_symlink())
+        self.assertFalse(target.exists())
+
+    def test_publication_preserves_file_created_during_backup(self):
+        link = backup.os.link
+
+        def competing_writer(source, destination):
+            destination.write_bytes(b"earlier backup")
+            return link(source, destination)
+
+        with patch.object(backup.os, "link", side_effect=competing_writer):
+            with self.assertRaisesRegex(SystemExit, "already exists"):
+                backup.backup(self.archive)
+        self.assertEqual(self.archive.read_bytes(), b"earlier backup")
+        self.assertEqual(list(self.root.glob(".crm-backup-*")), [])
+
     def test_backup_requires_stopped_writers(self):
         self.compose.side_effect = lambda *a, **kw: subprocess.CompletedProcess(a, 0, stdout="postgres\napp\n")
         with self.assertRaisesRegex(SystemExit, "Stop writers"):

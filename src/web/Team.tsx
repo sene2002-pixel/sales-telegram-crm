@@ -147,7 +147,7 @@ export function Team({
   return (
     <>
       <h1>Команда</h1>
-      {user.role === 'supervisor' && <TeamInvitations user={user} users={users} />}
+      <TeamInvitations user={user} users={users} />
       <div className="pico-analytics-commercial team-commercial">
         <CommercialReport users={users} />
       </div>

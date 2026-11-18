@@ -1,5 +1,5 @@
 import { validInn } from '../../shared/contracts';
-import { importedLegalForm, normalizedCity } from './import-normalization';
+import { importedLegalForm, normalizedCity, normalizedCompanyName } from './import-normalization';
 
 /** Minimal projection: raw registry records contain personal data and must never be stored/logged. */
 export interface RegistryCompany {
@@ -11,6 +11,8 @@ export interface RegistryCompany {
 }
 export interface Registry {
   lookup(inn: string, signal?: AbortSignal): Promise<RegistryCompany | null>;
+  /** Complete shortlist only; null means the provider could not safely narrow the result. */
+  search?(name: string, city: string, signal?: AbortSignal): Promise<string[] | null>;
 }
 export interface SabyRegistryOptions {
   accessToken?: string;
@@ -65,6 +67,7 @@ function registrationCity(record: Record<string, unknown>): string | undefined {
 
 /** Official sources:
  * https://github.com/saby/vok/blob/main/doc/req/req.md
+ * https://github.com/saby/vok/tree/main/doc/search
  * https://saby.ru/help/integration/api/auth/service/
  */
 export class SabyRegistry implements Registry {
@@ -177,22 +180,44 @@ export class SabyRegistry implements Registry {
       if (this.pendingToken === pending) this.pendingToken = undefined;
     }
   }
-  async lookup(inn: string, signal?: AbortSignal): Promise<RegistryCompany | null> {
-    if (!validInn(inn) || signal?.aborted) return null;
-    // One five-second budget covers authorization, retries and response bodies together.
+  private async get(path: 'search' | 'req', params: URLSearchParams, signal?: AbortSignal) {
     const budget = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
       : AbortSignal.timeout(5000);
     const token = await this.token(budget);
     if (!token || budget.aborted) return null;
-    const result = await this.json(
-      `https://api.sbis.ru/vok/req?inn=${encodeURIComponent(inn)}`,
-      {
-        method: 'GET',
-        headers: { 'X-SBISAccessToken': token, Accept: 'application/json' },
-      },
+    return this.json(
+      `https://api.sbis.ru/vok/${path}?${params}`,
+      { method: 'GET', headers: { 'X-SBISAccessToken': token, Accept: 'application/json' } },
       budget,
     );
+  }
+  async search(name: string, city: string, signal?: AbortSignal): Promise<string[] | null> {
+    if (signal?.aborted) return null;
+    // Request one extra row to distinguish a complete shortlist from a truncated page.
+    const result = await this.get(
+      'search',
+      new URLSearchParams({
+        requisites: [name, city].filter(Boolean).join(' '),
+        limit: '5',
+        page: '0',
+      }),
+      signal,
+    );
+    if (!Array.isArray(result)) return null;
+    // The Saby demo wraps the search page in an outer array; the published example is flat.
+    const page = result.length === 1 && Array.isArray(result[0]) ? result[0] : result;
+    if (page.length >= 5) return null;
+    const inns = new Set<string>();
+    for (const item of page) {
+      if (typeof item?.inn !== 'string' || !validInn(item.inn)) return null;
+      inns.add(item.inn);
+    }
+    return [...inns];
+  }
+  async lookup(inn: string, signal?: AbortSignal): Promise<RegistryCompany | null> {
+    if (!validInn(inn) || signal?.aborted) return null;
+    const result = await this.get('req', new URLSearchParams({ inn }), signal);
     if (!Array.isArray(result)) return null;
     const matches = result.filter((row) => row && typeof row === 'object' && row.inn === inn);
     if (matches.length !== 1) return null;
@@ -214,7 +239,20 @@ export class SabyRegistry implements Registry {
 /** Instantiate once per import. Cache only the minimal projection, including unsuccessful lookups. */
 export function cachedRegistry(registry: Registry): Registry {
   const lookups = new Map<string, Promise<RegistryCompany | null>>();
+  const searches = new Map<string, Promise<string[] | null>>();
   return {
+    ...(registry.search && {
+      search: async (name: string, city: string, signal?: AbortSignal) => {
+        if (signal?.aborted) return null;
+        const key = JSON.stringify([name.toLowerCase(), city.toLowerCase()]);
+        if (!searches.has(key))
+          searches.set(
+            key,
+            registry.search!(name, city, signal).catch(() => null),
+          );
+        return (await untilAborted(searches.get(key)!, signal)) ?? null;
+      },
+    }),
     lookup: async (inn, signal) => {
       if (!validInn(inn) || signal?.aborted) return null;
       if (!lookups.has(inn))
@@ -226,4 +264,49 @@ export function cachedRegistry(registry: Registry): Registry {
       return result ? { ...result } : null;
     },
   };
+}
+
+/** Verify each possible candidate against the actual registry record, including its registration city. */
+export async function registryCompanyByName(
+  registry: Registry,
+  input: { name: string; city?: string; legalForm?: string; prefix?: string },
+  signal?: AbortSignal,
+): Promise<(RegistryCompany & { inn: string }) | null> {
+  const { legalForm, prefix } = input;
+  if (!registry.search || signal?.aborted || legalForm === 'ИП') return null;
+  const city = normalizedCity(input.city || '');
+  const query = normalizedCompanyName(prefix || input.name);
+  // Send only bounded business identifiers. Do not send arbitrary spreadsheet text to search.
+  if (
+    !/^[\p{L}][\p{L}\p{N} .&()-]{1,149}$/u.test(query) ||
+    (!city && !prefix) ||
+    (city && !/^[\p{L}][\p{L} .-]{1,99}$/u.test(city)) ||
+    /^ИП(?:\s|$)/iu.test(query) ||
+    /\d{6}/u.test(query) ||
+    (prefix && query.length < 6)
+  )
+    return null;
+  const budget = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
+    : AbortSignal.timeout(5000);
+  const inns = await registry.search(query, city, budget);
+  if (!inns?.length || inns.length > 4) return null;
+  const compare = (value: string) => value.toLocaleLowerCase('ru').replace(/ё/g, 'е');
+  let selected: (RegistryCompany & { inn: string }) | null = null;
+  for (const inn of inns) {
+    if (inn.length !== 10) continue;
+    const item = await registry.lookup(inn, budget);
+    if (!item) return null;
+    const candidate = compare(normalizedCompanyName(item.name));
+    if (!(prefix ? candidate.startsWith(compare(query)) : candidate === compare(query))) continue;
+    const candidateForm = item.legalForm || importedLegalForm(item.name);
+    if (legalForm && !candidateForm) return null;
+    if (legalForm && legalForm !== candidateForm) continue;
+    const registration = item.registrationCity || item.city;
+    if (city && !registration) return null;
+    if (city && compare(normalizedCity(registration!)) !== compare(city)) continue;
+    if (selected) return null;
+    selected = { ...item, inn };
+  }
+  return budget.aborted ? null : selected;
 }

@@ -1,3 +1,4 @@
+import { InvitationTeamSelect } from './InvitationTeamSelect';
 import { useEffect, useRef, useState } from 'react';
 import { Actor } from '../shared/contracts';
 import { api } from './api';
@@ -15,7 +16,7 @@ type Created = { id: string; url: string; expiresAt: string };
 export function TeamInvitations({ user, users }: { user: Actor; users: Actor[] }) {
   const [items, setItems] = useState<Invitation[]>([]);
   const [created, setCreated] = useState<Created | null>(null);
-  const [supervisorId, setSupervisorId] = useState('');
+  const [supervisorId, setSupervisorId] = useState(user.id);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -73,25 +74,18 @@ export function TeamInvitations({ user, users }: { user: Actor; users: Actor[] }
           }
         }}
       >
-        {user.role === 'admin' && (
-          <Field label="Команда руководителя">
-            <select
-              required
-              value={supervisorId}
-              onChange={(event) => setSupervisorId(event.target.value)}
-            >
-              <option value="">Выберите руководителя</option>
-              {users
-                .filter((person) => person.active && person.role === 'supervisor')
-                .map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.name}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        )}
-        <button className="primary" disabled={busy || (user.role === 'admin' && !supervisorId)}>
+        <InvitationTeamSelect
+          user={user}
+          users={users}
+          value={supervisorId}
+          disabled={busy}
+          onChange={(id) => {
+            setSupervisorId(id);
+            setCreated(null);
+            setNotice('');
+          }}
+        />
+        <button className="primary" disabled={busy}>
           Создать приглашение
         </button>
       </form>

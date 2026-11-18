@@ -35,15 +35,13 @@ export async function employeeFilterOptions(
   db: Sql,
   actor: Actor,
 ): Promise<EmployeeFilterOption[]> {
-  const [current] = await db.query('SELECT role,active FROM users WHERE id=$1', [actor.id]);
-  requireCondition(
-    current?.active && current.role === actor.role,
-    403,
-    'Доступ изменён. Обновите страницу',
+  const rows = await db.query<EmployeeFilterOption>(
+    `SELECT e.id,e.name,e.role FROM users a JOIN users e ON e.active AND
+      (a.role='admin' OR e.id=a.id OR (a.role='supervisor' AND e.role='manager' AND e.supervisor_id=a.id))
+     WHERE a.id=$1 AND a.active AND a.role=$2 ORDER BY e.name,e.id`,
+    [actor.id, actor.role],
   );
-  return db.query<EmployeeFilterOption>(
-    `SELECT id,name,role FROM users WHERE active AND
-      ($1::boolean OR id=$2 OR ($3::boolean AND role='manager' AND supervisor_id=$2)) ORDER BY name,id`,
-    [current.role === 'admin', actor.id, current.role === 'supervisor'],
-  );
+  // Every active actor can see themselves, even when they have no direct reports.
+  requireCondition(rows.length, 403, 'Доступ изменён. Обновите страницу');
+  return rows;
 }

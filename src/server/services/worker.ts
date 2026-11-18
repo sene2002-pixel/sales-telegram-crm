@@ -1,3 +1,5 @@
+import { AiBudgetLimit } from '../infra/ai-budget';
+import { activeActor } from './auth';
 import { randomUUID } from 'node:crypto';
 import { Database } from '../infra/database';
 import { ErrorLog } from '../infra/error-log';
@@ -277,6 +279,7 @@ export class ReportWorker {
           warnings: draft.warnings.length,
         });
         await this.db.transaction(async (tx) => {
+          const actor = await activeActor(tx, report.author_id);
           const rows = await tx.query(
             `UPDATE reports SET status='review',draft=$1,version=version+1,lease_until=NULL,lease_token=NULL,error=NULL WHERE id=$2 AND lease_token=$3 RETURNING id`,
             [JSON.stringify(draft), report.id, token],
@@ -287,10 +290,6 @@ export class ReportWorker {
             tx,
           );
           if (rows.length && report.chat_id) {
-            const [actor] = await tx.query<any>(
-              'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1',
-              [report.author_id],
-            );
             const summary = await this.reports.feedback(actor, draft, tx);
             await this.reports.notify(tx, report.chat_id, {
               text: `Проверьте черновик:\n\n${summary.slice(0, 2900)}${draft.warnings.length ? '\n\n⚠ ' + draft.warnings.join('; ').slice(0, 500) : ''}`,
@@ -312,6 +311,22 @@ export class ReportWorker {
           }
         });
       } catch (error) {
+        if (error instanceof AiBudgetLimit) {
+          await this.db.transaction(async (tx) => {
+            const rows = await tx.query(
+              `UPDATE reports SET status='queued',attempts=greatest(0,attempts-1),lease_until=NULL,lease_token=NULL,
+               available_at=now()+$3::int*interval '1 second' WHERE id=$1 AND lease_token=$2 RETURNING id`,
+              [report.id, token, error.retryAfter],
+            );
+            if (rows.length)
+              await this.reports.processing.stage(
+                report.source_key,
+                'Ожидаю свободного лимита ИИ…',
+                tx,
+              );
+          });
+          return true;
+        }
         await new ErrorLog(this.db).record(error, {
           event: 'report.processing_failed',
           actorId: report.author_id,
@@ -412,13 +427,19 @@ export class ReportWorker {
             ));
           cleaning = false;
           // A manual retry supersedes a queued failure notification from the prior attempt.
-          if (current) {
+          const authorized =
+            !message.actor_id ||
+            (await tx.query('SELECT id FROM users WHERE id=$1 AND active', [message.actor_id]))
+              .length > 0;
+          if (current && authorized) {
             const id = await this.telegram.send(message.chat_id, message.payload);
             await this.reports.messages.remember(tx, message.chat_id, id, message.task_keys);
           }
           await tx.query('UPDATE outbox SET sent=true WHERE id=$1', [message.id]);
           await this.diagnostics?.record(
-            current ? 'notification.delivery.completed' : 'notification.delivery.superseded',
+            current && authorized
+              ? 'notification.delivery.completed'
+              : 'notification.delivery.superseded',
             { outboxId: message.id, durationMs: Date.now() - started },
             tx,
           );

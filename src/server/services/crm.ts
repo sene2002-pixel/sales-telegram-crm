@@ -18,7 +18,7 @@ import {
 import { Database, Sql } from '../infra/database';
 import { requireCondition } from '../domain/errors';
 import { audit } from '../infra/audit';
-import { isLeader } from './auth';
+import { activeActor, isLeader, readAsActor } from './auth';
 import {
   salesUpdateSchema,
   SalesEvent,
@@ -69,22 +69,20 @@ export class CrmService {
   async company(actor: Actor, id: string, tx: Sql = this.db, lock = false): Promise<Company> {
     idSchema.parse(id);
     const [row] = await tx.query(
-      `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id WHERE c.id=$1 ${lock ? 'FOR UPDATE OF c' : ''}`,
-      [id],
+      `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id JOIN users actor ON actor.id=$2 AND actor.active AND (actor.role IN ('admin','supervisor') OR actor.id=c.owner_id) WHERE c.id=$1 ${lock ? 'FOR UPDATE OF c' : ''}`,
+      [id, actor.id],
     );
-    requireCondition(
-      row && (isLeader(actor) || row.owner_id === actor.id),
-      404,
-      'Компания не найдена',
-    );
+    requireCondition(row, 404, 'Компания не найдена');
     return mapCompany(row);
   }
   async list(actor: Actor, employeeId?: unknown) {
-    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
-    const rows = await this.db.query(
-      `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id WHERE ($1::boolean OR c.owner_id=$2) AND ($3::uuid IS NULL OR c.owner_id=$3) ORDER BY c.updated_at DESC`,
-      [isLeader(actor), actor.id, employee],
-    );
+    const rows = await readAsActor(this.db, actor, async (tx, current) => {
+      const employee = await resolveEmployeeFilter(tx, current, employeeId);
+      return tx.query(
+        `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id WHERE ($1::boolean OR c.owner_id=$2) AND ($3::uuid IS NULL OR c.owner_id=$3) ORDER BY c.updated_at DESC`,
+        [isLeader(current), current.id, employee],
+      );
+    });
     return rows.map(mapCompany);
   }
   async validateHolding(
@@ -186,12 +184,14 @@ export class CrmService {
   }
   async create(actor: Actor, raw: unknown, ownerId = actor.id, tx?: Sql): Promise<Company> {
     let data = companySchema.parse(raw);
+    if (!tx) return this.db.transaction((t) => this.create(actor, data, ownerId, t));
+    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    actor = await activeActor(tx, actor.id);
     requireCondition(
       !data.archived || actor.role === 'admin',
       403,
       'Создание в архиве доступно только суперадмину',
     );
-    if (!tx) return this.db.transaction((t) => this.create(actor, data, ownerId, t));
     requireCondition(
       ownerId === actor.id || isLeader(actor),
       403,
@@ -201,7 +201,6 @@ export class CrmService {
       idSchema.parse(ownerId),
     ]);
     requireCondition(owner, 400, 'Ответственный неактивен');
-    await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     const siteMention = catalogueMention(data);
     requireCondition(
       !(siteMention.sites && !siteMention.companyName && !siteMention.holdingName),
@@ -342,6 +341,7 @@ export class CrmService {
       .parse(raw);
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      actor = await activeActor(tx, actor.id);
       const previous = await this.company(actor, id, tx, true);
       await this.validateHolding(actor, data, previous.ownerId, tx, previous);
       await this.assertInnAvailable(tx, data.inn, previous.ownerId, id);
@@ -367,12 +367,7 @@ export class CrmService {
     const input = companyEditSchema.parse(raw);
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
-      const [currentActor] = await tx.query<Actor>(
-        'SELECT id,name,role,active,telegram_id AS "telegramId" FROM users WHERE id=$1 FOR UPDATE',
-        [actor.id],
-      );
-      requireCondition(currentActor?.active, 403, 'Доступ заблокирован');
-      actor = currentActor;
+      actor = await activeActor(tx, actor.id);
       const previous = await this.company(actor, id, tx, true);
       requireCondition(
         previous.version === input.version,
@@ -450,9 +445,10 @@ export class CrmService {
     });
   }
   async assign(actor: Actor, id: string, ownerId: string, version: number) {
-    requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      actor = await activeActor(tx, actor.id);
+      requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
       const company = await this.company(actor, id, tx, true);
       await this.validateHolding(actor, company, ownerId, tx, company);
       if (actor.role === 'supervisor') {
@@ -478,21 +474,35 @@ export class CrmService {
     });
   }
   async detail(actor: Actor, id: string) {
-    const company = await this.company(actor, id);
-    const records = (
-      await this.db.query(
-        'SELECT r.*,u.name AS author_name FROM records r JOIN users u ON u.id=r.author_id WHERE r.company_id=$1 AND NOT r.deleted ORDER BY r.created_at DESC',
-        [id],
-      )
-    ).map(mapRecord);
-    const events = await this.db.query(
-      'SELECT a.id,a.actor_id,a.company_id,a.action,a.entity_id,a.details,a.created_at,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.company_id=$1 ORDER BY a.created_at DESC LIMIT 100',
-      [id],
+    const { company, records, events, holdingMembers } = await readAsActor(
+      this.db,
+      actor,
+      async (tx, current) => {
+        const company = await this.company(current, id, tx);
+        const records = (
+          await tx.query(
+            'SELECT r.*,u.name AS author_name FROM records r JOIN users u ON u.id=r.author_id WHERE r.company_id=$1 AND NOT r.deleted ORDER BY r.created_at DESC',
+            [id],
+          )
+        ).map(mapRecord);
+        const events = await tx.query(
+          'SELECT a.id,a.actor_id,a.company_id,a.action,a.entity_id,a.details,a.created_at,u.name AS actor_name FROM audit a LEFT JOIN users u ON u.id=a.actor_id WHERE a.company_id=$1 ORDER BY a.created_at DESC LIMIT 100',
+          [id],
+        );
+        const holdingMembers =
+          company.segment === 'holding'
+            ? (
+                await tx.query(
+                  `SELECT c.*,u.name AS owner_name FROM companies c JOIN users u ON u.id=c.owner_id
+        WHERE c.data->>'holdingId'=$1 AND NOT COALESCE((c.data->>'archived')::boolean,false)
+          AND ($2::boolean OR c.owner_id=$3) ORDER BY c.updated_at DESC`,
+                  [id, isLeader(current), current.id],
+                )
+              ).map(mapCompany)
+            : [];
+        return { company, records, events, holdingMembers };
+      },
     );
-    const holdingMembers =
-      company.segment === 'holding'
-        ? (await this.list(actor)).filter((c) => c.holdingId === id && !c.archived)
-        : [];
     const holdingDivisions: Record<string, number> = {};
     let holdingPotential: number | null = null;
     for (const member of holdingMembers) {
@@ -522,6 +532,7 @@ export class CrmService {
     const input = holdingAllocationSchema.parse(raw);
     await this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      actor = await activeActor(tx, actor.id);
       const holding = await this.company(actor, id, tx, true);
       requireCondition(
         holding.segment === 'holding' && !holding.archived,
@@ -666,6 +677,7 @@ export class CrmService {
   ): Promise<Company> {
     if (!tx) return this.db.transaction((t) => this.setArchived(actor, id, archived, version, t));
     await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    actor = await activeActor(tx, actor.id);
     const company = await this.company(actor, id, tx, true);
     await this.validateHolding(actor, { ...company, archived }, company.ownerId, tx, company);
     await this.checkArchivePermission(actor, company, archived, tx);
@@ -683,11 +695,13 @@ export class CrmService {
     return this.company(actor, id, tx);
   }
   async records(actor: Actor, kind: RecordKind, employeeId?: unknown) {
-    const employee = await resolveEmployeeFilter(this.db, actor, employeeId);
-    const rows = await this.db.query(
-      `SELECT r.*,u.name AS author_name,c.data->>'name' AS company_name,p.data->>'name' AS project_name FROM records r JOIN companies c ON c.id=r.company_id JOIN users u ON u.id=r.author_id LEFT JOIN records p ON p.id=r.project_id AND p.company_id=r.company_id AND p.kind='project' AND NOT p.deleted WHERE r.kind=$1 AND NOT r.deleted AND ($2::boolean OR c.owner_id=$3) AND ($4::uuid IS NULL OR CASE WHEN r.kind='task' THEN r.assignee_id ELSE c.owner_id END=$4) ORDER BY r.created_at DESC`,
-      [kind, isLeader(actor), actor.id, employee],
-    );
+    const rows = await readAsActor(this.db, actor, async (tx, current) => {
+      const employee = await resolveEmployeeFilter(tx, current, employeeId);
+      return tx.query(
+        `SELECT r.*,u.name AS author_name,c.data->>'name' AS company_name,p.data->>'name' AS project_name FROM records r JOIN companies c ON c.id=r.company_id JOIN users u ON u.id=r.author_id LEFT JOIN records p ON p.id=r.project_id AND p.company_id=r.company_id AND p.kind='project' AND NOT p.deleted WHERE r.kind=$1 AND NOT r.deleted AND ($2::boolean OR c.owner_id=$3) AND ($4::uuid IS NULL OR CASE WHEN r.kind='task' THEN r.assignee_id ELSE c.owner_id END=$4) ORDER BY r.created_at DESC`,
+        [kind, isLeader(current), current.id, employee],
+      );
+    });
     return rows.map((r) => ({
       ...mapRecord(r),
       companyName: r.company_name,
@@ -831,6 +845,7 @@ export class CrmService {
         this.createRecord(actor, companyId, kind, data, projectId, t, options),
       );
     await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+    actor = await activeActor(tx, actor.id);
     const company = await this.company(actor, companyId, tx, true);
     requireCondition(!company.archived, 409, 'Сначала восстановите компанию из архива');
     await this.validateRecordLinks(actor, companyId, kind, data, tx);
@@ -913,6 +928,7 @@ export class CrmService {
     return this.db.transaction(async (tx) => {
       if (input.assigneeId !== undefined) await tx.query('SELECT pg_advisory_xact_lock(7142502)');
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
+      actor = await activeActor(tx, actor.id);
       const [row] = await tx.query('SELECT * FROM records WHERE id=$1 AND NOT deleted', [
         idSchema.parse(id),
       ]);
@@ -1015,21 +1031,23 @@ export class CrmService {
     });
   }
   async taskAdvice(actor: Actor, id: string) {
-    const [task] = await this.db.query(
-      "SELECT * FROM records WHERE id=$1 AND kind='task' AND NOT deleted",
-      [idSchema.parse(id)],
-    );
-    requireCondition(task, 404, 'Задача не найдена');
-    await this.company(actor, task.company_id);
-    let projectName = '';
-    if (task.project_id) {
-      const [project] = await this.db.query(
-        "SELECT data FROM records WHERE id=$1 AND company_id=$2 AND kind='project' AND NOT deleted",
-        [task.project_id, task.company_id],
+    const { projectName, history } = await readAsActor(this.db, actor, async (tx, current) => {
+      const [task] = await tx.query(
+        "SELECT * FROM records WHERE id=$1 AND kind='task' AND NOT deleted",
+        [idSchema.parse(id)],
       );
-      projectName = project?.data?.name || '';
-    }
-    const history = await this.salesHistory(actor, task.company_id);
+      requireCondition(task, 404, 'Задача не найдена');
+      let projectName = '';
+      if (task.project_id) {
+        const [project] = await tx.query(
+          "SELECT data FROM records WHERE id=$1 AND company_id=$2 AND kind='project' AND NOT deleted",
+          [task.project_id, task.company_id],
+        );
+        projectName = project?.data?.name || '';
+      }
+      const history = await this.salesHistory(current, task.company_id, tx);
+      return { projectName, history };
+    });
     const projection = projectSales(history);
     const normal = (value: string) => value.trim().toLocaleLowerCase('ru');
     const matches = projection.deals.filter(
@@ -1064,6 +1082,7 @@ export class CrmService {
   async deleteTask(actor: Actor, id: string, raw: unknown) {
     const input = z.object({ version: z.number().int().positive() }).strict().parse(raw);
     return this.db.transaction(async (tx) => {
+      actor = await activeActor(tx, actor.id);
       const [row] = await tx.query(
         "SELECT * FROM records WHERE id=$1 AND kind='task' AND NOT deleted",
         [idSchema.parse(id)],
@@ -1091,6 +1110,7 @@ export class CrmService {
   }
   async deleteContact(actor: Actor, id: string, version?: number) {
     return this.db.transaction(async (tx) => {
+      actor = await activeActor(tx, actor.id);
       const [row] = await tx.query(
         "SELECT * FROM records WHERE id=$1 AND kind='contact' AND NOT deleted",
         [idSchema.parse(id)],
@@ -1118,6 +1138,7 @@ export class CrmService {
   }
   async deleteFile(actor: Actor, id: string) {
     return this.db.transaction(async (tx) => {
+      actor = await activeActor(tx, actor.id);
       const [row] = await tx.query(
         `SELECT * FROM records WHERE id=$1 AND kind='file' AND NOT deleted`,
         [idSchema.parse(id)],

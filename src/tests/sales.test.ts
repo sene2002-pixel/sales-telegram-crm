@@ -23,6 +23,7 @@ import { extractionSchema, activitySchema, Extraction } from '../shared/contract
 import { dialogueActionSchema } from '../server/services/dialogue-plan';
 import { makeConfig } from '../server/config';
 import { createApp } from '../server/http/app';
+import { Database } from '../server/infra/database';
 import { CommercialReportService } from '../server/services/commercial-report';
 
 const fact = <T>(value: T): Fact<T> => ({ value, certainty: 'confirmed' });
@@ -247,7 +248,7 @@ test('SALES-10 next steps stay scoped to the original project', () => {
   assert.equal(confirmed(updated.deals[0]!.deal.nextStep), 'Получить конкурентное предложение');
   assert.equal(confirmed(updated.deals[0]!.deal.nextDue), '2026-10-12');
 });
-test('SALES-11 report preserves historical identity, result-only updates and independent amounts', async () => {
+test('SALES-11 report preserves historical identity, result-only updates and independent amounts', async (t) => {
   const a = sales('Одинаковый', 2000000);
   a.deals[0]!.endCustomer = 'А';
   a.deals[0]!.volume = fact('in_work');
@@ -268,22 +269,13 @@ test('SALES-11 report preserves historical identity, result-only updates and ind
       volume: fact('confirmed'),
     },
   ];
-  const rows = [
-    event('1', a),
-    event('2', b, '2026-10-02'),
-    event('3', unknown, '2026-10-03'),
-    event('4', result, '2026-10-04'),
-  ].map((e) => ({
-    id: e.id,
-    company_id: 'company',
-    author_id: 'author',
-    created_at: e.createdAt,
-    company_data: { name: 'Клиент' },
-    data: { occurredOn: e.occurredOn, sales: e.sales },
-  }));
-  const db = {
-    query: async (_q: string, args: string[]) => rows.filter((r) => r.data.occurredOn <= args[0]!),
-  } as any;
+  const dir = await mkdtemp(join(tmpdir(), 'sales-history-'));
+  const db = new Database(makeConfig({ DATA_DIR: dir, DATABASE_URL: '' }));
+  await db.init();
+  t.after(async () => {
+    await db.close();
+    await rm(dir, { recursive: true, force: true });
+  });
   const service = new CommercialReportService(db);
   const actor = {
     id: randomUUID(),
@@ -292,6 +284,35 @@ test('SALES-11 report preserves historical identity, result-only updates and ind
     telegramId: 'test',
     active: true,
   };
+  await db.query('INSERT INTO users(id,telegram_id,name,role) VALUES ($1,$2,$3,$4)', [
+    actor.id,
+    actor.telegramId,
+    actor.name,
+    actor.role,
+  ]);
+  const companyId = randomUUID();
+  await db.query('INSERT INTO companies(id,owner_id,data) VALUES ($1,$2,$3)', [
+    companyId,
+    actor.id,
+    JSON.stringify({ name: 'Клиент' }),
+  ]);
+  for (const entry of [
+    event('1', a),
+    event('2', b, '2026-10-02'),
+    event('3', unknown, '2026-10-03'),
+    event('4', result, '2026-10-04'),
+  ]) {
+    await db.query(
+      "INSERT INTO records(id,company_id,author_id,kind,data,created_at) VALUES ($1,$2,$3,'activity',$4,$5)",
+      [
+        randomUUID(),
+        companyId,
+        actor.id,
+        JSON.stringify({ occurredOn: entry.occurredOn, sales: entry.sales }),
+        entry.createdAt,
+      ],
+    );
+  }
   const all = await service.generate(actor, '2026-10-01', '2026-10-04');
   assert.equal(all.totals.in_work, 2000000);
   assert.equal(all.totals.potential, 3000000);

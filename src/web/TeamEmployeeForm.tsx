@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Actor, roles } from '../shared/contracts';
+import { Actor, isLeader, roles } from '../shared/contracts';
 import { api } from './api';
 import { Field, Select } from './forms';
 
@@ -122,7 +122,7 @@ export function TeamEmployeeForm({
               >
                 <option value="">Не назначен</option>
                 {users
-                  .filter((u) => u.role === 'supervisor' && u.active && u.id !== employee?.id)
+                  .filter((u) => isLeader(u) && u.active && u.id !== employee?.id)
                   .map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name}

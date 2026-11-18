@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { Actor, Role, roles } from '../../shared/contracts';
+import { Actor, Role, roles, isLeader } from '../../shared/contracts';
 import { Config } from '../config';
 import { Database, Sql } from '../infra/database';
 import { requireCondition } from '../domain/errors';
@@ -57,11 +57,45 @@ export function verifyTelegram(
     name: [parsed.data.first_name, parsed.data.last_name].filter(Boolean).join(' ').slice(0, 200),
   };
 }
-export function isLeader(actor: Actor) {
-  return actor.role === 'admin' || actor.role === 'supervisor';
+export { isLeader };
+
+export async function activeTeamOwner(tx: Sql, id: string) {
+  const [owner] = await tx.query<Actor>(
+    `SELECT ${userProjection} FROM users WHERE id=$1 AND active=true FOR SHARE`,
+    [id],
+  );
+  return owner && isLeader(owner);
 }
 export const userProjection =
   'id, telegram_id AS "telegramId", name, role, active, supervisor_id AS "supervisorId"';
+// Use one MVCC snapshot for the role, team membership and protected rows.
+export function readAsActor<T>(
+  db: Database,
+  actor: Actor,
+  read: (tx: Sql, current: Actor) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+    const [current] = await tx.query<Actor>(`SELECT ${userProjection} FROM users WHERE id=$1`, [
+      actor.id,
+    ]);
+    requireCondition(
+      current?.active && current.role === actor.role,
+      403,
+      'Доступ изменён. Обновите страницу',
+    );
+    return read(tx, current);
+  });
+}
+// Keep the user's authorization stable until the protected database operation commits.
+export async function activeActor(tx: Sql, id: string, exclusive = false): Promise<Actor> {
+  const [current] = await tx.query<Actor>(
+    `SELECT ${userProjection} FROM users WHERE id=$1 FOR ${exclusive ? 'UPDATE' : 'SHARE'}`,
+    [id],
+  );
+  requireCondition(current?.active, 403, 'Доступ изменён. Учётная запись отключена');
+  return current;
+}
 export class AuthService {
   constructor(
     private db: Database,
@@ -150,8 +184,11 @@ export class AuthService {
     return { token: this.issue(actor), user: actor };
   }
   async users(actor: Actor) {
-    if (!isLeader(actor)) return [actor];
-    return this.db.query<Actor>(`SELECT ${userProjection} FROM users ORDER BY name`);
+    return readAsActor(this.db, actor, (tx, current) =>
+      isLeader(current)
+        ? tx.query<Actor>(`SELECT ${userProjection} FROM users ORDER BY name`)
+        : Promise.resolve([current]),
+    );
   }
   async admitUser(actor: Actor, raw: unknown) {
     requireCondition(actor.role === 'admin', 403, 'Только администратор управляет сотрудниками');
@@ -171,6 +208,11 @@ export class AuthService {
       .parse(raw);
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      requireCondition(
+        (await activeActor(tx, actor.id)).role === 'admin',
+        403,
+        'Только администратор управляет сотрудниками',
+      );
       const [existing] = await tx.query('SELECT id FROM users WHERE telegram_id=$1', [telegramId]);
       requireCondition(
         !existing,
@@ -201,6 +243,11 @@ export class AuthService {
       .parse(raw);
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      requireCondition(
+        (await activeActor(tx, actor.id)).role === 'admin',
+        403,
+        'Только администратор управляет сотрудниками',
+      );
       const [existing] = await tx.query<Actor>(
         `SELECT ${userProjection} FROM users WHERE telegram_id=$1 FOR UPDATE`,
         [input.telegramId],
@@ -221,17 +268,14 @@ export class AuthService {
             : null
           : input.supervisorId;
       if (supervisorId) {
-        const [supervisor] = await tx.query(
-          "SELECT id FROM users WHERE id=$1 AND role='supervisor' AND active=true",
-          [supervisorId],
-        );
+        const supervisor = await activeTeamOwner(tx, supervisorId);
         requireCondition(
           supervisor && supervisorId !== id && input.role === 'manager',
           400,
           'Руководителя можно назначить менеджеру. Выберите активного руководителя',
         );
       }
-      if (existing?.role === 'supervisor' && (input.role !== 'supervisor' || !input.active))
+      if (existing && isLeader(existing) && (!isLeader(input) || !input.active))
         await tx.query('UPDATE users SET supervisor_id=NULL WHERE supervisor_id=$1', [id]);
       await tx.query(
         `INSERT INTO users(id,telegram_id,name,role,active,supervisor_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(telegram_id) DO UPDATE SET name=$3,role=$4,active=$5,supervisor_id=$6`,

@@ -1,7 +1,7 @@
 import { PicoIdeas } from './PicoIdeas';
 import { TeamInvitations } from './TeamInvitations';
 import { useState } from 'react';
-import { Actor, labels, roles } from '../shared/contracts';
+import { Actor, isLeader, labels, roles } from '../shared/contracts';
 import { api } from './api';
 import { Field, Modal, Select } from './forms';
 import { Icon } from './Icons';
@@ -178,7 +178,7 @@ export function UsersScreen({
                 >
                   <option value="">Не назначен</option>
                   {users
-                    .filter((u) => u.role === 'supervisor' && u.active)
+                    .filter((u) => isLeader(u) && u.active && u.id !== editing.id)
                     .map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.name}

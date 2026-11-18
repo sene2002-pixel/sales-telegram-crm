@@ -46,6 +46,15 @@ for (const width of [320, 1440]) {
     await expect(field).toHaveValue(names[0]);
     await expect(first).toBeVisible();
     await expect(second).toHaveCount(0);
+    await field.fill('Нет совпадений ' + suffix);
+    await expect(
+      page.getByRole('heading', { name: 'Нет компаний по выбранным фильтрам' }),
+    ).toBeVisible();
+    await expect(page.getByText(/Измените запрос или выбранные фильтры/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Что будет в карточке клиента' })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole('heading', { name: 'Клиентов пока нет' })).toHaveCount(0);
     await field.fill('');
     await expect(first).toBeVisible();
     await expect(second).toBeVisible();
