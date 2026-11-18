@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Locator, test } from '@playwright/test';
 import { clients, prepareDemoAuth } from './helpers';
 
 test('New manager can read the empty client card and start adding a client', async ({
@@ -115,11 +115,18 @@ test('New manager can read the empty client card and start adding a client', asy
   await expect(sheet.getByLabel('Название', { exact: true })).toBeVisible();
   if (mobile) {
     const viewport = page.viewportSize()!;
-    for (const name of ['Сохранить клиента', 'Закрыть']) {
-      const button = (await sheet.getByRole('button', { name, exact: true }).boundingBox())!;
+    const expectInsideSafeArea = async (control: Locator) => {
+      await expect(control).toBeInViewport();
+      const button = (await control.boundingBox())!;
       expect(button.x).toBeGreaterThanOrEqual(12);
       expect(button.x + button.width).toBeLessThanOrEqual(viewport.width - 18);
       expect(button.y + button.height).toBeLessThanOrEqual(viewport.height - 34);
-    }
+    };
+    await expectInsideSafeArea(sheet.getByRole('button', { name: 'Сохранить клиента' }));
+    await expectInsideSafeArea(sheet.getByRole('button', { name: 'Закрыть', exact: true }));
+    await sheet.getByText('Потенциал', { exact: true }).click();
+    await sheet.getByRole('textbox', { name: 'Выключатели 0,4 кВ', exact: true }).click();
+    const keypad = page.getByRole('region', { name: 'Клавиатура Pico' });
+    await expectInsideSafeArea(keypad.getByRole('button', { name: 'Готово', exact: true }));
   }
 });

@@ -4686,7 +4686,9 @@ textarea.pico-growing-textarea {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 8px 16px calc(30px + env(safe-area-inset-bottom, 0px));
+  padding: 8px calc(16px + var(--pico-safe-right, env(safe-area-inset-right, 0px)))
+    calc(30px + var(--pico-safe-bottom, env(safe-area-inset-bottom, 0px)))
+    calc(16px + var(--pico-safe-left, env(safe-area-inset-left, 0px)));
   border-radius: 28px 28px 0 0;
   background: #fff;
   color: #1a2151;
