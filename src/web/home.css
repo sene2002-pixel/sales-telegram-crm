@@ -25,13 +25,11 @@ html.pico-home-active,
 .pico-home-greeting {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   min-height: 32px;
   margin: 0 0 16px;
 }
 .pico-home-greeting h1 {
-  flex: 1;
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -208,8 +206,7 @@ html.pico-home-active,
   min-width: 0;
   gap: 10px;
 }
-.pico-agenda-badge,
-.pico-agenda-empty-check {
+.pico-agenda-badge {
   display: grid;
   flex: none;
   place-items: center;
@@ -223,8 +220,7 @@ html.pico-home-active,
   color: #5a67d8;
   background: #eceefc;
 }
-.pico-agenda-badge-call,
-.pico-agenda-empty-check {
+.pico-agenda-badge-call {
   color: #178a55;
   background: #e3f3ea;
 }
@@ -293,9 +289,8 @@ html.pico-home-active,
 }
 .pico-agenda-empty-heading {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  gap: 10px;
   padding-bottom: 4px;
 }
 .pico-agenda-empty-heading strong,
@@ -515,15 +510,44 @@ html.pico-home-active,
   .pico-home-workspace > header .header-leading {
     display: none;
   }
-  .pico-home-greeting:not(:has(.pico-admin-button)) {
-    padding-right: 48px;
-  }
-  .pico-home-greeting:has(.pico-admin-button) h1 {
-    margin-right: 44px;
+  .pico-home-greeting {
+    padding-inline-end: 48px;
   }
   .pico-home-workspace {
+    --pico-settings-offset: 0px;
     padding-top: var(--pico-safe-top, 0px);
     padding-bottom: calc(var(--pico-nav-height) + 5px);
+  }
+  .pico-home-workspace:has(.pico-agenda-empty),
+  .pico-home-workspace > .pico-scoped-content:has(.pico-agenda-empty),
+  .pico-home:has(.pico-agenda-empty),
+  .pico-agenda:has(.pico-agenda-empty) {
+    display: flex;
+    flex-direction: column;
+  }
+  .pico-home-workspace:has(.pico-agenda-empty) > *,
+  .pico-home:has(.pico-agenda-empty) > *,
+  .pico-agenda:has(.pico-agenda-empty) > * {
+    flex-shrink: 0;
+  }
+  .pico-home-workspace > .pico-scoped-content:has(.pico-agenda-empty),
+  .pico-home:has(.pico-agenda-empty),
+  .pico-agenda:has(.pico-agenda-empty) {
+    flex: 1 0 auto;
+  }
+  .pico-agenda-panel:has(.pico-agenda-empty) {
+    flex: 1 0 280px;
+    height: auto;
+  }
+  .pico-agenda-empty {
+    grid-template-rows: minmax(min-content, 1fr) minmax(min-content, 3fr);
+  }
+  .pico-agenda-shortcuts {
+    display: grid;
+    grid-auto-rows: minmax(48px, 1fr);
+  }
+  .pico-agenda-shortcuts > button {
+    height: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {

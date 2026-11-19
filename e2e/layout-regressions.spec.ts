@@ -26,6 +26,14 @@ for (const width of [360, 390, 1440]) {
         });
       });
     }
+    const longName = 'АлександрославВладимировичОченьДлинноеИмя';
+    if (width === 360) {
+      await page.route('**/api/me', async (route) => {
+        const response = await route.fetch();
+        if (!response.ok()) return route.fulfill({ response });
+        await route.fulfill({ json: { ...(await response.json()), name: longName } });
+      });
+    }
     await page.goto('/');
     await page.getByRole('button', { name: 'Администратор', exact: true }).click();
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
@@ -41,6 +49,7 @@ for (const width of [360, 390, 1440]) {
     expect(response.ok()).toBeTruthy();
     await page.reload();
     await expect(page.getByRole('heading', { name: /Привет/ })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
     const crown = page.getByRole('button', { name: 'Управление пользователями', exact: true });
     const heading = page.locator('.pico-home-greeting h1');
     const [crownBox, headingBox, overviewBox] = await Promise.all([
@@ -48,7 +57,7 @@ for (const width of [360, 390, 1440]) {
       heading.boundingBox(),
       page.locator('.pico-home-overview').boundingBox(),
     ]);
-    expect(crownBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
+    expect(crownBox!.x - headingBox!.x - headingBox!.width).toBeCloseTo(10, 0);
     expect(crownBox!.x + crownBox!.width).toBeLessThanOrEqual(
       overviewBox!.x + overviewBox!.width + 1,
     );
@@ -61,12 +70,26 @@ for (const width of [360, 390, 1440]) {
     expect(overviewBox!.y - headingBox!.y - headingBox!.height).toBe(16);
     if (width <= 760) {
       await expect(page.locator('.mobile-brand')).toBeHidden();
+      const settings = page.getByRole('button', { name: 'Дополнительное меню', exact: true });
+      expect(crownBox!.x + crownBox!.width).toBeLessThanOrEqual((await settings.boundingBox())!.x);
+    }
+    if (width === 360) {
+      await expect(heading).toHaveAttribute('title', `Привет, ${longName}!`);
+      expect(await heading.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
     } else {
-      const brand = page.locator('.brand-mark:visible').first();
-      await expect(brand).toHaveAttribute('src', /\/assets\/pico-avatar-[^/]+\.png$/);
-      await expect
-        .poll(() => brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0))
-        .toBeTruthy();
+      const textWidth = await heading.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().width;
+      });
+      expect(headingBox!.width).toBeCloseTo(textWidth, 0);
+      if (width > 760) {
+        const brand = page.locator('.brand-mark:visible').first();
+        await expect(brand).toHaveAttribute('src', /\/assets\/pico-avatar-[^/]+\.png$/);
+        await expect
+          .poll(() => brand.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0))
+          .toBeTruthy();
+      }
     }
     await page.screenshot({ path: info.outputPath(`home-${width}.png`), animations: 'disabled' });
     await crown.click();

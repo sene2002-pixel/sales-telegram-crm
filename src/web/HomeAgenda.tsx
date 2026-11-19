@@ -158,13 +158,8 @@ export function HomeAgenda({
           {!list.length && (
             <div className="pico-agenda-empty">
               <div className="pico-agenda-empty-heading">
-                <span className="pico-agenda-empty-check">
-                  <Icon name="check" size={18} />
-                </span>
-                <div>
-                  <strong>День свободен</strong>
-                  <p>Время сделать шаг к новой сделке</p>
-                </div>
+                <strong>День свободен</strong>
+                <p>Время сделать шаг к новой сделке</p>
               </div>
               <div className="pico-agenda-shortcuts">
                 {shortcuts.map(([type, title, description]) => (
