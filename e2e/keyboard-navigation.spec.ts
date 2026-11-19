@@ -281,6 +281,7 @@ test('keyboard baseline starts at the native usable height, not host height', as
   await search.focus();
   await expect(page.locator('html')).toHaveAttribute('data-pico-keyboard-open', 'false');
   await expect(nav).toBeVisible();
+  expect(await nav.boundingBox()).toEqual({ x: 0, y: 488, width: 390, height: 72 });
   await page.screenshot({ path: info.outputPath('native-short-window-no-keyboard.png') });
   await resize(page, 300, true);
   await expect(nav).toBeHidden();

@@ -62,7 +62,7 @@ test('Telegram header: authenticated mobile requests fullscreen and preserves me
         version: '8.0',
         viewportStableHeight: 844,
         isFullscreen: false,
-        safeAreaInset: { top: 24, bottom: 20, left: 12, right: 18 },
+        safeAreaInset: { top: 24, bottom: 34, left: 12, right: 18 },
         contentSafeAreaInset: { top: 48, bottom: 0, left: 0, right: 0 },
         ready() {
           calls.ready++;
@@ -112,8 +112,11 @@ test('Telegram header: authenticated mobile requests fullscreen and preserves me
     0,
   );
   const gear = page.getByRole('button', { name: 'Дополнительное меню', exact: true });
+  const nav = page.getByRole('navigation', { name: 'Основная навигация' });
   for (const viewportWidth of [width, 320]) {
     await page.setViewportSize({ width: viewportWidth, height: 844 });
+    await expect(nav).toHaveCSS('height', '93px');
+    expect(await nav.boundingBox()).toEqual({ x: 0, y: 751, width: viewportWidth, height: 93 });
     const menu = (await gear.boundingBox())!;
     expect(menu.y).toBeGreaterThanOrEqual(72);
     expect(menu.x + menu.width).toBeLessThanOrEqual(viewportWidth - 18);

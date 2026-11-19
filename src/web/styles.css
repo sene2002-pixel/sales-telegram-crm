@@ -4335,10 +4335,11 @@ select.pico-filter-sort {
 @media (max-width: 760px) {
   :root {
     --pico-nav-inset: max(env(safe-area-inset-bottom, 0px), var(--pico-safe-bottom, 0px));
+    /* The 72px design already leaves 13px below the tap targets. */
     --pico-nav-height: max(72px, calc(59px + var(--pico-nav-inset)));
   }
   .workspace {
-    padding-bottom: calc(var(--pico-nav-height) + 12px);
+    padding-bottom: calc(var(--pico-nav-height) + 16px);
   }
   .pico-bottom-nav {
     display: grid;
@@ -4691,17 +4692,6 @@ textarea.pico-growing-textarea {
 .client-draft-confirm-actions > button {
   width: 100%;
   min-height: 44px;
-}
-
-@media (max-width: 760px) {
-  .workspace {
-    padding-bottom: calc(72px + var(--pico-nav-inset) + 16px);
-  }
-}
-@media (max-width: 760px) {
-  :root {
-    --pico-nav-height: calc(72px + var(--pico-nav-inset));
-  }
 }
 
 /* Shared Pico keypad, without a dimming backdrop or a native mobile keyboard. */
