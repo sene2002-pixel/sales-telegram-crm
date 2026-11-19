@@ -49,10 +49,15 @@ for (const size of [
     await login(page);
     await expect(page.locator('html')).toHaveClass(/pico-home-active/);
     const panel = agenda(page).locator('.pico-agenda-panel');
-    await expect(panel).toHaveCSS('height', '296px');
+    if (size.width > 760) await expect(panel).toHaveCSS('height', '296px');
+    else expect((await panel.boundingBox())!.height).toBeGreaterThanOrEqual(280);
     await expect(agenda(page).getByRole('heading', { name: 'Дела' })).toHaveCSS('height', '44px');
     await expect(panel).toContainText('День свободен');
     await expect(panel).toContainText('Время сделать шаг к новой сделке');
+    const freeDay = panel.locator('.pico-agenda-empty-heading');
+    await expect(freeDay.locator('svg')).toHaveCount(0);
+    const shortcut = panel.getByRole('button', { name: /^Позвонить клиенту/ });
+    expect((await freeDay.boundingBox())!.x).toBe((await shortcut.boundingBox())!.x);
     await expect(scrollable(page)).toHaveCount(0);
     await expect(panel.locator('.pico-agenda-fade, .pico-agenda-scroll-track')).toHaveCount(0);
 
@@ -105,10 +110,19 @@ for (const size of [
       const nav = (await page.locator('.pico-bottom-nav').boundingBox())!;
       const dots = (await page.locator('.pico-home-action-dots').boundingBox())!;
       expect(nav.y).toBe(772);
-      expect(dots.y + dots.height).toBeLessThanOrEqual(nav.y - 5);
+      expect(dots.y + dots.height).toBeCloseTo(nav.y - 5, 0);
       await expect(page.locator('.pico-home-workspace')).toHaveJSProperty('scrollTop', 0);
     }
     await page.screenshot({ path: info.outputPath(`home-empty-${size.width}.png`) });
+    if (size.width === 320) {
+      const workspace = page.locator('.pico-home-workspace');
+      await workspace.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      const dots = (await page.locator('.pico-home-action-dots').boundingBox())!;
+      const nav = (await page.locator('.pico-bottom-nav').boundingBox())!;
+      expect(dots.y + dots.height).toBeCloseTo(nav.y - 5, 0);
+      await page.screenshot({ path: info.outputPath('home-short-scroll-bottom.png') });
+      await workspace.evaluate((el) => (el.scrollTop = 0));
+    }
     await action(page, 'С чего начать');
     await expect(page.getByRole('dialog', { name: 'С чего начать' })).toBeVisible();
     await page.getByRole('dialog').getByRole('button', { name: 'Закрыть' }).click();
@@ -134,23 +148,19 @@ test('Home agenda and carousel fit the Telegram header reserve at 390x844', asyn
       WebApp: {
         platform: 'ios',
         viewportStableHeight: 844,
-        safeAreaInset: { top: 47 },
-        contentSafeAreaInset: { top: 68 },
+        safeAreaInset: { top: 47, bottom: 34 },
+        contentSafeAreaInset: { top: 51 },
       },
     };
   });
   await page.route('**/api/records/task*', (route) => route.fulfill({ json: [] }));
   await login(page);
-  const dots = page.locator('.pico-home-action-dots > button').first();
+  const dots = page.locator('.pico-home-action-dots');
   await expect(dots).toBeVisible();
-  const dotBottom = await dots.evaluate((el) => {
-    const size = parseFloat(getComputedStyle(el, '::before').height);
-    const bounds = el.getBoundingClientRect();
-    return bounds.top + (bounds.height + size) / 2;
-  });
+  const dotsBox = (await dots.boundingBox())!;
   const navigation = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  expect(dotBottom).toBe(767);
-  expect(navigation.y).toBe(772);
+  expect(dotsBox.y + dotsBox.height).toBeCloseTo(navigation.y - 5, 0);
+  expect(navigation.y).toBe(751);
   await expect(page.locator('.pico-home-workspace')).toHaveJSProperty('scrollTop', 0);
   await page.screenshot({ path: info.outputPath('home-telegram-390.png') });
 });

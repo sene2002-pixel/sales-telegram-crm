@@ -123,9 +123,13 @@ test('Telegram header: authenticated mobile requests fullscreen and preserves me
     await screenshot(page, 'native-header-' + viewportWidth);
     for (const tab of ['Клиенты', 'Проекты', 'Задачи', 'Аналитика', 'Главная']) {
       await navigate(page, tab);
-      if (tab === 'Клиенты' || tab === 'Главная') {
+      if (tab === 'Главная') {
         await expect(gear).toBeVisible();
         expect(await gear.boundingBox(), tab).toEqual(menu);
+      } else if (tab === 'Клиенты') {
+        await expect(gear).toBeVisible();
+        const clientMenu = (await gear.boundingBox())!;
+        expect(clientMenu.x + clientMenu.width).toBeLessThan(menu.x + menu.width);
       } else {
         await expect(gear).toHaveCount(0);
       }
@@ -158,7 +162,7 @@ test('Telegram header: ordinary browser title centers without overlapping menu a
     await navigate(page, 'Главная');
     await expect(page.locator('.mobile-brand')).toBeHidden();
     const gear = page.getByRole('button', { name: 'Дополнительное меню', exact: true });
-    const homeMenu = await gear.boundingBox();
+    const homeMenu = (await gear.boundingBox())!;
     await navigate(page, 'Клиенты');
     const brand = page.locator('.mobile-brand');
     await expect(brand).toBeVisible();
@@ -171,7 +175,8 @@ test('Telegram header: ordinary browser title centers without overlapping menu a
     ).toBeTruthy();
     const title = (await brand.boundingBox())!;
     const menu = (await gear.boundingBox())!;
-    expect(menu).toEqual(homeMenu);
+    expect(menu.x + menu.width).toBeLessThan(homeMenu.x + homeMenu.width);
+    expect(homeMenu.x + homeMenu.width).toBe(width - 16);
     expect(Math.abs(title.x + title.width / 2 - width / 2)).toBeLessThanOrEqual(1);
     expect(title.x + title.width).toBeLessThanOrEqual(menu.x);
     await screenshot(page, 'browser-centered-header-' + width);
