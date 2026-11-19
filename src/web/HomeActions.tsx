@@ -168,6 +168,7 @@ function ActionCard({
     <button type="button" className="pico-home-action" onClick={onClick}>
       <span className={`pico-home-action-icon is-${tone}`}>
         <Icon name={icon} size={20} />
+        {tone === 'support' && <Icon name="home-support-star" size={22} />}
       </span>
       <strong>{title}</strong>
       <span className="pico-home-action-description">{description}</span>

@@ -42,8 +42,13 @@ function taskDate(due: string | null, date: string) {
   return { label, overdue: false };
 }
 
-function TaskBadge({ type }: { type: AgendaTaskType }) {
-  const icon = type === 'reminder' ? 'tasks' : type;
+function TaskBadge({
+  type,
+  icon = type === 'reminder' ? 'tasks' : type,
+}: {
+  type: AgendaTaskType;
+  icon?: string;
+}) {
   return (
     <span className={`pico-agenda-badge pico-agenda-badge-${type}`}>
       <Icon name={icon} size={20} />
@@ -164,12 +169,11 @@ export function HomeAgenda({
               <div className="pico-agenda-shortcuts">
                 {shortcuts.map(([type, title, description]) => (
                   <button type="button" key={type} onClick={() => onCreate(type)}>
-                    <TaskBadge type={type} />
+                    <TaskBadge type={type} icon={type === 'meeting' ? 'clients' : undefined} />
                     <span>
                       <strong>{title}</strong>
                       <small>{description}</small>
                     </span>
-                    <Icon name="chevron-right" size={16} />
                   </button>
                 ))}
               </div>

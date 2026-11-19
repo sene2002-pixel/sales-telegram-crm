@@ -59,6 +59,7 @@ export function EmployeeFilter({
           </select>
           <span className="pico-employee-filter-arrow" aria-hidden="true">
             <Icon name="arrow-up-down" size={24} />
+            <Icon name="chevrons-up-down" size={24} />
           </span>
         </label>
         {value && (

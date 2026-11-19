@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+const starPath = 'm12 2.5 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3.1-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9z';
 const paths: Record<string, ReactNode> = {
   restore: <path d="M3.8 14.2A8.5 8.5 0 1 0 6.1 5.9L3.5 8.5M3.5 3.5v5h5" />,
   'undo-close': <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
@@ -115,6 +116,7 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   'arrow-up-down': <path d="M7 19V5m-4 4 4-4 4 4m6-4v14m-4-4 4 4 4-4" />,
+  'chevrons-up-down': <path d="m8 9 4-4 4 4m-8 6 4 4 4-4" />,
   'chevron-right': <path d="m9 5 7 7-7 7" />,
   'chevron-left': <path d="m15 5-7 7 7 7" />,
   'chevron-down': <path d="m5 9 7 7 7-7" />,
@@ -138,7 +140,18 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   send: <path d="m2 10 20-8-8 20-3-9zm9 3L22 2" />,
-  star: <path d="m12 2.5 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3.1-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9z" />,
+  star: <path d={starPath} />,
+  'home-support-star': (
+    <>
+      <defs>
+        <linearGradient id="pico-home-support-star" x2="0" y2="1">
+          <stop stopColor="#FFC94A" />
+          <stop offset="1" stopColor="#E39A00" />
+        </linearGradient>
+      </defs>
+      <path d={starPath} fill="url(#pico-home-support-star)" stroke="none" />
+    </>
+  ),
   'user-plus': (
     <>
       <circle cx="9" cy="7.5" r="3.5" />
