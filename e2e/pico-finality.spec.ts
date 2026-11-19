@@ -127,12 +127,17 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
   });
   expect(font).toContainEqual({ family: 'Manrope', status: 'loaded', weight: '200 800' });
   const nav = page.locator('.pico-bottom-nav');
-  for (const inset of [0, 20, 34, 54]) {
+  for (const [inset, height] of [
+    [0, 72],
+    [20, 79],
+    [34, 93],
+    [54, 113],
+  ]) {
     await page.evaluate(
       (value) => document.documentElement.style.setProperty('--pico-safe-bottom', value + 'px'),
       inset,
     );
-    await expect(nav).toHaveCSS('height', `${72 + inset}px`);
+    await expect(nav).toHaveCSS('height', `${height}px`);
     await expect(nav.locator('button > svg').first()).toHaveCSS('width', '26px');
     await expect(nav.locator('button > span').first()).toHaveCSS('font-size', '10.5px');
     const navBox = (await nav.boundingBox())!;

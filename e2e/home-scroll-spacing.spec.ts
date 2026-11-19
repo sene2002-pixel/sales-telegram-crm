@@ -64,7 +64,7 @@ for (const width of [320, 390, 1440])
       };
     });
     expect(homeGeometry).toEqual({ headingGap: 8, cardHeight: 296, actionGap: 12 });
-    for (const inset of [0, 34]) {
+    for (const inset of [0, 13, 34, 54]) {
       await page.evaluate(
         (v) => document.documentElement.style.setProperty('--pico-safe-bottom', `${v}px`),
         inset,
@@ -74,9 +74,24 @@ for (const width of [320, 390, 1440])
         const mobile = width <= 760;
         const scroller = page.locator('.workspace');
         if (mobile) {
-          const bottom = 72 + inset + (tab === 'Главная' ? 5 : 16);
+          const nav = page.getByRole('navigation', { name: 'Основная навигация' });
+          const height = Math.max(72, 59 + inset);
+          const bottom = height + (tab === 'Главная' ? 5 : 16);
+          await expect(nav).toHaveCSS('height', `${height}px`);
           await expect(scroller).toHaveCSS('padding-bottom', `${bottom}px`);
-          await expect(page.locator('.pico-bottom-nav')).toHaveCSS('height', `${72 + inset}px`);
+          expect(await nav.boundingBox()).toEqual({ x: 0, y: 844 - height, width, height });
+          const targets = await nav.getByRole('button').evaluateAll((buttons) =>
+            buttons.map((button) => {
+              const { top, height, bottom } = button.getBoundingClientRect();
+              return { top, height, bottom };
+            }),
+          );
+          expect(targets).toHaveLength(5);
+          for (const target of targets) {
+            expect(target.top).toBe(844 - height + 11);
+            expect(target.height).toBe(48);
+            expect(target.bottom).toBeLessThanOrEqual(844 - inset);
+          }
         }
         // Synthetic long content tests scroll geometry independently of seeded record counts.
         await scroller.evaluate((el) => {

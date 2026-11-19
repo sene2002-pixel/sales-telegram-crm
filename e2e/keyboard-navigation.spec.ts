@@ -228,11 +228,14 @@ test('keyboard scrolling covers contact, client edit, notes, task and project fo
   await resize(page, 390, true);
   await expect(nav).toBeHidden();
   await visibleField(email, 390);
-  const emailBox = (await email.boundingBox())!;
-  const saveBox = (await contactSheet
-    .getByRole('button', { name: 'Сохранить', exact: true })
-    .boundingBox())!;
-  expect(emailBox.y + emailBox.height).toBeLessThanOrEqual(saveBox.y);
+  await expect
+    .poll(() =>
+      email.evaluate((field) => {
+        const save = field.closest('[role="dialog"]')!.querySelector('.cc-editor-actions button')!;
+        return field.getBoundingClientRect().bottom - save.getBoundingClientRect().top;
+      }),
+    )
+    .toBeLessThanOrEqual(0);
   await page.screenshot({ path: info.outputPath('contact-keyboard.png') });
   await resize(page, 844);
   await expect(email).toHaveValue('keyboard-updated@example.test');
@@ -281,6 +284,7 @@ test('keyboard baseline starts at the native usable height, not host height', as
   await search.focus();
   await expect(page.locator('html')).toHaveAttribute('data-pico-keyboard-open', 'false');
   await expect(nav).toBeVisible();
+  expect(await nav.boundingBox()).toEqual({ x: 0, y: 488, width: 390, height: 72 });
   await page.screenshot({ path: info.outputPath('native-short-window-no-keyboard.png') });
   await resize(page, 300, true);
   await expect(nav).toBeHidden();
