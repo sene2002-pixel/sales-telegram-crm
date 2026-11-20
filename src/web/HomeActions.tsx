@@ -230,6 +230,8 @@ function ShareSheet({
         const url = new URL('https://t.me/share/url');
         url.searchParams.set('url', await link);
         if (text) url.searchParams.set('text', text);
+        // Telegram expects percent-encoded spaces in share links.
+        url.search = url.search.replaceAll('+', '%20');
         if (openTelegram) openTelegram(url.href);
         else if (popup && !popup.closed) popup.location.replace(url.href);
         else window.location.assign(url.href);

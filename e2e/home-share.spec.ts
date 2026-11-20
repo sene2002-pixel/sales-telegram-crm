@@ -5,7 +5,7 @@ const invite = `https://t.me/PicoTestBot?start=invite_${'x'.repeat(43)}`;
 const nextInvite = `https://t.me/PicoTestBot?start=invite_${'y'.repeat(43)}`;
 const finalInvite = `https://t.me/PicoTestBot?start=invite_${'z'.repeat(43)}`;
 const bot = 'https://t.me/PicoTestBot';
-const note = 'Коллега, посмотрите, пожалуйста';
+const note = 'Коллега, Pico + CRM & задачи\nПосмотрите, пожалуйста';
 type ShareTestWindow = Window & { clipboardTexts: string[]; telegramLinks: string[] };
 
 async function login(page: Page, role: 'Руководитель' | 'Менеджер' | 'Администратор') {
@@ -93,10 +93,9 @@ test('supervisor shares one invitation, copies the full message and keeps the dr
     .poll(() => page.evaluate(() => (window as ShareTestWindow).telegramLinks.length))
     .toBe(1);
   const [url] = await page.evaluate(() => (window as ShareTestWindow).telegramLinks);
-  const chooser = new URL(url);
-  expect(chooser.origin + chooser.pathname).toBe('https://t.me/share/url');
-  expect(chooser.searchParams.get('url')).toBe(invite);
-  expect(chooser.searchParams.get('text')).toBe(note);
+  expect(url).toBe(
+    `https://t.me/share/url?url=${encodeURIComponent(invite)}&text=${encodeURIComponent(note)}`,
+  );
   expect(created).toBe(1);
 
   accepted = true;
