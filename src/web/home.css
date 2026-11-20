@@ -102,6 +102,9 @@ html.pico-home-active,
   pointer-events: none;
   color: var(--home-secondary);
 }
+.pico-employee-filter-arrow > svg:last-child {
+  display: none;
+}
 .pico-home-overview .pico-summary {
   height: 64px;
   margin: 0;
@@ -282,16 +285,11 @@ html.pico-home-active,
   text-decoration: line-through;
 }
 .pico-agenda-empty {
-  display: grid;
   flex: 1;
-  grid-template-rows: minmax(0, 1fr) auto;
-  padding-bottom: 8px;
 }
 .pico-agenda-empty-heading {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding-bottom: 4px;
 }
 .pico-agenda-empty-heading strong,
 .pico-agenda-hint strong {
@@ -307,21 +305,22 @@ html.pico-home-active,
   line-height: 17px;
 }
 .pico-agenda-shortcuts {
-  border-top: 1px solid var(--home-border);
+  margin-top: 8px;
 }
 .pico-agenda-shortcuts > button {
+  box-sizing: content-box;
   width: 100%;
-  height: 48px;
-  gap: 8px;
-}
-.pico-agenda-shortcuts > button + button {
-  border-top: 1px solid var(--home-border);
+  height: 50px;
+  gap: 12px;
+  border-top: 1px solid var(--home-divider);
   border-radius: 0;
+  color: var(--home-main-ink);
 }
 .pico-agenda-shortcuts .pico-agenda-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  border-radius: 12px;
+}
+.pico-agenda-shortcuts :is(svg, [stroke-width]) {
+  stroke-width: 2;
 }
 .pico-agenda-shortcuts > button > span:nth-child(2) {
   min-width: 0;
@@ -333,18 +332,14 @@ html.pico-home-active,
 }
 .pico-agenda-shortcuts strong {
   font-size: 14px;
-  line-height: 17px;
+  line-height: 20px;
   font-weight: 700;
 }
 .pico-agenda-shortcuts small {
   color: var(--home-secondary);
   font-size: 12px;
-  line-height: 15px;
+  line-height: 16px;
   font-weight: 500;
-}
-.pico-agenda-shortcuts > button > svg {
-  flex: none;
-  color: var(--home-secondary);
 }
 .pico-agenda-hint {
   display: grid;
@@ -518,37 +513,83 @@ html.pico-home-active,
     padding-top: var(--pico-safe-top, 0px);
     padding-bottom: calc(var(--pico-nav-height) + 5px);
   }
-  .pico-home-workspace:has(.pico-agenda-empty),
-  .pico-home-workspace > .pico-scoped-content:has(.pico-agenda-empty),
-  .pico-home:has(.pico-agenda-empty),
-  .pico-agenda:has(.pico-agenda-empty) {
-    display: flex;
-    flex-direction: column;
+  .app-shell:has(.pico-agenda-empty) > .pico-bottom-nav {
+    border-top-color: #cdd5e3;
+    border-radius: 28px 28px 0 0;
   }
-  .pico-home-workspace:has(.pico-agenda-empty) > *,
-  .pico-home:has(.pico-agenda-empty) > *,
-  .pico-agenda:has(.pico-agenda-empty) > * {
-    flex-shrink: 0;
-  }
-  .pico-home-workspace > .pico-scoped-content:has(.pico-agenda-empty),
-  .pico-home:has(.pico-agenda-empty),
-  .pico-agenda:has(.pico-agenda-empty) {
-    flex: 1 0 auto;
-  }
-  .pico-agenda-panel:has(.pico-agenda-empty) {
-    flex: 1 0 280px;
-    height: auto;
-  }
-  .pico-agenda-empty {
-    grid-template-rows: minmax(min-content, 1fr) minmax(min-content, 3fr);
-  }
-  .pico-agenda-shortcuts {
-    display: grid;
-    grid-auto-rows: minmax(48px, 1fr);
-  }
-  .pico-agenda-shortcuts > button {
-    height: 100%;
-  }
+}
+
+html.pico-home-active:has(.pico-agenda-empty) body {
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+.pico-home-workspace:has(.pico-agenda-empty) {
+  --home-main-ink: #1a2151;
+  --home-divider: #eef2f8;
+  color: var(--home-main-ink);
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-home-greeting h1 {
+  color: var(--home-main-ink);
+  line-height: 30px;
+  transform: translateY(-3px);
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-employee-filter {
+  padding-inline: 16px;
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-employee-filter-control {
+  gap: 12px;
+}
+.pico-home-workspace:has(.pico-agenda-empty)
+  .pico-employee-filter-control:not(:has(.pico-employee-filter-reset))
+  label {
+  margin-inline-end: -12px;
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-employee-filter-control select {
+  color: var(--home-main-ink);
+  line-height: 22px;
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-employee-filter-arrow > svg:first-child {
+  display: none;
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-employee-filter-arrow > svg:last-child {
+  display: block;
+  color: var(--home-main-ink);
+  stroke-width: 2;
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-employee-filter + .pico-summary {
+  border-top-color: var(--home-divider);
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-summary button {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-right-color: var(--home-divider);
+  color: var(--home-main-ink);
+}
+.pico-home-workspace:has(.pico-agenda-empty) .pico-summary small {
+  font-weight: 500;
+}
+.pico-agenda:has(.pico-agenda-empty) > h2 {
+  letter-spacing: -0.2px;
+}
+.pico-agenda-panel:has(.pico-agenda-empty) {
+  --agenda-bottom-padding: 13px;
+  padding: 14px 16px var(--agenda-bottom-padding);
+  row-gap: 6px;
+}
+.pico-agenda-empty-heading strong {
+  line-height: 22px;
+}
+.pico-agenda-empty-heading p {
+  line-height: 20px;
+  font-weight: 500;
+}
+.pico-agenda-panel:has(.pico-agenda-empty) .pico-agenda-add {
+  font-size: 16px;
+  color: var(--home-main-ink);
 }
 @media (prefers-reduced-motion: reduce) {
   .pico-agenda-scroll-track > span {

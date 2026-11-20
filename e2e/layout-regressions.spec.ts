@@ -62,12 +62,13 @@ for (const width of [360, 390, 1440]) {
       overviewBox!.x + overviewBox!.width + 1,
     );
     expect(crownBox!.width).toBe(32);
+    const greetingBox = (await page.locator('.pico-home-greeting').boundingBox())!;
     expect(crownBox!.y + crownBox!.height / 2).toBeCloseTo(
-      headingBox!.y + headingBox!.height / 2,
+      greetingBox.y + greetingBox.height / 2,
       0,
     );
     expect(Math.abs(overviewBox!.x - headingBox!.x)).toBeLessThan(1);
-    expect(overviewBox!.y - headingBox!.y - headingBox!.height).toBe(16);
+    expect(overviewBox!.y - greetingBox.y - greetingBox.height).toBe(16);
     if (width <= 760) {
       await expect(page.locator('.mobile-brand')).toBeHidden();
       const settings = page.getByRole('button', { name: 'Дополнительное меню', exact: true });

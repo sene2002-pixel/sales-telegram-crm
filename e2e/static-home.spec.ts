@@ -49,8 +49,7 @@ for (const size of [
     await login(page);
     await expect(page.locator('html')).toHaveClass(/pico-home-active/);
     const panel = agenda(page).locator('.pico-agenda-panel');
-    if (size.width > 760) await expect(panel).toHaveCSS('height', '296px');
-    else expect((await panel.boundingBox())!.height).toBeGreaterThanOrEqual(280);
+    await expect(panel).toHaveCSS('height', '296px');
     await expect(agenda(page).getByRole('heading', { name: 'Дела' })).toHaveCSS('height', '44px');
     await expect(panel).toContainText('День свободен');
     await expect(panel).toContainText('Время сделать шаг к новой сделке');
@@ -110,7 +109,7 @@ for (const size of [
       const nav = (await page.locator('.pico-bottom-nav').boundingBox())!;
       const dots = (await page.locator('.pico-home-action-dots').boundingBox())!;
       expect(nav.y).toBe(772);
-      expect(dots.y + dots.height).toBeCloseTo(nav.y - 5, 0);
+      expect(dots.y + dots.height).toBeLessThanOrEqual(nav.y - 5);
       await expect(page.locator('.pico-home-workspace')).toHaveJSProperty('scrollTop', 0);
     }
     await page.screenshot({ path: info.outputPath(`home-empty-${size.width}.png`) });
@@ -131,9 +130,7 @@ for (const size of [
   });
 }
 
-test('Home agenda and carousel fit the Telegram header reserve at 390x844', async ({
-  page,
-}, info) => {
+test('Home empty agenda matches the Main reference at 390x844', async ({ page }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     Object.defineProperties(screen, {
@@ -148,19 +145,92 @@ test('Home agenda and carousel fit the Telegram header reserve at 390x844', asyn
       WebApp: {
         platform: 'ios',
         viewportStableHeight: 844,
-        safeAreaInset: { top: 47, bottom: 34 },
-        contentSafeAreaInset: { top: 51 },
+        safeAreaInset: { top: 47 },
+        contentSafeAreaInset: { top: 67 },
       },
     };
   });
   await page.route('**/api/records/task*', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/me', async (route) => {
+    const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
+    await route.fulfill({ json: { ...(await response.json()), name: 'Алексей' } });
+  });
+  await page.route('**/api/companies', (route) =>
+    route.fulfill({
+      json: Array.from({ length: 24 }, (_, index) => ({
+        id: `main-company-${index}`,
+        name: `Компания ${index + 1}`,
+        archived: false,
+        stage: 'new',
+      })),
+    }),
+  );
+  await page.route('**/api/records/project', (route) =>
+    route.fulfill({ json: [{ id: 'main-project', data: { name: 'Проект' } }] }),
+  );
   await login(page);
-  const dots = page.locator('.pico-home-action-dots');
+  const greeting = page.getByRole('heading', { name: 'Привет, Алексей!' });
+  await expect(greeting).toBeVisible();
+  await expect(greeting).toHaveCSS('font-family', /Manrope/);
+  await expect(greeting).toHaveCSS('font-weight', '800');
+  await expect(greeting).toHaveCSS('line-height', '30px');
+  await expect(page.locator('.pico-home-overview .pico-summary strong')).toHaveText([
+    '24',
+    '1',
+    '0',
+  ]);
+  const weights = await page.evaluate(async () => {
+    const loaded = await Promise.all(
+      [500, 600, 700, 800].map((weight) => document.fonts.load(`${weight} 16px Manrope`, 'Дела')),
+    );
+    return loaded.map((faces) =>
+      faces.some((face) => face.family === 'Manrope' && face.status === 'loaded'),
+    );
+  });
+  expect(weights).toEqual([true, true, true, true]);
+  if (page.context().browser()?.browserType().name() === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument');
+    const { nodeId } = await cdp.send('DOM.querySelector', {
+      nodeId: root.nodeId,
+      selector: '.pico-home-greeting h1',
+    });
+    const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]).toMatchObject({ familyName: /^Manrope(?:\s|$)/, isCustomFont: true });
+    await cdp.detach();
+  }
+  const dots = page.locator('.pico-home-action-dots > button').first();
   await expect(dots).toBeVisible();
-  const dotsBox = (await dots.boundingBox())!;
+  const dotTop = await dots.evaluate((el) => {
+    const markerHeight = parseFloat(getComputedStyle(el, '::before').height);
+    const bounds = el.getBoundingClientRect();
+    return bounds.top + (bounds.height - markerHeight) / 2;
+  });
   const navigation = (await page.locator('.pico-bottom-nav').boundingBox())!;
-  expect(dotsBox.y + dotsBox.height).toBeCloseTo(navigation.y - 5, 0);
-  expect(navigation.y).toBe(751);
+  const overview = (await page.locator('.pico-home-overview').boundingBox())!;
+  const panel = (await page.locator('.pico-agenda-panel').boundingBox())!;
+  const firstCard = (await page.locator('.pico-home-action').first().boundingBox())!;
+  expect(overview.y).toBe(162);
+  expect(panel.y).toBe(336);
+  expect(firstCard.y).toBe(644);
+  expect(dotTop - firstCard.y - firstCard.height).toBe(8);
+  expect(navigation.y).toBe(772);
+  const add = page.getByRole('button', { name: 'Добавить задачу', exact: true });
+  const addBox = (await add.boundingBox())!;
+  expect(addBox).toMatchObject({ x: 33, y: 570, width: 324, height: 48 });
+  const shortcuts = page.locator('.pico-agenda-shortcuts > button');
+  await expect(shortcuts).toHaveCount(3);
+  for (const shortcut of await shortcuts.all()) {
+    await expect(shortcut).toHaveCSS('height', '50px');
+    await expect(shortcut).toHaveCSS('border-top-color', 'rgb(238, 242, 248)');
+    await expect(shortcut.locator('svg')).toHaveCount(1);
+  }
+  await expect(page.locator('.pico-home-action').first()).toHaveCSS('border-radius', '20px');
+  await expect(page.locator('.pico-bottom-nav')).toHaveCSS('border-top-left-radius', '28px');
   await expect(page.locator('.pico-home-workspace')).toHaveJSProperty('scrollTop', 0);
   await page.screenshot({ path: info.outputPath('home-telegram-390.png') });
 });

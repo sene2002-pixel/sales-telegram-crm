@@ -79,6 +79,9 @@
   color: #fff;
   background: linear-gradient(145deg, #ffc94a, #e39a00);
 }
+.pico-home-action-icon.is-support > svg:last-child {
+  display: none;
+}
 
 .pico-home-action-icon.is-share {
   color: #13849b;
@@ -121,6 +124,36 @@
 .pico-home-action-dots > button[aria-current='true']::before {
   width: 16px;
   background: #1668d8;
+}
+
+.pico-home:has(.pico-agenda-empty) .pico-home-action {
+  grid-template: 36px auto / 36px minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px 14px 12px 16px;
+  border-radius: 20px;
+}
+.pico-home:has(.pico-agenda-empty) .pico-home-action > strong {
+  align-self: center;
+  line-height: 22px;
+  white-space: nowrap;
+}
+.pico-home:has(.pico-agenda-empty) .pico-home-action-description {
+  grid-column: 1 / -1;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 20px;
+  text-wrap: balance;
+}
+.pico-home:has(.pico-agenda-empty) .pico-home-action-icon.is-support {
+  background: rgb(176 122 0 / 12%);
+}
+.pico-home:has(.pico-agenda-empty) .pico-home-action-icon.is-support > svg:first-child {
+  display: none;
+}
+.pico-home:has(.pico-agenda-empty) .pico-home-action-icon.is-support > svg:last-child {
+  display: block;
 }
 
 .pico-share-sheet {
