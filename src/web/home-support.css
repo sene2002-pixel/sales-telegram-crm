@@ -143,8 +143,10 @@
   font-weight: 800;
 }
 
-.pico-support .pico-support-pay:not(:disabled):hover {
-  background: #165fb5;
+@media (hover: hover) and (pointer: fine) {
+  .pico-support .pico-support-pay:not(:disabled):hover {
+    background: #165fb5;
+  }
 }
 
 .pico-support .pico-support-hint,

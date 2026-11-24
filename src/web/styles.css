@@ -15,6 +15,7 @@
   color: #19244d;
   background: #f5f7ff;
   font-synthesis: none;
+  -webkit-tap-highlight-color: transparent;
   --line: #e1e6f5;
   --muted: #65739a;
   --primary: #4657ed;
@@ -91,8 +92,11 @@ button {
     border-color 0.15s,
     box-shadow 0.15s;
 }
-button:hover {
-  background: var(--soft);
+/* A touch can leave :hover set after the finger is lifted. */
+@media (hover: hover) and (pointer: fine) {
+  button:hover {
+    background: var(--soft);
+  }
 }
 button:disabled {
   opacity: 0.5;
@@ -160,9 +164,11 @@ p {
   font-weight: 700;
   box-shadow: 0 3px 8px #4657ed18;
 }
-.primary:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+  }
 }
 .app-shell {
   display: grid;
@@ -376,10 +382,12 @@ nav .active {
   box-shadow: var(--shadow);
   min-width: 0;
 }
-.company-card:hover {
-  background: #fff;
-  border-color: #aab5f2;
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .company-card:hover {
+    background: #fff;
+    border-color: #aab5f2;
+    transform: translateY(-1px);
+  }
 }
 .company-card h2 {
   font-size: 17px;
@@ -4554,12 +4562,14 @@ select.pico-filter-sort {
 .pico-level-show-all > svg {
   flex: 0 0 16px;
 }
-.pico-level-clients .pico-level-show-all:hover {
-  color: #1762bd;
-  background: transparent;
-}
-.pico-level-clients .pico-level-show-all:active {
-  background: #eef6ff;
+@media (hover: hover) and (pointer: fine) {
+  .pico-level-clients .pico-level-show-all:hover {
+    color: #1762bd;
+    background: transparent;
+  }
+  .pico-level-clients .pico-level-show-all:active {
+    background: #eef6ff;
+  }
 }
 .pico-level-show-all:focus-visible {
   outline: 2px solid #1f7aea;
@@ -4736,7 +4746,6 @@ textarea.pico-growing-textarea {
   font:
     700 26px Manrope,
     sans-serif;
-  -webkit-tap-highlight-color: transparent;
 }
 .pico-number-keys > button:hover,
 .pico-number-keys > button:active {
@@ -5256,7 +5265,13 @@ body:has(.pico-task-detail-body) .pico-bottom-nav {
   flex: 0 0 20px;
   display: flex;
 }
-.pico-client-sort-menu > button:hover,
+@media (hover: hover) and (pointer: fine) {
+  .pico-client-sort-menu > button:hover {
+    background: #ffffff20;
+    outline: 1px solid #ffffff60;
+    outline-offset: -1px;
+  }
+}
 .pico-client-sort-menu > button:focus-visible {
   background: #ffffff20;
   outline: 1px solid #ffffff60;
