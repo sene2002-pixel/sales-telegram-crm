@@ -1,24 +1,30 @@
 import { PicoIdeas } from './PicoIdeas';
 import { TeamInvitations } from './TeamInvitations';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Actor, isLeader, labels, roles } from '../shared/contracts';
 import { api } from './api';
 import { Field, Modal, Select } from './forms';
 import { Icon } from './Icons';
+import { canRemoveTeamMember, RemoveTeamMemberDialog } from './RemoveTeamMemberDialog';
 export function UsersScreen({
   users,
   user,
   onChanged,
+  onMemberRemoved,
 }: {
   users: Actor[];
   user?: Actor;
   onChanged: () => Promise<void>;
+  onMemberRemoved: (id: string) => Promise<void>;
 }) {
   const [telegramId, setTelegramId] = useState(''),
     [editing, setEditing] = useState<Actor | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
+  const [removing, setRemoving] = useState<Actor | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const editedMember = editing && users.find((member) => member.id === editing.id);
   const initials = (name: string) =>
     name
       .split(/\s+/)
@@ -28,7 +34,9 @@ export function UsersScreen({
       .toUpperCase();
   return (
     <section className="pico-users">
-      <h1>Пользователи</h1>
+      <h1 tabIndex={-1} ref={heading}>
+        Пользователи
+      </h1>
       {user?.role === 'admin' && <TeamInvitations user={user} users={users} />}
       <div className="pico-compact-list">
         {users.map((person) => (
@@ -135,6 +143,7 @@ export function UsersScreen({
               try {
                 await api('/users', 'POST', {
                   telegramId: editing.telegramId,
+                  expectedUserId: editing.id,
                   name: editing.name,
                   role: editing.role,
                   active: editing.active,
@@ -207,7 +216,36 @@ export function UsersScreen({
               <p className="muted">Настройки демонстрационного пользователя не изменяются.</p>
             )}
           </form>
+          {editedMember && canRemoveTeamMember(user, editedMember, users) && (
+            <button
+              type="button"
+              className="team-remove-from-user danger"
+              disabled={busy}
+              onClick={() => {
+                setNotice('');
+                setRemoving(editedMember);
+              }}
+            >
+              Удалить из команды
+            </button>
+          )}
         </Modal>
+      )}
+      {user && removing && (
+        <RemoveTeamMemberDialog
+          actor={user}
+          member={removing}
+          users={users}
+          onClose={() => setRemoving(null)}
+          onChanged={onMemberRemoved}
+          onRemoved={() => {
+            setEditing(null);
+            setRemoving(null);
+            setError('');
+            setNotice(`${removing.name}: доступ закрыт.`);
+            requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
+          }}
+        />
       )}
     </section>
   );

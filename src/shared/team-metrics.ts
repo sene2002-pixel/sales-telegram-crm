@@ -12,6 +12,7 @@ export const teamMetrics = [
 export type TeamMetric = (typeof teamMetrics)[number][0];
 export type TeamStats = Pick<Actor, 'id' | 'role' | 'name' | 'active'> &
   Record<TeamMetric, number> & {
+    removedFromTeam?: boolean;
     inactiveCompanies: { id: string; name: string }[];
   };
 
@@ -35,6 +36,7 @@ export function selectTeamMetrics(rows: readonly TeamStats[], filter: TeamMetric
     .split(/\s+/)
     .filter(Boolean);
   const selected = rows.filter((row) => {
+    if (row.removedFromTeam) return false;
     if (filter.role && row.role !== filter.role) return false;
     const text = searchText(row.name + ' ' + labels[row.role]);
     return words.every((word) => text.includes(word));

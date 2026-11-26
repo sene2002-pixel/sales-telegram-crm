@@ -1,4 +1,5 @@
 .team-roster {
+  --cc-trash-color: #a03d34;
   margin: 10px 0;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -53,11 +54,27 @@
   border-top: 1px solid var(--line);
 }
 
+.team-roster-hint {
+  margin: 0 16px 8px;
+  color: #586681;
+  font-size: 0.8125rem;
+}
+
+.team-roster .cc-swipe:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
 .team-employee-summary {
   display: flex;
   gap: 8px;
   align-items: center;
   min-height: 48px;
+}
+
+/* Keep the name in view as the shared swipe surface moves out of the way. */
+.team-roster .cc-revealed > .cc-swipe-content > .team-employee-summary {
+  padding-inline-start: var(--cc-action-width);
 }
 
 .team-employee-identity {
@@ -247,4 +264,32 @@
   margin: 4px 0;
   color: #24684c;
   font-size: 0.8125rem;
+}
+
+.team-removal-status {
+  margin: 4px 16px 8px;
+  color: #24684c;
+  font-size: 0.8125rem;
+}
+
+.team-removal-modal p,
+.team-removal-status,
+.pico-users .success {
+  overflow-wrap: anywhere;
+}
+
+.team-removal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-removal-actions button,
+.team-remove-from-user {
+  min-height: 44px;
+}
+
+.team-remove-from-user {
+  width: 100%;
+  margin-top: 12px;
 }

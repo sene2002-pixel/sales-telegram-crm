@@ -237,7 +237,7 @@
   justify-content: center;
   background: transparent !important;
   border: 0 !important;
-  color: #6b7390 !important;
+  color: var(--cc-trash-color, #6b7390) !important;
   padding: 0;
   z-index: 1;
 }

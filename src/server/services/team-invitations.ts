@@ -64,7 +64,7 @@ export class TeamInvitations {
       const id = randomUUID(),
         token = randomBytes(32).toString('base64url');
       const [row] = await tx.query(
-        `INSERT INTO team_invitations(id,token_hash,created_by,supervisor_id,expires_at) VALUES($1,$2,$3,$4,now()+interval '24 hours') RETURNING ${projection}`,
+        `INSERT INTO team_invitations(id,token_hash,created_by,supervisor_id,created_at,expires_at) VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp()+interval '24 hours') RETURNING ${projection}`,
         [id, digest(token), current.id, supervisorId],
       );
       await audit(tx, current.id, 'invitation.created', id, null, { supervisorId });
@@ -100,9 +100,11 @@ export class TeamInvitations {
         [digest(token)],
       );
       requireCondition(invite, 400, 'Приглашение недействительно или истекло');
-      const [existing] = await tx.query<Actor>(
-        `SELECT ${userProjection} FROM users WHERE telegram_id=$1 FOR UPDATE`,
-        [telegramId],
+      const [existing] = await tx.query<Actor & { removedFromTeam: boolean; canRejoin: boolean }>(
+        `SELECT ${userProjection},team_removed_at IS NOT NULL AS "removedFromTeam",
+           COALESCE(team_removed_at < (SELECT created_at FROM team_invitations WHERE id=$2),false) AS "canRejoin"
+         FROM users WHERE telegram_id=$1 FOR UPDATE`,
+        [telegramId, invite.id],
       );
       if (invite.used_at) {
         requireCondition(
@@ -134,10 +136,22 @@ export class TeamInvitations {
         'Приглашение больше не действует',
       );
       requireCondition(
-        !existing,
+        !existing || existing.removedFromTeam,
         409,
         'Вы уже добавлены в CRM. Для изменения команды обратитесь к администратору',
       );
+      if (existing) {
+        requireCondition(
+          existing.canRejoin,
+          409,
+          'Для вступления в команду нужно новое приглашение',
+        );
+        // Only release the Telegram ID inside a successful redemption. Until then the old
+        // row blocks the usual login, including automatic bootstrap-admin registration.
+        await tx.query("UPDATE users SET telegram_id='removed:'||id::text WHERE id=$1", [
+          existing.id,
+        ]);
+      }
       const id = randomUUID();
       await tx.query(
         "INSERT INTO users(id,telegram_id,name,role,active,supervisor_id) VALUES($1,$2,$3,'manager',true,$4)",

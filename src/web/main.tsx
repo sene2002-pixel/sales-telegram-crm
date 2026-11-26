@@ -470,6 +470,10 @@ function App() {
     invalidateClientScores();
     await refreshActor(source);
   }
+  async function refreshAfterMemberRemoval(id: string) {
+    setUsers((current) => current.filter((member) => member.id !== id));
+    await refresh('team-save');
+  }
   useEffect(() => {
     if (
       (tab === 'users' && user?.role !== 'admin') ||
@@ -1167,7 +1171,12 @@ function App() {
             )}
             {tab === 'profile' && <Profile key={user.id} />}
             {tab === 'users' && user.role === 'admin' && (
-              <UsersScreen users={users} user={user} onChanged={refresh} />
+              <UsersScreen
+                users={users}
+                user={user}
+                onChanged={refresh}
+                onMemberRemoved={refreshAfterMemberRemoval}
+              />
             )}
             {tab === 'tasks' && (
               <TasksScreen {...screenProps} onCreate={() => setRecordCreate('task')} />
@@ -1217,7 +1226,12 @@ function App() {
               </>
             )}
             {tab === 'team' && user.role !== 'manager' && (
-              <Team user={user} users={users} onChanged={() => refresh('team-save')} />
+              <Team
+                user={user}
+                users={users}
+                onChanged={() => refresh('team-save')}
+                onMemberRemoved={refreshAfterMemberRemoval}
+              />
             )}
           </div>
         )}

@@ -118,6 +118,8 @@ export function SwipeAction({
   children,
   label,
   onDelete,
+  onDeleteRequest,
+  deleteDialogOpen = false,
   onEdit,
   deleteLabel,
   confirmDelete = true,
@@ -126,11 +128,15 @@ export function SwipeAction({
   children: ReactNode;
   label: string;
   onDelete?: () => Promise<void>;
+  onDeleteRequest?: () => void;
+  deleteDialogOpen?: boolean;
   onEdit?: () => void;
   confirmDelete?: boolean;
   deleteLabel?: string;
   disabled?: boolean;
 }) {
+  const canDelete = Boolean(onDelete || onDeleteRequest);
+  const hasActions = canDelete || Boolean(onEdit);
   const fromModal = (target: EventTarget | null) =>
     target instanceof Element && !!target.closest('[data-pico-modal]');
   const suppressClick = useRef(false);
@@ -141,7 +147,7 @@ export function SwipeAction({
     origin: { x: number; y: number },
     point: { clientX: number; clientY: number },
   ) => {
-    if (disabled || !(onDelete || onEdit)) return;
+    if (disabled || !hasActions) return;
     const dx = point.clientX - origin.x,
       dy = point.clientY - origin.y;
     if (Math.abs(dy) < 35 && Math.abs(dx) > Math.max(50, Math.abs(dy) * 2)) {
@@ -173,14 +179,14 @@ export function SwipeAction({
   }, []);
   useEffect(() => {
     // The confirmation modal owns outside interaction and restores this trigger on cancel.
-    if (!revealed || confirm) return;
+    if (!revealed || confirm || deleteDialogOpen) return;
     const outside = (event: PointerEvent) => {
       const rail = swipeRef.current?.querySelector(':scope > .cc-trash-track');
       if (!rail?.contains(event.target as Node)) setRevealed(false);
     };
     document.addEventListener('pointerdown', outside, true);
     return () => document.removeEventListener('pointerdown', outside, true);
-  }, [revealed, confirm]);
+  }, [revealed, confirm, deleteDialogOpen]);
   useEffect(() => {
     if (!revealed) return;
     let frame = 0;
@@ -256,22 +262,25 @@ export function SwipeAction({
       )}
       <div
         ref={swipeRef}
-        tabIndex={onEdit || onDelete ? 0 : undefined}
+        tabIndex={hasActions ? 0 : undefined}
         role="group"
         aria-label={`Действия: ${label}`}
+        aria-keyshortcuts={hasActions && !disabled ? 'ArrowLeft' : undefined}
         onKeyDown={(e) => {
           if (fromModal(e.target)) return;
           if ((e.target as Element).closest('input,textarea,select,[contenteditable="true"]'))
             return;
-          if (e.key === 'ArrowLeft' && !disabled && (onEdit || onDelete)) {
+          if (e.key === 'ArrowLeft' && !disabled && hasActions) {
             e.preventDefault();
             e.stopPropagation();
             reveal(true);
           }
-          if (e.key === 'ArrowRight' || e.key === 'Escape') {
+          if (revealed && (e.key === 'ArrowRight' || e.key === 'Escape')) {
             e.preventDefault();
             e.stopPropagation();
             setRevealed(false);
+            if ((e.target as Element).closest('.cc-trash-track'))
+              e.currentTarget.focus({ preventScroll: true });
           }
         }}
         onPointerDown={(e) => {
@@ -307,7 +316,7 @@ export function SwipeAction({
         onPointerCancel={() => {
           mouseStart.current = null;
         }}
-        className={`cc-swipe ${onEdit && onDelete ? 'cc-two-actions' : onEdit ? 'cc-single-edit' : ''} ${revealed ? 'cc-revealed' : ''}`}
+        className={`cc-swipe ${onEdit && canDelete ? 'cc-two-actions' : onEdit ? 'cc-single-edit' : ''} ${revealed ? 'cc-revealed' : ''}`}
         onClickCapture={(e) => {
           if (fromModal(e.target)) return;
           if (suppressClick.current && !(e.target as Element).closest('.cc-trash-track')) {
@@ -354,7 +363,7 @@ export function SwipeAction({
         }}
       >
         <div className="cc-swipe-content">{children}</div>
-        {(onDelete || onEdit) && (
+        {hasActions && (
           <div className="cc-trash-track" aria-hidden={!revealed}>
             <div
               className="cc-swipe-actions"
@@ -377,19 +386,23 @@ export function SwipeAction({
                   <Icon name="action-edit" size={22} />
                 </button>
               )}
-              {onDelete && (
+              {canDelete && (
                 <button
                   type="button"
                   className="cc-trash"
                   aria-label={deleteLabel || `Удалить ${label}`}
                   tabIndex={revealed ? 0 : -1}
                   disabled={disabled || busy}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (revealed) {
                       suppressClick.current = false;
                       setError('');
-                      if (confirmDelete) setConfirm(true);
-                      else void performDelete();
+                      if (onDeleteRequest) {
+                        event.currentTarget.focus({ preventScroll: true });
+                        onDeleteRequest();
+                      } else if (confirmDelete) {
+                        setConfirm(true);
+                      } else void performDelete();
                     }
                   }}
                 >

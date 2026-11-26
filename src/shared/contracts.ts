@@ -346,6 +346,7 @@ export interface Report {
 }
 export interface CompanyDetail {
   company: Company;
+  canManageOwnership?: boolean;
   records: CrmRecord[];
   audit: any[];
 }

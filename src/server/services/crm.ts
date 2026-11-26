@@ -37,6 +37,9 @@ const catalogueMention = (data: Pick<CompanyData, 'name' | 'legalForm'>) =>
       : data.name,
   );
 
+const isTeamCompany = (actorId: string, ownerId: string, supervisorId?: string | null) =>
+  ownerId === actorId || supervisorId === actorId;
+
 export function mapCompany(row: any): Company {
   return {
     ...row.data,
@@ -518,11 +521,19 @@ export class CrmService {
     });
   }
   async detail(actor: Actor, id: string) {
-    const { company, records, events, holdingMembers } = await readAsActor(
+    const { company, records, events, holdingMembers, canManageOwnership } = await readAsActor(
       this.db,
       actor,
       async (tx, current) => {
         const company = await this.company(current, id, tx);
+        const [owner] =
+          current.role === 'supervisor' && company.ownerId !== current.id
+            ? await tx.query('SELECT supervisor_id FROM users WHERE id=$1', [company.ownerId])
+            : [];
+        const canManageOwnership =
+          current.role === 'admin' ||
+          (current.role === 'supervisor' &&
+            isTeamCompany(current.id, company.ownerId, owner?.supervisor_id));
         const records = (
           await tx.query(
             'SELECT r.*,u.name AS author_name FROM records r JOIN users u ON u.id=r.author_id WHERE r.company_id=$1 AND NOT r.deleted ORDER BY r.created_at DESC',
@@ -544,7 +555,7 @@ export class CrmService {
                 )
               ).map(mapCompany)
             : [];
-        return { company, records, events, holdingMembers };
+        return { company, records, events, holdingMembers, canManageOwnership };
       },
     );
     const holdingDivisions: Record<string, number> = {};
@@ -561,6 +572,7 @@ export class CrmService {
     }
     return {
       company,
+      canManageOwnership,
       records,
       audit: events,
       holdingMembers,
@@ -707,7 +719,7 @@ export class CrmService {
       company.ownerId,
     ]);
     requireCondition(
-      company.ownerId === actor.id || owner?.supervisor_id === actor.id,
+      isTeamCompany(actor.id, company.ownerId, owner?.supervisor_id),
       403,
       'Можно удалить только компании своей команды',
     );

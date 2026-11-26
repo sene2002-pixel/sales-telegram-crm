@@ -56,7 +56,11 @@ export function TeamEmployeeForm({
           if (!saved) {
             if (!employee && users.some((u) => u.telegramId === draft.telegramId.trim()))
               throw new Error('Сотрудник уже существует. Откройте его в разделе «Все сотрудники».');
-            await api('/users', 'POST', draft);
+            await api(
+              '/users',
+              'POST',
+              employee ? { ...draft, expectedUserId: employee.id } : draft,
+            );
             setSaved(true);
             onDirty(false);
           }

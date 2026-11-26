@@ -66,6 +66,7 @@ let bodyOverflowBeforeModals = '';
 export function Modal({
   initialFocusRef,
   dialogRole = 'dialog',
+  descriptionId,
   closeDisabled = false,
   titleIcon,
   sheet = false,
@@ -79,6 +80,7 @@ export function Modal({
 }: {
   initialFocusRef?: { readonly current: HTMLElement | null };
   dialogRole?: 'dialog' | 'alertdialog';
+  descriptionId?: string;
   closeDisabled?: boolean;
   titleIcon?: ReactNode;
   sheet?: boolean;
@@ -168,6 +170,7 @@ export function Modal({
         data-pico-modal="true"
         aria-modal="true"
         aria-label={title}
+        aria-describedby={descriptionId}
         onPointerDown={(event) => {
           if (!swipeToClose || closeDisabled || !(event.target instanceof Element)) return;
           if (

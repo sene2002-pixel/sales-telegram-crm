@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Actor, labels } from '../shared/contracts';
 import { api, today } from './api';
 import { TeamEmployeeForm } from './TeamEmployeeForm';
+import { SwipeAction } from './ClientCardWidgets';
+import { canRemoveTeamMember, RemoveTeamMemberDialog } from './RemoveTeamMemberDialog';
 import { Icon } from './Icons';
 import './team-employees.css';
 import { CommercialReport } from './CommercialReport';
@@ -15,10 +17,12 @@ export function Team({
   user,
   users,
   onChanged,
+  onMemberRemoved,
 }: {
   user: Actor;
   users: Actor[];
   onChanged: () => Promise<void>;
+  onMemberRemoved: (id: string) => Promise<void>;
 }) {
   const to = today();
   const from = to.slice(0, 8) + '01';
@@ -28,8 +32,11 @@ export function Team({
   const [editor, setEditor] = useState<string | null>(null);
   const [savingEmployee, setSavingEmployee] = useState(false);
   const [savedEmployee, setSavedEmployee] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Actor | null>(null);
+  const [removedName, setRemovedName] = useState('');
   const dirty = useRef(false);
   const editorTrigger = useRef<HTMLButtonElement | null>(null);
+  const rosterToggle = useRef<HTMLButtonElement>(null);
 
   function canLeaveEditor() {
     return !dirty.current || window.confirm('Закрыть форму и сбросить несохранённые изменения?');
@@ -82,6 +89,9 @@ export function Team({
     };
   }, [from, to, users]);
   if (user.role !== 'admin' && user.role !== 'supervisor') return null;
+  const removable = new Set(
+    users.filter((member) => canRemoveTeamMember(user, member, users)).map((member) => member.id),
+  );
   return (
     <>
       <h1>Команда</h1>
@@ -91,6 +101,7 @@ export function Team({
       </div>
       <div className="team-roster">
         <button
+          ref={rosterToggle}
           className="team-roster-toggle"
           disabled={savingEmployee}
           aria-expanded={showEmployees}
@@ -112,10 +123,18 @@ export function Team({
         </button>
         {showEmployees && (
           <section id="team-roster-list" aria-label="Все сотрудники">
+            {removedName && (
+              <p className="team-removal-status" role="status">
+                {removedName}: доступ закрыт.
+              </p>
+            )}
             {!users.length && <p className="team-roster-empty">Сотрудников пока нет.</p>}
+            {removable.size > 0 && (
+              <p className="team-roster-hint">Смахните строку влево, чтобы открыть корзину.</p>
+            )}
             <ul>
-              {users.map((u) => (
-                <li key={u.id} className="employee-row">
+              {users.map((u) => {
+                const summary = (
                   <div className="team-employee-summary">
                     <div className="team-employee-identity">
                       <strong>
@@ -154,14 +173,34 @@ export function Team({
                       </button>
                     )}
                   </div>
-                  {user.role === 'admin' && editor === u.id && employeeForm(u)}
-                  {savedEmployee === u.id && (
-                    <p className="team-employee-notice" role="status">
-                      Изменения сохранены
-                    </p>
-                  )}
-                </li>
-              ))}
+                );
+                return (
+                  <li key={u.id} className="employee-row">
+                    {removable.has(u.id) ? (
+                      <SwipeAction
+                        label={u.name}
+                        deleteLabel={`Удалить из команды: ${u.name}`}
+                        disabled={savingEmployee}
+                        deleteDialogOpen={removing?.id === u.id}
+                        onDeleteRequest={() => {
+                          setRemovedName('');
+                          setRemoving(u);
+                        }}
+                      >
+                        {summary}
+                      </SwipeAction>
+                    ) : (
+                      summary
+                    )}
+                    {user.role === 'admin' && editor === u.id && employeeForm(u)}
+                    {savedEmployee === u.id && (
+                      <p className="team-employee-notice" role="status">
+                        Изменения сохранены
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -191,6 +230,24 @@ export function Team({
             </p>
           )}
         </section>
+      )}
+      {removing && (
+        <RemoveTeamMemberDialog
+          actor={user}
+          member={removing}
+          users={users}
+          onClose={() => setRemoving(null)}
+          onChanged={onMemberRemoved}
+          onRemoved={() => {
+            if (editor === removing.id) {
+              dirty.current = false;
+              setEditor(null);
+            }
+            setRemovedName(removing.name);
+            setRemoving(null);
+            requestAnimationFrame(() => rosterToggle.current?.focus({ preventScroll: true }));
+          }}
+        />
       )}
     </>
   );
