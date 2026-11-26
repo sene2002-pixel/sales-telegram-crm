@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { companySchema, type Actor, type Company } from '../src/shared/contracts';
 import type { TeamStats } from '../src/shared/team-metrics';
 import { clients, navigate, openCompany, openCompanySection, prepareDemoAuth } from './helpers';
@@ -77,28 +77,96 @@ async function openManagement(
   return attempts;
 }
 
-test('Руководитель удаляет только своего сотрудника после подтверждения', async ({
+async function dragEmployeeRow(row: Locator, touch: boolean, left = true) {
+  await row.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+  const { x, y, width, height } = (await row.boundingBox())!;
+  const start = x + width * (left ? 0.8 : 0.2);
+  const end = x + width * (left ? 0.2 : 0.8);
+  const centerY = y + height / 2;
+  const page = row.page();
+  if (!touch) {
+    await page.mouse.move(start, centerY);
+    await page.mouse.down();
+    await page.mouse.move(end, centerY, { steps: 6 });
+    await page.mouse.up();
+    return;
+  }
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: start, y: centerY }],
+    });
+    for (let step = 1; step <= 6; step++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: start + ((end - start) * step) / 6, y: centerY }],
+      });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } finally {
+    await cdp.detach();
+  }
+}
+
+test('Руководитель открывает корзину свайпом и подтверждает удаление своего сотрудника', async ({
   page,
 }, info) => {
-  if (info.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 700 });
+  const mobile = info.project.name === 'mobile';
+  if (mobile) await page.setViewportSize({ width: 390, height: 844 });
   const attempts = await openManagement(page, supervisor, own, 'remove');
   await page.getByRole('button', { name: 'Все сотрудники', exact: true }).click();
   const roster = page.getByRole('region', { name: 'Все сотрудники', exact: true });
+  const actions = (person: Actor) =>
+    roster.getByRole('group', { name: `Действия: ${person.name}`, exact: true });
   const remove = (person: Actor) =>
     roster.getByRole('button', { name: `Удалить из команды: ${person.name}`, exact: true });
   const ownName = roster.getByText(own.name, { exact: true });
+  const row = actions(own);
   const trigger = remove(own);
-  await expect(trigger).toBeVisible();
-  for (const person of [admin, supervisor, otherSupervisor, foreign, unassigned])
+  await expect(row).toBeVisible();
+  await expect(trigger).toHaveCount(0);
+  for (const person of [admin, supervisor, otherSupervisor, foreign, unassigned]) {
+    await expect(actions(person)).toHaveCount(0);
     await expect(remove(person)).toHaveCount(0);
+  }
 
   const dialog = page.getByRole('alertdialog', { name: 'Удалить из команды', exact: true });
   const cancel = dialog.getByRole('button', { name: 'Отмена', exact: true });
   const confirm = dialog.getByRole('button', { name: 'Удалить сотрудника', exact: true });
+  await dragEmployeeRow(row, mobile, false);
+  await expect(trigger).toHaveCount(0);
+  if (mobile)
+    await row.screenshot({
+      path: info.outputPath('team-removal-before-swipe.png'),
+      animations: 'disabled',
+    });
+  const nameStart = (await ownName.boundingBox())!.x - (await row.boundingBox())!.x;
+  await dragEmployeeRow(row, mobile);
+  await expect(trigger).toBeVisible();
+  await expect
+    .poll(async () => (await ownName.boundingBox())!.x - (await row.boundingBox())!.x)
+    .toBeCloseTo(nameStart, 0);
+  await expect(dialog).toHaveCount(0);
+  expect(attempts).toHaveLength(0);
+  if (mobile) {
+    await row.screenshot({
+      path: info.outputPath('team-removal-swipe.png'),
+      animations: 'disabled',
+    });
+    await page.setViewportSize({ width: 320, height: 700 });
+  }
+
+  await row.press('Escape');
+  await expect(trigger).toHaveCount(0);
+  await row.press('ArrowLeft');
+  await expect(trigger).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(trigger).toBeFocused();
   await trigger.click();
   await expect(dialog).toContainText(own.name);
   await expect(cancel).toBeFocused();
-  if (info.project.name === 'mobile') {
+  if (mobile) {
     for (const control of [cancel, confirm]) {
       const box = await control.boundingBox();
       expect(box).not.toBeNull();
@@ -124,6 +192,32 @@ test('Руководитель удаляет только своего сотр
     page.getByRole('status').filter({ hasText: `${own.name}: доступ закрыт.` }),
   ).toBeVisible();
   expect(attempts).toHaveLength(2);
+});
+
+test('Администратор открывает корзину в любой команде, по одной строке за раз', async ({
+  page,
+}) => {
+  const attempts = await openManagement(page, admin, foreign, 'refresh');
+  await navigate(page, 'Команда');
+  await page.getByRole('button', { name: 'Все сотрудники', exact: true }).click();
+  const actions = (person: Actor) =>
+    page.getByRole('group', { name: `Действия: ${person.name}`, exact: true });
+  const remove = (person: Actor) =>
+    actions(person).getByRole('button', {
+      name: `Удалить из команды: ${person.name}`,
+      exact: true,
+    });
+  await expect(actions(admin)).toHaveCount(0);
+  await expect(remove(own)).toHaveCount(0);
+  await expect(remove(foreign)).toHaveCount(0);
+  await actions(own).press('ArrowLeft');
+  await expect(remove(own)).toBeVisible();
+  await actions(foreign).press('ArrowLeft');
+  await expect(remove(foreign)).toBeVisible();
+  await expect(remove(own)).toHaveCount(0);
+  await actions(foreign).press('ArrowRight');
+  await expect(remove(foreign)).toHaveCount(0);
+  expect(attempts).toHaveLength(0);
 });
 
 test('Администратор удаляет сотрудника другой команды и повторяет только обновление списка', async ({
