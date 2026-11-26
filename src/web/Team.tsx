@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Actor, labels } from '../shared/contracts';
 import { api, today } from './api';
 import { TeamEmployeeForm } from './TeamEmployeeForm';
+import { canRemoveTeamMember, RemoveTeamMemberDialog } from './RemoveTeamMemberDialog';
 import { Icon } from './Icons';
 import './team-employees.css';
 import { CommercialReport } from './CommercialReport';
@@ -15,10 +16,12 @@ export function Team({
   user,
   users,
   onChanged,
+  onMemberRemoved,
 }: {
   user: Actor;
   users: Actor[];
   onChanged: () => Promise<void>;
+  onMemberRemoved: (id: string) => Promise<void>;
 }) {
   const to = today();
   const from = to.slice(0, 8) + '01';
@@ -28,8 +31,11 @@ export function Team({
   const [editor, setEditor] = useState<string | null>(null);
   const [savingEmployee, setSavingEmployee] = useState(false);
   const [savedEmployee, setSavedEmployee] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Actor | null>(null);
+  const [removedName, setRemovedName] = useState('');
   const dirty = useRef(false);
   const editorTrigger = useRef<HTMLButtonElement | null>(null);
+  const rosterToggle = useRef<HTMLButtonElement>(null);
 
   function canLeaveEditor() {
     return !dirty.current || window.confirm('Закрыть форму и сбросить несохранённые изменения?');
@@ -91,6 +97,7 @@ export function Team({
       </div>
       <div className="team-roster">
         <button
+          ref={rosterToggle}
           className="team-roster-toggle"
           disabled={savingEmployee}
           aria-expanded={showEmployees}
@@ -112,6 +119,11 @@ export function Team({
         </button>
         {showEmployees && (
           <section id="team-roster-list" aria-label="Все сотрудники">
+            {removedName && (
+              <p className="team-removal-status" role="status">
+                {removedName}: доступ закрыт.
+              </p>
+            )}
             {!users.length && <p className="team-roster-empty">Сотрудников пока нет.</p>}
             <ul>
               {users.map((u) => (
@@ -153,6 +165,21 @@ export function Team({
                         <Icon name={editor === u.id ? 'close' : 'edit'} size={17} />
                       </button>
                     )}
+                    {canRemoveTeamMember(user, u, users) && (
+                      <button
+                        type="button"
+                        className="team-employee-remove danger"
+                        disabled={savingEmployee}
+                        aria-label={`Удалить из команды: ${u.name}`}
+                        title="Удалить из команды"
+                        onClick={() => {
+                          setRemovedName('');
+                          setRemoving(u);
+                        }}
+                      >
+                        <Icon name="trash" size={17} />
+                      </button>
+                    )}
                   </div>
                   {user.role === 'admin' && editor === u.id && employeeForm(u)}
                   {savedEmployee === u.id && (
@@ -191,6 +218,24 @@ export function Team({
             </p>
           )}
         </section>
+      )}
+      {removing && (
+        <RemoveTeamMemberDialog
+          actor={user}
+          member={removing}
+          users={users}
+          onClose={() => setRemoving(null)}
+          onChanged={onMemberRemoved}
+          onRemoved={() => {
+            if (editor === removing.id) {
+              dirty.current = false;
+              setEditor(null);
+            }
+            setRemovedName(removing.name);
+            setRemoving(null);
+            requestAnimationFrame(() => rosterToggle.current?.focus({ preventScroll: true }));
+          }}
+        />
       )}
     </>
   );

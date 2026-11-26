@@ -4,7 +4,10 @@ import { TeamTablePagination, useTeamTablePage } from './TeamTablePagination';
 
 export function InactiveCompanies({ stats }: { stats: TeamStats[] }) {
   const companies = stats.flatMap((employee) =>
-    employee.inactiveCompanies.map((company) => ({ ...company, ownerName: employee.name })),
+    employee.inactiveCompanies.map((company) => ({
+      ...company,
+      ownerName: employee.removedFromTeam ? `${employee.name} (вне команды)` : employee.name,
+    })),
   );
   const { tableRef, visibleRows, pagination } = useTeamTablePage(companies);
 

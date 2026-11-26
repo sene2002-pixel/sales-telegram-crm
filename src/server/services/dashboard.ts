@@ -130,8 +130,10 @@ export class DashboardService {
     requireCondition(from <= to, 400, 'Неверный период');
     const { users, companies, records } = await readAsActor(this.db, actor, async (tx, current) => {
       requireCondition(isLeader(current), 403, 'Отчёт доступен руководителю');
-      const users = await tx.query<Pick<TeamStats, 'id' | 'role' | 'name' | 'active'>>(
-        'SELECT id,name,role,active FROM users ORDER BY name,id',
+      const users = await tx.query<
+        Pick<TeamStats, 'id' | 'role' | 'name' | 'active'> & { removedFromTeam: boolean }
+      >(
+        'SELECT id,name,role,active,team_removed_at IS NOT NULL AS "removedFromTeam" FROM users ORDER BY name,id',
       );
       const companies = await tx.query('SELECT id,owner_id,data FROM companies');
       const records = await tx.query(
@@ -153,38 +155,42 @@ export class DashboardService {
         month: '2-digit',
         day: '2-digit',
       }).format(new Date(v));
-    return users.map((u) => {
+    return users.flatMap(({ removedFromTeam, ...u }) => {
       const owned = companies.filter((c) => c.owner_id === u.id && !c.data.archived);
+      const inactiveCompanies = owned
+        .filter(
+          (c) =>
+            !records.some(
+              (r) => r.kind === 'activity' && r.company_id === c.id && r.data.occurredOn >= cutoff,
+            ),
+        )
+        .map((c) => ({ id: c.id, name: c.data.name }));
+      if (removedFromTeam && !inactiveCompanies.length) return [];
       const tasks = records.filter((r) => r.kind === 'task' && r.assignee_id === u.id);
-      return {
-        ...u,
-        companies: owned.length,
-        openTasks: tasks.filter((t) => !t.data.done).length,
-        overdue: tasks.filter((t) => !t.data.done && t.data.due && t.data.due < today).length,
-        completed: tasks.filter(
-          (t) =>
-            t.data.done &&
-            t.data.completedAt &&
-            day(t.data.completedAt) >= from &&
-            day(t.data.completedAt) <= to,
-        ).length,
-        interactions: records.filter(
-          (r) =>
-            r.kind === 'activity' &&
-            r.author_id === u.id &&
-            r.data.occurredOn >= from &&
-            r.data.occurredOn <= to,
-        ).length,
-        inactiveCompanies: owned
-          .filter(
-            (c) =>
-              !records.some(
-                (r) =>
-                  r.kind === 'activity' && r.company_id === c.id && r.data.occurredOn >= cutoff,
-              ),
-          )
-          .map((c) => ({ id: c.id, name: c.data.name })),
-      };
+      return [
+        {
+          ...u,
+          ...(removedFromTeam ? { removedFromTeam } : {}),
+          companies: owned.length,
+          openTasks: tasks.filter((t) => !t.data.done).length,
+          overdue: tasks.filter((t) => !t.data.done && t.data.due && t.data.due < today).length,
+          completed: tasks.filter(
+            (t) =>
+              t.data.done &&
+              t.data.completedAt &&
+              day(t.data.completedAt) >= from &&
+              day(t.data.completedAt) <= to,
+          ).length,
+          interactions: records.filter(
+            (r) =>
+              r.kind === 'activity' &&
+              r.author_id === u.id &&
+              r.data.occurredOn >= from &&
+              r.data.occurredOn <= to,
+          ).length,
+          inactiveCompanies,
+        },
+      ];
     });
   }
   async csv(actor: Actor, from: string, to: string, filter: TeamMetricsFilter = {}) {

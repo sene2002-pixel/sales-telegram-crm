@@ -155,6 +155,15 @@ export function CompanyDetail({
       </Modal>
     );
   const c = currentDetail.company;
+  const canManageOwnership =
+    currentDetail.canManageOwnership ??
+    (user.role === 'admin' ||
+      (user.role === 'supervisor' &&
+        (c.ownerId === user.id ||
+          users.some((u) => u.id === c.ownerId && u.supervisorId === user.id))));
+  const eligibleOwners = users.filter(
+    (u) => u.active && (user.role === 'admin' || u.id === user.id || u.supervisorId === user.id),
+  );
   const visibleContacts = currentDetail.records.filter(
     (record) => record.kind === 'contact' && !clientsUndo.pending.has(contactDeleteKey(record.id)),
   );
@@ -254,11 +263,7 @@ export function CompanyDetail({
           >
             {edit ? 'Скрыть форму' : 'Редактировать компанию'}
           </button>
-          {(user.role === 'admin' ||
-            (!c.archived &&
-              user.role === 'supervisor' &&
-              (c.ownerId === user.id ||
-                users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))) && (
+          {canManageOwnership && (!c.archived || user.role === 'admin') && (
             <button
               className={c.archived ? undefined : 'danger'}
               disabled={
@@ -307,24 +312,20 @@ export function CompanyDetail({
               }}
             />
           )}
-          {(user.role === 'admin' ||
-            (user.role === 'supervisor' &&
-              (c.ownerId === user.id ||
-                users.some((u) => u.id === c.ownerId && u.supervisorId === user.id)))) && (
+          {canManageOwnership && (
             <div className="assign">
               <Field label="Передать компанию">
                 <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-                  {users
-                    .filter(
-                      (u) =>
-                        u.active &&
-                        (user.role === 'admin' || u.id === user.id || u.supervisorId === user.id),
-                    )
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
+                  {!eligibleOwners.some((u) => u.id === c.ownerId) && (
+                    <option value={c.ownerId} disabled>
+                      {c.ownerName || 'Текущий ответственный'}
+                    </option>
+                  )}
+                  {eligibleOwners.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <button

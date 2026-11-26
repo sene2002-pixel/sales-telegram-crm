@@ -97,6 +97,7 @@
 }
 
 .team-employee-edit,
+.team-employee-remove,
 .team-employee-add {
   display: inline-flex;
   align-items: center;
@@ -105,12 +106,16 @@
   min-height: 44px;
 }
 
-.team-employee-edit {
+.team-employee-edit,
+.team-employee-remove {
   flex: 0 0 44px;
   width: 44px;
   padding: 0;
   background: transparent;
   border: 0;
+}
+
+.team-employee-edit {
   color: #426387;
 }
 
@@ -247,4 +252,32 @@
   margin: 4px 0;
   color: #24684c;
   font-size: 0.8125rem;
+}
+
+.team-removal-status {
+  margin: 4px 16px 8px;
+  color: #24684c;
+  font-size: 0.8125rem;
+}
+
+.team-removal-modal p,
+.team-removal-status,
+.pico-users .success {
+  overflow-wrap: anywhere;
+}
+
+.team-removal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-removal-actions button,
+.team-remove-from-user {
+  min-height: 44px;
+}
+
+.team-remove-from-user {
+  width: 100%;
+  margin-top: 12px;
 }

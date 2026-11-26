@@ -165,6 +165,7 @@ schemas.AuditEvent = object({
 });
 schemas.CompanyDetail = object({
   company: ref('Company'),
+  canManageOwnership: { ...boolean, readOnly: true },
   records: array(ref('Record')),
   audit: array(ref('AuditEvent')),
   holdingMembers: array(ref('Company')),
@@ -259,7 +260,7 @@ schemas.AnalyticsSummary = object({
   historyIncomplete: integer,
   clientAnalytics: ref('ClientAnalytics'),
 });
-schemas.DashboardRow = object({
+const dashboardRowFields = {
   id: uuid,
   name: string,
   role: { type: 'string', enum: [...roles] },
@@ -270,7 +271,18 @@ schemas.DashboardRow = object({
   completed: integer,
   interactions: integer,
   inactiveCompanies: array(object({ id: uuid, name: string })),
-});
+};
+schemas.DashboardRow = object(
+  {
+    ...dashboardRowFields,
+    removedFromTeam: {
+      ...boolean,
+      description:
+        'Прежний ответственный; строка сохраняет компании без контакта, но не входит в показатели команды.',
+    },
+  },
+  Object.keys(dashboardRowFields),
+);
 const volumes = object({ confirmed: number, in_work: number, potential: number });
 const approximate = object({ confirmed: boolean, in_work: boolean, potential: boolean });
 schemas.CommercialReport = object({
@@ -437,7 +449,7 @@ function add(
   id: string,
   summary: string,
   tag: string,
-  result: Schema,
+  result: Schema | null,
   options: {
     body?: any;
     description?: string;
@@ -466,9 +478,10 @@ function add(
         : 'Идентификатор существующей доступной записи.',
   }));
   const statuses = options.errors || [400, 401, 403, 404, 409, 429, 500];
-  const responses: Record<string, any> = {
-    [method === 'post' ? '201' : '200']: response(result, 'Успешный ответ', options.media),
-  };
+  const responses: Record<string, any> =
+    result === null
+      ? { '204': { description: 'Успешно, без тела ответа' } }
+      : { [method === 'post' ? '201' : '200']: response(result, 'Успешный ответ', options.media) };
   for (const status of statuses)
     responses[String(status)] = {
       ...response(ref('Error'), errorDescriptions[status]),
@@ -684,6 +697,7 @@ const userInput = jsonSchema(
   z
     .object({
       telegramId: z.string().regex(/^[1-9]\d{0,15}$/),
+      expectedUserId: idSchema.optional(),
       name: z.string().trim().min(1).max(200),
       role: z.enum(roles),
       active: z.boolean(),
@@ -702,7 +716,7 @@ add(
     roles: ['admin'],
     body: jsonBody(userInput),
     description:
-      'Администратор; upsert по telegramId. Защита последнего активного администратора, проверка активного руководителя для manager. Не отдаёт доступ произвольным данным другим ролям.',
+      'Администратор; upsert по telegramId. Передайте expectedUserId при редактировании, чтобы отклонить устаревшую форму, если Telegram уже связан с другой учётной записью. Защищает последнего активного администратора и проверяет активность назначаемого руководителя.',
   },
 );
 add(
@@ -719,6 +733,19 @@ add(
     ),
     description:
       'Создаёт активного manager, имя-плейсхолдер до доверенного Telegram-профиля. Повторный ID — 409, существующие права не перезаписываются. ID должен помещаться в safe integer.',
+  },
+);
+add(
+  'delete',
+  '/users/{id}',
+  'removeTeamMember',
+  'Удалить сотрудника из команды',
+  'Сотрудники',
+  null,
+  {
+    roles: ['admin', 'supervisor'],
+    description:
+      'Администратор может удалить любого участника, кроме последнего активного администратора (409). Руководитель — только своего прямого менеджера. Доступ закрывается, история сохраняется. Для повторного добавления нужна ссылка, созданная после удаления.',
   },
 );
 add(

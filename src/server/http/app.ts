@@ -21,6 +21,7 @@ import {
   ExecutionContext,
   ExceptionFilter,
   Get,
+  HttpCode,
   HttpException,
   Inject,
   Module,
@@ -404,6 +405,11 @@ class CrmController {
   }
   @Post('users/admit') admitUser(@Req() r: AuthedRequest, @Body() body: unknown) {
     return this.s.auth.admitUser(r.actor, body);
+  }
+  @Delete('users/:id')
+  @HttpCode(204)
+  async removeTeamMember(@Req() r: AuthedRequest, @Param('id') id: string) {
+    await this.s.auth.removeTeamMember(r.actor, id);
   }
   @Get('share/bot-link') async shareBotLink() {
     return { url: `https://t.me/${await this.s.telegram.botUsername()}` };

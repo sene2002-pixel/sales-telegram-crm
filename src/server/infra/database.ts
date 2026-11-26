@@ -104,6 +104,9 @@ export class Database implements Sql {
       await tx.query(
         'ALTER TABLE users ADD COLUMN IF NOT EXISTS supervisor_id uuid REFERENCES users(id)',
       );
+      await tx.query(
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS team_removed_at timestamptz CHECK (team_removed_at IS NULL OR NOT active)',
+      );
       await tx.query(`CREATE TABLE IF NOT EXISTS team_invitations (
         id uuid PRIMARY KEY, token_hash text UNIQUE NOT NULL,
         created_by uuid NOT NULL REFERENCES users(id), supervisor_id uuid NOT NULL REFERENCES users(id),

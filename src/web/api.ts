@@ -27,6 +27,7 @@ export async function api<T = any>(path: string, method = 'GET', body?: unknown)
     const data = await response.json().catch(() => ({ message: 'Сервер недоступен' }));
     throw new ApiError(data.message || 'Ошибка запроса', response.status);
   }
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
 export async function download(path: string, name: string) {

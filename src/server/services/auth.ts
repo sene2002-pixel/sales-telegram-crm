@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { Actor, Role, roles, isLeader } from '../../shared/contracts';
+import { Actor, Role, roles, isLeader, idSchema } from '../../shared/contracts';
 import { Config } from '../config';
 import { Database, Sql } from '../infra/database';
 import { requireCondition } from '../domain/errors';
@@ -68,6 +68,26 @@ export async function activeTeamOwner(tx: Sql, id: string) {
 }
 export const userProjection =
   'id, telegram_id AS "telegramId", name, role, active, supervisor_id AS "supervisorId"';
+type TeamMember = Actor & { removedFromTeam: boolean };
+const teamMemberProjection = `${userProjection}, team_removed_at IS NOT NULL AS "removedFromTeam"`;
+const removedFromTeamMessage =
+  'Сотрудник удалён из команды. Для добавления отправьте новое приглашение';
+
+async function requireAnotherAdmin(tx: Sql, id: string) {
+  const [another] = await tx.query(
+    "SELECT id FROM users WHERE role='admin' AND active=true AND id<>$1 LIMIT 1",
+    [id],
+  );
+  requireCondition(another, 409, 'Нельзя отключить последнего администратора');
+}
+
+async function detachDirectReports(tx: Sql, id: string) {
+  await tx.query(
+    'UPDATE users SET supervisor_id=NULL WHERE supervisor_id=$1 AND team_removed_at IS NULL',
+    [id],
+  );
+}
+
 // Use one MVCC snapshot for the role, team membership and protected rows.
 export function readAsActor<T>(
   db: Database,
@@ -186,9 +206,55 @@ export class AuthService {
   async users(actor: Actor) {
     return readAsActor(this.db, actor, (tx, current) =>
       isLeader(current)
-        ? tx.query<Actor>(`SELECT ${userProjection} FROM users ORDER BY name`)
+        ? tx.query<Actor>(
+            `SELECT ${userProjection} FROM users WHERE team_removed_at IS NULL ORDER BY name`,
+          )
         : Promise.resolve([current]),
     );
+  }
+  async removeTeamMember(actor: Actor, rawId: unknown) {
+    requireCondition(
+      isLeader(actor),
+      403,
+      'Удалять сотрудников могут администратор и руководитель',
+    );
+    const id = idSchema.parse(rawId);
+    await this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      const current = await activeActor(tx, actor.id);
+      requireCondition(
+        current.role === actor.role && isLeader(current),
+        403,
+        'Удалять сотрудников могут администратор и руководитель',
+      );
+      const [target] = await tx.query<TeamMember>(
+        `SELECT ${teamMemberProjection} FROM users WHERE id=$1 FOR UPDATE`,
+        [id],
+      );
+      requireCondition(
+        target && !target.removedFromTeam && !target.telegramId.startsWith('dev-'),
+        404,
+        'Сотрудник не найден',
+      );
+      requireCondition(
+        current.role === 'admin' ||
+          (target.role === 'manager' && target.supervisorId === current.id),
+        403,
+        'Можно удалить только сотрудника своей команды',
+      );
+      if (target.role === 'admin' && target.active) await requireAnotherAdmin(tx, id);
+      if (isLeader(target)) await detachDirectReports(tx, id);
+      // Keep the historical manager’s supervisor and ownership links for reassignment.
+      // The old identity remains inactive even if the Telegram account joins a different team.
+      await tx.query(
+        'UPDATE users SET active=false,team_removed_at=clock_timestamp() WHERE id=$1',
+        [id],
+      );
+      await audit(tx, current.id, 'user.removed_from_team', id, null, {
+        role: target.role,
+        supervisorId: target.supervisorId,
+      });
+    });
   }
   async admitUser(actor: Actor, raw: unknown) {
     requireCondition(actor.role === 'admin', 403, 'Только администратор управляет сотрудниками');
@@ -213,11 +279,16 @@ export class AuthService {
         403,
         'Только администратор управляет сотрудниками',
       );
-      const [existing] = await tx.query('SELECT id FROM users WHERE telegram_id=$1', [telegramId]);
+      const [existing] = await tx.query<Pick<TeamMember, 'removedFromTeam'>>(
+        'SELECT team_removed_at IS NOT NULL AS "removedFromTeam" FROM users WHERE telegram_id=$1',
+        [telegramId],
+      );
       requireCondition(
         !existing,
         409,
-        'Пользователь уже добавлен. Откройте его карточку для изменения доступа',
+        existing?.removedFromTeam
+          ? removedFromTeamMessage
+          : 'Пользователь уже добавлен. Откройте его карточку для изменения доступа',
       );
       const id = randomUUID(),
         name = `Telegram ID ${telegramId}`;
@@ -231,13 +302,14 @@ export class AuthService {
   }
   async saveUser(actor: Actor, raw: unknown) {
     requireCondition(actor.role === 'admin', 403, 'Только администратор управляет сотрудниками');
-    const input = z
+    const { expectedUserId, ...input } = z
       .object({
         telegramId: z.string().regex(/^[1-9]\d{0,15}$/),
         name: z.string().trim().min(1).max(200),
         role: z.enum(roles),
         active: z.boolean(),
         supervisorId: z.string().uuid().nullable().optional(),
+        expectedUserId: idSchema.optional(),
       })
       .strict()
       .parse(raw);
@@ -248,18 +320,22 @@ export class AuthService {
         403,
         'Только администратор управляет сотрудниками',
       );
-      const [existing] = await tx.query<Actor>(
-        `SELECT ${userProjection} FROM users WHERE telegram_id=$1 FOR UPDATE`,
+      const [existing] = await tx.query<TeamMember>(
+        `SELECT ${teamMemberProjection} FROM users WHERE telegram_id=$1 FOR UPDATE`,
         [input.telegramId],
+      );
+      requireCondition(!existing?.removedFromTeam, 409, removedFromTeamMessage);
+      requireCondition(
+        expectedUserId === undefined || existing?.id === expectedUserId,
+        409,
+        'Учётная запись сотрудника изменилась. Обновите список и откройте карточку заново',
       );
       if (
         existing?.role === 'admin' &&
         existing.active &&
         (input.role !== 'admin' || !input.active)
-      ) {
-        const admins = await tx.query(`SELECT id FROM users WHERE role='admin' AND active=true`);
-        requireCondition(admins.length > 1, 409, 'Нельзя отключить последнего администратора');
-      }
+      )
+        await requireAnotherAdmin(tx, existing.id);
       const id = existing?.id || randomUUID();
       const supervisorId =
         input.supervisorId === undefined
@@ -276,7 +352,7 @@ export class AuthService {
         );
       }
       if (existing && isLeader(existing) && (!isLeader(input) || !input.active))
-        await tx.query('UPDATE users SET supervisor_id=NULL WHERE supervisor_id=$1', [id]);
+        await detachDirectReports(tx, id);
       await tx.query(
         `INSERT INTO users(id,telegram_id,name,role,active,supervisor_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(telegram_id) DO UPDATE SET name=$3,role=$4,active=$5,supervisor_id=$6`,
         [id, input.telegramId, input.name, input.role, input.active, supervisorId],
