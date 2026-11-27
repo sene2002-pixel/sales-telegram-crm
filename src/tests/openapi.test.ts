@@ -29,12 +29,16 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
     )
     .sort();
   assert.deepEqual(actual, declared);
-  assert.equal(actual.length, 69);
+  assert.equal(actual.length, 73);
   for (const [path, method] of [
     ['/team-invitations', 'get'],
     ['/team-invitations', 'post'],
     ['/team-invitations/{id}/revoke', 'post'],
     ['/users/{id}', 'delete'],
+    ['/users/{id}/handoff', 'get'],
+    ['/client-handoff', 'get'],
+    ['/client-handoff/companies/{id}', 'post'],
+    ['/client-handoff/tasks/{id}', 'post'],
   ])
     assert.deepEqual(document.paths[path!][method!]['x-roles'], ['admin', 'supervisor']);
   const ids = Object.values(document.paths).flatMap((methods: any) =>
@@ -46,7 +50,12 @@ test('OpenAPI inventories every explicit current controller operation with uniqu
       assert.ok(operation.summary);
       assert.ok(operation.description);
       const successStatus =
-        path === '/users/{id}' && method === 'delete' ? '204' : method === 'post' ? '201' : '200';
+        (path === '/users/{id}' && method === 'delete') ||
+        (path.startsWith('/client-handoff/') && method === 'post')
+          ? '204'
+          : method === 'post'
+            ? '201'
+            : '200';
       assert.ok(operation.responses[successStatus]);
       if (successStatus === '204')
         assert.equal(operation.responses[successStatus].content, undefined);

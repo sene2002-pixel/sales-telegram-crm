@@ -284,6 +284,25 @@
   gap: 8px;
 }
 
+.team-removal-handoff {
+  display: grid;
+  gap: 8px;
+}
+
+.team-removal-handoff:empty {
+  display: none;
+}
+
+.team-removal-handoff > p,
+.team-removal-handoff > .field {
+  margin: 0;
+}
+
+.team-removal-handoff select,
+.team-removal-handoff > button {
+  min-height: 44px;
+}
+
 .team-removal-actions button,
 .team-remove-from-user {
   min-height: 44px;

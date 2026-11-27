@@ -56,6 +56,7 @@ import { VoiceSignatures } from '../services/voice-signatures';
 import { VoiceContacts } from '../services/voice-contacts';
 import { AuthService } from '../services/auth';
 import { CrmService } from '../services/crm';
+import { ClientHandoffService } from '../services/client-handoff';
 import { ReportService, mapReport } from '../services/reports';
 import { ReportWorker } from '../services/worker';
 import { BotService } from '../services/bot';
@@ -82,6 +83,7 @@ export class Services {
   errors: ErrorLog;
   auth: AuthService;
   crm: CrmService;
+  handoff: ClientHandoffService;
   reports: ReportService;
   worker: ReportWorker;
   bot: BotService;
@@ -98,6 +100,7 @@ export class Services {
     this.diagnostics = new DiagnosticLog(db, config);
     this.auth = new AuthService(db, config);
     this.crm = new CrmService(db);
+    this.handoff = new ClientHandoffService(db, this.auth, this.crm);
     this.ideas = new PicoIdeas(db);
     this.fileDownloads = new FileDownloads(this.crm, config);
     const ai = new OpenAiAdapter(config, this.diagnostics, new AiBudget(db, config.aiBudget), db);
@@ -408,8 +411,28 @@ class CrmController {
   }
   @Delete('users/:id')
   @HttpCode(204)
-  async removeTeamMember(@Req() r: AuthedRequest, @Param('id') id: string) {
-    await this.s.auth.removeTeamMember(r.actor, id);
+  async removeTeamMember(@Req() r: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    await this.s.handoff.remove(r.actor, id, body);
+  }
+  @Get('users/:id/handoff') previewMemberHandoff(@Req() r: AuthedRequest, @Param('id') id: string) {
+    return this.s.handoff.previewRemoval(r.actor, id);
+  }
+  @Get('client-handoff') handoffQueue(@Req() r: AuthedRequest) {
+    return this.s.handoff.queue(r.actor);
+  }
+  @Post('client-handoff/companies/:id')
+  @HttpCode(204)
+  async assignHandoffCompany(
+    @Req() r: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.s.handoff.assignCompany(r.actor, id, body);
+  }
+  @Post('client-handoff/tasks/:id')
+  @HttpCode(204)
+  async assignHandoffTask(@Req() r: AuthedRequest, @Param('id') id: string, @Body() body: unknown) {
+    await this.s.handoff.assignTask(r.actor, id, body);
   }
   @Get('share/bot-link') async shareBotLink() {
     return { url: `https://t.me/${await this.s.telegram.botUsername()}` };

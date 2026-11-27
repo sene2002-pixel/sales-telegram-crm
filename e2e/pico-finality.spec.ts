@@ -76,6 +76,8 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === 'GET' && path === '/api/companies')
       return route.fulfill({ json: companies });
+    if (path === '/api/client-handoff')
+      return route.fulfill({ json: { companies: [], tasks: [] } });
     if (route.request().method() === 'GET' && /^\/api\/records\//.test(path))
       return route.fulfill({
         json: path.endsWith('/project') ? projects : path.endsWith('/task') ? tasks : [],
@@ -291,6 +293,7 @@ test('final references load real Cyrillic Manrope and retain readable native-fra
     await rasterProbe.evaluate((element) => element.remove());
     await cdp.detach();
   }
+  await expect(page.getByRole('button', { name: /^Требуют передачи/ })).toHaveCount(0);
   const last = (await page.locator('.pico-client-accordion').last().boundingBox())!;
   const footer = (await nav.boundingBox())!;
   await page.screenshot({

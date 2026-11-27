@@ -73,6 +73,20 @@ async function openManagement(
     failRefresh = failure === 'refresh';
     return route.fulfill({ status: 204 });
   });
+  await page.route(`**/api/users/${target.id}/handoff`, (route) =>
+    route.fulfill({
+      json: {
+        companyCount: 0,
+        projectCount: 0,
+        taskCount: 0,
+        separateTaskCount: 0,
+        unassignableTaskCount: 0,
+        candidates: [],
+        suggestedRecipientId: null,
+        revision: 'empty-roster-fixture',
+      },
+    }),
+  );
   await loginManagement(page, current);
   return attempts;
 }

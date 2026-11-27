@@ -26,6 +26,11 @@ import {
   telegramStarReceipt,
 } from '../services/pico-stars';
 import { picoStarsMaximum, picoStarsMinimum } from '../../shared/pico-stars';
+import {
+  assignCompanyHandoffSchema,
+  assignHandoffSchema,
+  removalHandoffSchema,
+} from '../../shared/client-handoff';
 
 // Input schemas are derived from the same validators used by the HTTP services.
 // Descriptions also document refinements (calendar dates, INN checksum, ACL) which JSON Schema cannot enforce.
@@ -94,6 +99,42 @@ schemas.Actor = object(
   },
   ['id', 'telegramId', 'name', 'role', 'active'],
 );
+const handoffPerson = object({ id: uuid, name: string });
+const handoffWork = { id: uuid, text: string, due: nullable(date) };
+schemas.HandoffCompany = object({
+  id: uuid,
+  version: positiveInteger,
+  revision: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+  name: string,
+  formerOwner: handoffPerson,
+  projects: array(
+    object({ id: uuid, name: string, stage: { enum: [...stages] }, due: nullable(date) }),
+  ),
+  tasks: array(object(handoffWork)),
+  candidates: array(handoffPerson),
+});
+schemas.HandoffTask = object({
+  ...handoffWork,
+  version: positiveInteger,
+  companyId: uuid,
+  companyName: string,
+  formerAssignee: handoffPerson,
+  candidates: array(handoffPerson),
+});
+schemas.HandoffQueue = object({
+  companies: array(ref('HandoffCompany')),
+  tasks: array(ref('HandoffTask')),
+});
+schemas.RemovalHandoff = object({
+  companyCount: integer,
+  projectCount: integer,
+  taskCount: integer,
+  separateTaskCount: integer,
+  unassignableTaskCount: integer,
+  candidates: array(handoffPerson),
+  suggestedRecipientId: nullable(uuid),
+  revision: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+});
 schemas.Session = object({
   token: {
     type: 'string',
@@ -744,10 +785,58 @@ add(
   null,
   {
     roles: ['admin', 'supervisor'],
+    body: { ...jsonBody(jsonSchema(removalHandoffSchema)), required: false },
     description:
-      'Администратор может удалить любого участника, кроме последнего активного администратора (409). Руководитель — только своего прямого менеджера. Доступ закрывается, история сохраняется. Для повторного добавления нужна ссылка, созданная после удаления.',
+      'Без тела закрывает доступ и оставляет работу в очереди. С актуальной revision предварительного просмотра передаёт активные компании выбранному получателю, а отдельные задачи возвращает действующим владельцам компаний; при конфликте ничего не меняется. Последнего действующего администратора удалить нельзя. Для повторного добавления нужна новая ссылка.',
   },
 );
+add(
+  'get',
+  '/users/{id}/handoff',
+  'previewMemberHandoff',
+  'Показать объём работы перед удалением сотрудника',
+  'Сотрудники',
+  ref('RemovalHandoff'),
+  {
+    roles: ['admin', 'supervisor'],
+    description:
+      'Проверяет право на удаление и возвращает текущую ревизию работы для одновременной передачи и удаления. taskCount включает отдельные задачи.',
+  },
+);
+add(
+  'get',
+  '/client-handoff',
+  'handoffQueue',
+  'Клиенты и задачи, которые требуют передачи',
+  'Клиенты',
+  ref('HandoffQueue'),
+  {
+    roles: ['admin', 'supervisor'],
+    description:
+      'Администратор видит всю очередь; руководитель — работу своих бывших менеджеров. Возвращает активные компании и открытые задачи удалённых сотрудников; сортирует по ближайшим срокам, включая просроченные.',
+  },
+);
+for (const [kind, id, title, detail] of [
+  [
+    'companies',
+    'assignHandoffCompany',
+    'Передать компанию из очереди',
+    'Меняет владельца и только незавершённые задачи бывшего владельца; проекты и история сохраняются.',
+  ],
+  [
+    'tasks',
+    'assignHandoffTask',
+    'Назначить отдельную задачу из очереди',
+    'Меняет только исполнителя задачи, без передачи компании.',
+  ],
+] as const)
+  add('post', `/client-handoff/${kind}/{id}`, id, title, 'Клиенты', null, {
+    roles: ['admin', 'supervisor'],
+    body: jsonBody(
+      jsonSchema(kind === 'companies' ? assignCompanyHandoffSchema : assignHandoffSchema),
+    ),
+    description: detail + ' Требует актуальную версию и допустимого активного получателя.',
+  });
 add(
   'get',
   '/share/bot-link',

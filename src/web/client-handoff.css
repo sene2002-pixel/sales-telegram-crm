@@ -1,0 +1,195 @@
+.pico-client-result-count {
+  margin: 9px 0 6px;
+  color: #5f6880;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.pico-client-handoff,
+.pico-handoff-confirmation {
+  color: #1a2151;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pico-client-handoff {
+  border: 1px solid #e6ebf3;
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.pico-client-handoff button,
+.pico-handoff-confirmation button,
+.pico-handoff-confirmation select {
+  min-height: 44px;
+}
+
+.pico-handoff-trigger,
+.pico-handoff-item-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 750;
+}
+
+.pico-handoff-trigger {
+  padding: 9px 14px;
+  border-radius: 15px;
+}
+
+.pico-handoff-trigger > svg,
+.pico-handoff-item-trigger > svg {
+  flex: none;
+  color: #1970c9;
+}
+
+.pico-handoff-trigger[aria-expanded='true'] > svg,
+.pico-handoff-item-trigger[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+
+.pico-handoff-notice {
+  margin: 0;
+}
+
+.pico-handoff-notice:not(:empty) {
+  margin: 0 14px 10px;
+  color: #24684c;
+  font-size: 13px;
+}
+
+.pico-handoff-panel {
+  padding: 0 12px 12px;
+}
+
+.pico-handoff-panel p {
+  margin: 0;
+}
+
+.pico-handoff-views,
+.pico-handoff-card-actions,
+.pico-handoff-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pico-handoff-card-actions .error {
+  flex-basis: 100%;
+}
+
+.pico-handoff-views {
+  margin-bottom: 8px;
+}
+
+.pico-handoff-views button {
+  padding: 6px 10px;
+  color: #1a2151;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 12px;
+}
+
+.pico-handoff-views button[aria-pressed='true'] {
+  border-color: #a8c7ee;
+  background: #e4effd;
+  color: #145db3;
+}
+
+.pico-handoff-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.pico-handoff-item {
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+}
+
+.pico-handoff-item h3,
+.pico-handoff-item h4 {
+  margin: 0;
+}
+
+.pico-handoff-item h3 {
+  font-size: 14px;
+}
+
+.pico-handoff-item-trigger {
+  align-items: flex-start;
+  padding: 10px 11px;
+  border-radius: 13px;
+}
+
+.pico-handoff-item-trigger > span {
+  min-width: 0;
+}
+
+.pico-handoff-meta {
+  margin-top: 3px;
+}
+
+.pico-handoff-meta,
+.pico-handoff-meta > span,
+.pico-handoff-item-content li > span {
+  display: block;
+}
+
+.handoff-secondary,
+.pico-handoff-meta {
+  color: #5f6880;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.handoff-overdue {
+  color: #922e2a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pico-handoff-item-content:not([hidden]) {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #e6ebf3;
+  padding: 10px 11px;
+  font-size: 14px;
+}
+
+.pico-handoff-item-content ul {
+  margin: 4px 0 0;
+  padding-inline-start: 16px;
+}
+
+.pico-handoff-item-content li + li {
+  margin-top: 5px;
+}
+
+.pico-handoff-load-error {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+  margin-bottom: 9px;
+  font-size: 13px;
+}
+
+.pico-handoff-confirmation form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pico-handoff-confirmation form p {
+  margin: 0;
+}
+
+.pico-handoff-confirmation select {
+  width: 100%;
+  min-width: 0;
+  font-size: 16px;
+}
