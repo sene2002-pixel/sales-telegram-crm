@@ -40,6 +40,11 @@ const catalogueMention = (data: Pick<CompanyData, 'name' | 'legalForm'>) =>
 const isTeamCompany = (actorId: string, ownerId: string, supervisorId?: string | null) =>
   ownerId === actorId || supervisorId === actorId;
 
+export const activeHandoffCompany = (alias: string) =>
+  `COALESCE(${alias}.data->>'archived','false') <> 'true' AND COALESCE(${alias}.data->>'stage','new') <> 'closed'`;
+export const openHandoffTask = (alias: string) =>
+  `${alias}.kind='task' AND NOT ${alias}.deleted AND COALESCE(${alias}.data->>'done','false') <> 'true' AND COALESCE(${alias}.data->>'deleted','false') <> 'true'`;
+
 export function mapCompany(row: any): Company {
   return {
     ...row.data,
@@ -95,6 +100,7 @@ export class CrmService {
     ownerId: string,
     tx: Sql,
     previous?: Company,
+    handoff = false,
   ) {
     await tx.query('SELECT pg_advisory_xact_lock(7142532)');
     if (data.segment === 'holding' && data.potential !== null && Object.keys(data.divisions).length)
@@ -121,8 +127,10 @@ export class CrmService {
       const parent = await this.company(actor, data.holdingId, tx, true);
       requireCondition(
         parent.segment === 'holding' && !parent.archived && parent.ownerId === ownerId,
-        400,
-        'Выберите доступный холдинг с тем же ответственным',
+        handoff ? 409 : 400,
+        handoff
+          ? 'Компания входит в холдинг. Откройте карточку компании и снимите связь с холдингом перед передачей'
+          : 'Выберите доступный холдинг с тем же ответственным',
       );
       requireCondition(!data.archived, 400, 'Сначала отсоедините заказчика от холдинга');
     }
@@ -135,7 +143,9 @@ export class CrmService {
         !children.length ||
           (data.segment === 'holding' && !data.archived && ownerId === previous.ownerId),
         409,
-        'Сначала отсоедините заказчиков холдинга',
+        handoff
+          ? 'Сначала отсоедините заказчиков холдинга в их карточках, затем вернитесь к передаче'
+          : 'Сначала отсоедините заказчиков холдинга',
       );
       if (previous.segment !== 'holding' && data.segment === 'holding') {
         const participantProjects = await tx.query(
@@ -495,30 +505,53 @@ export class CrmService {
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       actor = await activeActor(tx, actor.id);
-      requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
-      const company = await this.company(actor, id, tx, true);
-      await this.validateHolding(actor, company, ownerId, tx, company);
-      if (actor.role === 'supervisor') {
-        await this.checkArchivePermission(actor, company, true, tx);
-        await this.checkArchivePermission(actor, { ...company, ownerId }, true, tx);
-      }
-      requireCondition(company.version === version, 409, 'Карточка изменена');
-      const [owner] = await tx.query('SELECT id FROM users WHERE id=$1 AND active=true', [
-        idSchema.parse(ownerId),
-      ]);
-      requireCondition(owner, 400, 'Ответственный неактивен');
-      await this.assertInnAvailable(tx, company.inn, ownerId, id);
-      await tx.query(
-        'UPDATE companies SET owner_id=$1,version=version+1,updated_at=now() WHERE id=$2',
-        [ownerId, id],
+      return this.assignInTransaction(tx, actor, id, ownerId, version);
+    });
+  }
+
+  async assignInTransaction(
+    tx: Sql,
+    actor: Actor,
+    id: string,
+    ownerId: string,
+    version: number,
+    departingOwnerId?: string,
+  ) {
+    requireCondition(isLeader(actor), 403, 'Назначение доступно руководителю');
+    const company = await this.company(actor, id, tx, true);
+    if (departingOwnerId)
+      requireCondition(
+        company.ownerId === departingOwnerId && !company.archived && company.stage !== 'closed',
+        409,
+        'Компания больше не требует передачи. Обновите список',
       );
+    await this.validateHolding(actor, company, ownerId, tx, company, Boolean(departingOwnerId));
+    if (actor.role === 'supervisor') {
+      await this.checkArchivePermission(actor, company, true, tx);
+      await this.checkArchivePermission(actor, { ...company, ownerId }, true, tx);
+    }
+    requireCondition(company.version === version, 409, 'Карточка изменена');
+    const [owner] = await tx.query('SELECT id FROM users WHERE id=$1 AND active=true', [
+      idSchema.parse(ownerId),
+    ]);
+    requireCondition(owner, 400, 'Ответственный неактивен');
+    await this.assertInnAvailable(tx, company.inn, ownerId, id);
+    await tx.query(
+      'UPDATE companies SET owner_id=$1,version=version+1,updated_at=now() WHERE id=$2',
+      [ownerId, id],
+    );
+    if (departingOwnerId)
+      await tx.query(
+        `UPDATE records r SET assignee_id=$1,version=version+1 WHERE company_id=$2 AND assignee_id=$3 AND ${openHandoffTask('r')}`,
+        [ownerId, id, departingOwnerId],
+      );
+    else
       await tx.query(
         `UPDATE records SET assignee_id=$1,version=version+1 WHERE company_id=$2 AND kind='task' AND data->>'done'='false' AND NOT deleted`,
         [ownerId, id],
       );
-      await audit(tx, actor.id, 'company.assigned', id, id, { from: company.ownerId, to: ownerId });
-      return this.company(actor, id, tx);
-    });
+    await audit(tx, actor.id, 'company.assigned', id, id, { from: company.ownerId, to: ownerId });
+    return this.company(actor, id, tx);
   }
   async detail(actor: Actor, id: string) {
     const { company, records, events, holdingMembers, canManageOwnership } = await readAsActor(

@@ -44,6 +44,7 @@ const auditActionLabels: Record<string, string> = {
   'project.updated': 'Проект изменён',
   'task.created': 'Задача добавлена',
   'task.updated': 'Задача изменена',
+  'task.assigned': 'Исполнитель задачи изменён',
   'task.deleted': 'Задача удалена',
   'activity.created': 'Запись общения добавлена',
   'activity.updated': 'Запись общения изменена',
@@ -450,7 +451,7 @@ export function CompanyDetail({
                   <small>
                     {a.actor_name || 'Сотрудник'} · {new Date(a.created_at).toLocaleString('ru')}
                   </small>
-                  {a.action === 'company.assigned' && (
+                  {(a.action === 'company.assigned' || a.action === 'task.assigned') && (
                     <p>
                       {users.find((u) => u.id === a.details?.from)?.name || 'Другой сотрудник'} →{' '}
                       {users.find((u) => u.id === a.details?.to)?.name || 'Другой сотрудник'}

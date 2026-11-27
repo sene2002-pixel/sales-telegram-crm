@@ -25,6 +25,7 @@ import { RoleGuide } from './RoleGuide';
 import { Profile } from './Profile';
 import { UsersScreen } from './Users';
 import { ClientRow } from './ClientRow';
+import { ClientHandoffQueue } from './ClientHandoffQueue';
 import { EmployeeFilter } from './EmployeeFilter';
 import { Icon } from './Icons';
 import {
@@ -1067,6 +1068,16 @@ function App() {
                             </button>
                           </p>
                         ) : null)}
+                      {(!showClientGuide || user.role !== 'manager') && (
+                        <p className="pico-client-result-count">Показано: {visible.length}</p>
+                      )}
+                      {user.role !== 'manager' && (
+                        <ClientHandoffQueue
+                          companies={companies}
+                          onChanged={() => refresh('team-save')}
+                          onOpenCompany={openCompany}
+                        />
+                      )}
                       <div className="pico-client-list">
                         {[...visible]
                           .sort((a, b) =>

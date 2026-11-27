@@ -81,6 +81,32 @@ async function requireAnotherAdmin(tx: Sql, id: string) {
   requireCondition(another, 409, 'Нельзя отключить последнего администратора');
 }
 
+export async function removableTeamMember(
+  tx: Sql,
+  actor: Actor,
+  rawId: unknown,
+  lock = false,
+): Promise<Actor> {
+  requireCondition(isLeader(actor), 403, 'Удалять сотрудников могут администратор и руководитель');
+  const id = idSchema.parse(rawId);
+  const [target] = await tx.query<TeamMember>(
+    `SELECT ${teamMemberProjection} FROM users WHERE id=$1 ${lock ? 'FOR UPDATE' : ''}`,
+    [id],
+  );
+  requireCondition(
+    target && !target.removedFromTeam && !target.telegramId.startsWith('dev-'),
+    404,
+    'Сотрудник не найден',
+  );
+  requireCondition(
+    actor.role === 'admin' || (target.role === 'manager' && target.supervisorId === actor.id),
+    403,
+    'Можно удалить только сотрудника своей команды',
+  );
+  if (target.role === 'admin' && target.active) await requireAnotherAdmin(tx, id);
+  return target;
+}
+
 async function detachDirectReports(tx: Sql, id: string) {
   await tx.query(
     'UPDATE users SET supervisor_id=NULL WHERE supervisor_id=$1 AND team_removed_at IS NULL',
@@ -212,37 +238,29 @@ export class AuthService {
         : Promise.resolve([current]),
     );
   }
-  async removeTeamMember(actor: Actor, rawId: unknown) {
+  async removeTeamMember(
+    actor: Actor,
+    rawId: unknown,
+    beforeRemove?: (tx: Sql, current: Actor, target: Actor) => Promise<void>,
+  ) {
     requireCondition(
       isLeader(actor),
       403,
       'Удалять сотрудников могут администратор и руководитель',
     );
-    const id = idSchema.parse(rawId);
     await this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(7142502)');
+      // Match the hierarchy → CRM → user order used by task reassignment and imports.
+      if (beforeRemove) await tx.query('SELECT pg_advisory_xact_lock(7142532)');
       const current = await activeActor(tx, actor.id);
       requireCondition(
-        current.role === actor.role && isLeader(current),
+        current.role === actor.role,
         403,
         'Удалять сотрудников могут администратор и руководитель',
       );
-      const [target] = await tx.query<TeamMember>(
-        `SELECT ${teamMemberProjection} FROM users WHERE id=$1 FOR UPDATE`,
-        [id],
-      );
-      requireCondition(
-        target && !target.removedFromTeam && !target.telegramId.startsWith('dev-'),
-        404,
-        'Сотрудник не найден',
-      );
-      requireCondition(
-        current.role === 'admin' ||
-          (target.role === 'manager' && target.supervisorId === current.id),
-        403,
-        'Можно удалить только сотрудника своей команды',
-      );
-      if (target.role === 'admin' && target.active) await requireAnotherAdmin(tx, id);
+      const target = await removableTeamMember(tx, current, rawId, true);
+      const id = target.id;
+      if (beforeRemove) await beforeRemove(tx, current, target);
       if (isLeader(target)) await detachDirectReports(tx, id);
       // Keep the historical manager’s supervisor and ownership links for reassignment.
       // The old identity remains inactive even if the Telegram account joins a different team.
