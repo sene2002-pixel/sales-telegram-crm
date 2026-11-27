@@ -1068,11 +1068,9 @@ function App() {
                             </button>
                           </p>
                         ) : null)}
-                      {(!showClientGuide || user.role !== 'manager') && (
-                        <p className="pico-client-result-count">Показано: {visible.length}</p>
-                      )}
                       {user.role !== 'manager' && (
                         <ClientHandoffQueue
+                          visibleClientCount={visible.length}
                           companies={companies}
                           onChanged={() => refresh('team-save')}
                           onOpenCompany={openCompany}

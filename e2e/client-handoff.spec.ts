@@ -224,6 +224,15 @@ test('Очередь ниже счётчика: компания остаётс�
     f.colleague.id,
   );
 
+  await queue.getByRole('button', { name: /^Компании.*1$/ }).click();
+  await row(queue, second.name).click();
+  await queue.getByRole('button', { name: 'Назначить ответственного', exact: true }).click();
+  const lastTransfer = page.getByRole('dialog', { name: 'Передать компанию', exact: true });
+  await lastTransfer.getByRole('combobox', { name: 'Новый ответственный' }).selectOption(f.lead.id);
+  await lastTransfer.getByRole('button', { name: 'Передать компанию', exact: true }).click();
+  await expect(queue.getByText('Всё распределено', { exact: true })).toBeVisible();
+  await expect(queueButton(page, 0)).toBeFocused();
+
   await enter(page, f.colleague.token);
   await clients(page);
   await expect(page.getByRole('button', { name: /^Требуют передачи/ })).toHaveCount(0);

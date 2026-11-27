@@ -42,10 +42,12 @@ function Due({ value, currentDay }: { value: string; currentDay: string }) {
 }
 
 export function ClientHandoffQueue({
+  visibleClientCount,
   companies,
   onChanged,
   onOpenCompany,
 }: {
+  visibleClientCount: number;
   // Normal CRM refreshes also invalidate the separately scoped queue.
   companies: readonly Company[];
   onChanged: () => Promise<void>;
@@ -120,167 +122,174 @@ export function ClientHandoffQueue({
     setSelection(target);
   }
 
+  // An idle queue should not take space from the first screen of client cards.
+  // Keep the result and its focus target available after the last assignment.
+  if (!count && !open && !notice && !loadError) return null;
+
   return (
-    <section className="pico-client-handoff" aria-label="Требуют передачи">
-      <button
-        ref={trigger}
-        className="pico-handoff-trigger"
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen(!open)}
-      >
-        <span>Требуют передачи{count === null ? '' : ` · ${count}`}</span>
-        <Icon name="chevron-down" size={18} />
-      </button>
-      <p className="pico-handoff-notice" role="status">
-        {notice}
-      </p>
-      <div id={panelId} hidden={!open} className="pico-handoff-panel">
-        {loading && !queue && <p role="status">Загружаем очередь…</p>}
-        {loadError && (
-          <div className="pico-handoff-load-error">
-            <p role="alert">Не удалось обновить очередь. {loadError}</p>
-            <button type="button" onClick={() => void load()}>
-              Повторить
-            </button>
-          </div>
-        )}
-        {open && queue && (
-          <>
-            <div className="pico-handoff-views" role="group" aria-label="Что передать">
-              {views.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={view === id}
-                  onClick={() => {
-                    setView(id);
-                    setExpanded('');
-                  }}
-                >
-                  {label} · {queue[id].length}
-                </button>
-              ))}
+    <>
+      <p className="pico-client-result-count">Показано: {visibleClientCount}</p>
+      <section className="pico-client-handoff" aria-label="Требуют передачи">
+        <button
+          ref={trigger}
+          className="pico-handoff-trigger"
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setOpen(!open)}
+        >
+          <span>Требуют передачи{count === null ? '' : ` · ${count}`}</span>
+          <Icon name="chevron-down" size={18} />
+        </button>
+        <p className="pico-handoff-notice" role="status">
+          {notice}
+        </p>
+        <div id={panelId} hidden={!open} className="pico-handoff-panel">
+          {loading && !queue && <p role="status">Загружаем очередь…</p>}
+          {loadError && (
+            <div className="pico-handoff-load-error">
+              <p role="alert">Не удалось обновить очередь. {loadError}</p>
+              <button type="button" onClick={() => void load()}>
+                Повторить
+              </button>
             </div>
-            {queue[view].length === 0 ? (
-              <p className="handoff-secondary">
-                {count === 0
-                  ? 'Всё распределено'
-                  : view === 'companies'
-                    ? 'Нет компаний к передаче'
-                    : 'Нет отдельных задач к передаче'}
-              </p>
-            ) : (
-              <div className="pico-handoff-stack">
-                {view === 'companies'
-                  ? queue.companies.map((company) => {
-                      const due = [...company.projects, ...company.tasks].reduce<string | null>(
-                        (closest, item) =>
-                          item.due && (!closest || item.due < closest) ? item.due : closest,
-                        null,
-                      );
-                      return (
+          )}
+          {open && queue && (
+            <>
+              <div className="pico-handoff-views" role="group" aria-label="Что передать">
+                {views.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={view === id}
+                    onClick={() => {
+                      setView(id);
+                      setExpanded('');
+                    }}
+                  >
+                    {label} · {queue[id].length}
+                  </button>
+                ))}
+              </div>
+              {queue[view].length === 0 ? (
+                <p className="handoff-secondary">
+                  {count === 0
+                    ? 'Всё распределено'
+                    : view === 'companies'
+                      ? 'Нет компаний к передаче'
+                      : 'Нет отдельных задач к передаче'}
+                </p>
+              ) : (
+                <div className="pico-handoff-stack">
+                  {view === 'companies'
+                    ? queue.companies.map((company) => {
+                        const due = [...company.projects, ...company.tasks].reduce<string | null>(
+                          (closest, item) =>
+                            item.due && (!closest || item.due < closest) ? item.due : closest,
+                          null,
+                        );
+                        return (
+                          <QueueItem
+                            key={company.id}
+                            title={company.name}
+                            meta={
+                              <>
+                                <span>Бывший ответственный: {company.formerOwner.name}</span>
+                                <span>{counts(company)}</span>
+                                {due && <Due value={due} currentDay={currentDay} />}
+                              </>
+                            }
+                            open={expanded === company.id}
+                            onToggle={() => setExpanded(expanded === company.id ? '' : company.id)}
+                          >
+                            {company.projects.length > 0 && (
+                              <div>
+                                <h4>Активные проекты</h4>
+                                <ul>
+                                  {company.projects.map((project) => (
+                                    <li key={project.id}>
+                                      <strong>{project.name}</strong>
+                                      <span className="handoff-secondary">
+                                        {labels[project.stage] || project.stage}
+                                      </span>
+                                      {project.due && (
+                                        <Due value={project.due} currentDay={currentDay} />
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {company.tasks.length > 0 && (
+                              <div>
+                                <h4>Открытые задачи к передаче</h4>
+                                <ul>
+                                  {company.tasks.map((task) => (
+                                    <li key={task.id}>
+                                      <strong>{task.text}</strong>
+                                      {task.due && <Due value={task.due} currentDay={currentDay} />}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            <div className="pico-handoff-card-actions">
+                              <AssignmentButton
+                                selection={{ kind: 'companies', item: company }}
+                                onSelect={beginAssignment}
+                              />
+                              <OpenHandoffCompany
+                                id={company.id}
+                                company={companies.find(({ id }) => id === company.id)}
+                                onOpen={onOpenCompany}
+                              />
+                            </div>
+                          </QueueItem>
+                        );
+                      })
+                    : queue.tasks.map((task) => (
                         <QueueItem
-                          key={company.id}
-                          title={company.name}
+                          key={task.id}
+                          title={task.text}
                           meta={
                             <>
-                              <span>Бывший ответственный: {company.formerOwner.name}</span>
-                              <span>{counts(company)}</span>
-                              {due && <Due value={due} currentDay={currentDay} />}
+                              <span>Компания: {task.companyName}</span>
+                              <span>Бывший исполнитель: {task.formerAssignee.name}</span>
+                              {task.due && <Due value={task.due} currentDay={currentDay} />}
                             </>
                           }
-                          open={expanded === company.id}
-                          onToggle={() => setExpanded(expanded === company.id ? '' : company.id)}
+                          open={expanded === task.id}
+                          onToggle={() => setExpanded(expanded === task.id ? '' : task.id)}
                         >
-                          {company.projects.length > 0 && (
-                            <div>
-                              <h4>Активные проекты</h4>
-                              <ul>
-                                {company.projects.map((project) => (
-                                  <li key={project.id}>
-                                    <strong>{project.name}</strong>
-                                    <span className="handoff-secondary">
-                                      {labels[project.stage] || project.stage}
-                                    </span>
-                                    {project.due && (
-                                      <Due value={project.due} currentDay={currentDay} />
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {company.tasks.length > 0 && (
-                            <div>
-                              <h4>Открытые задачи к передаче</h4>
-                              <ul>
-                                {company.tasks.map((task) => (
-                                  <li key={task.id}>
-                                    <strong>{task.text}</strong>
-                                    {task.due && <Due value={task.due} currentDay={currentDay} />}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          <div className="pico-handoff-card-actions">
-                            <AssignmentButton
-                              selection={{ kind: 'companies', item: company }}
-                              onSelect={beginAssignment}
-                            />
-                            <OpenHandoffCompany
-                              id={company.id}
-                              company={companies.find(({ id }) => id === company.id)}
-                              onOpen={onOpenCompany}
-                            />
-                          </div>
+                          <p className="handoff-secondary">
+                            Ответственный за компанию останется прежним.
+                          </p>
+                          <AssignmentButton
+                            selection={{ kind: 'tasks', item: task }}
+                            onSelect={beginAssignment}
+                          />
                         </QueueItem>
-                      );
-                    })
-                  : queue.tasks.map((task) => (
-                      <QueueItem
-                        key={task.id}
-                        title={task.text}
-                        meta={
-                          <>
-                            <span>Компания: {task.companyName}</span>
-                            <span>Бывший исполнитель: {task.formerAssignee.name}</span>
-                            {task.due && <Due value={task.due} currentDay={currentDay} />}
-                          </>
-                        }
-                        open={expanded === task.id}
-                        onToggle={() => setExpanded(expanded === task.id ? '' : task.id)}
-                      >
-                        <p className="handoff-secondary">
-                          Ответственный за компанию останется прежним.
-                        </p>
-                        <AssignmentButton
-                          selection={{ kind: 'tasks', item: task }}
-                          onSelect={beginAssignment}
-                        />
-                      </QueueItem>
-                    ))}
-              </div>
-            )}
-          </>
+                      ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {selection && (
+          <HandoffConfirmation
+            key={selection.item.id}
+            selection={selection}
+            onClose={() => setSelection(null)}
+            onAssigned={finishAssignment}
+            onReload={() => {
+              setSelection(null);
+              requestAnimationFrame(() => trigger.current?.focus());
+              void load();
+            }}
+          />
         )}
-      </div>
-      {selection && (
-        <HandoffConfirmation
-          key={selection.item.id}
-          selection={selection}
-          onClose={() => setSelection(null)}
-          onAssigned={finishAssignment}
-          onReload={() => {
-            setSelection(null);
-            requestAnimationFrame(() => trigger.current?.focus());
-            void load();
-          }}
-        />
-      )}
-    </section>
+      </section>
+    </>
   );
 }
 
